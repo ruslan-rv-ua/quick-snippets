@@ -122,7 +122,7 @@ mod tests {
 
 ## ✅ Ручна перевірка по завершенні фази
 
-- [ ] `cargo test crypto::tests` — всі тести зелені (≥ 14 тестів)
-- [ ] Зашифрувати рядок «test» два рази → base64-результати **відрізняються** (різні salt/nonce)
-- [ ] Decrypt з коректним паролем → оригінальний рядок
-- [ ] Decrypt з будь-яким неправильним паролем → повертається `Err(WrongPassword)` (не паніка, не інший тип помилки)
+- [x] `cargo test crypto::tests` — всі тести зелені (≥ 14 тестів) — **15 passed**
+- [x] Зашифрувати рядок «test» два рази → base64-результати **відрізняються** (різні salt/nonce) — `test_two_encryptions_produce_different_output` ok
+- [x] Decrypt з коректним паролем → оригінальний рядок — `test_encrypt_decrypt_roundtrip` ok
+- [x] Decrypt з будь-яким неправильним паролем → повертається `Err(WrongPassword)` (не паніка, не інший тип помилки) — `test_decrypt_wrong_password_returns_error` + `test_decrypt_wrong_password_is_not_panic` ok
