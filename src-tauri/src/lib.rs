@@ -1,9 +1,12 @@
-pub mod commands;
 pub mod db;
 pub mod crypto;
 pub mod search;
 pub mod settings;
 
+#[cfg(not(test))]
+pub mod commands;
+
+#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Phase 2: open / init the database at startup
