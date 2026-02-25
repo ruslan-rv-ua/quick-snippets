@@ -1,0 +1,12 @@
+﻿cargo :    Compiling quick-snippets v0.1.0 (C:\dev\quick-snippets\src-
+tauri)
+At line:1 char:1
++ cargo build 2>&1 | Out-File C:\dev\quick-snippets\build2.txt -Encodi
+n ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling qu...pets\s 
+   rc-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.13
+s

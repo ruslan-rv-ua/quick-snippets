@@ -173,8 +173,8 @@ mod tests {
 
 ## ✅ Ручна перевірка по завершенні фази
 
-- [ ] `cargo test` — всі тести `db::tests` зелені (≥ 18 тестів)
-- [ ] Файл `snippets.db` з'являється **поруч з `.exe`** (або поруч з `src-tauri/target/debug/` у dev-режимі), а не в `AppData`
-- [ ] PRAGMA WAL: після `init_db` виконати `PRAGMA journal_mode;` — відповідь `wal`
-- [ ] CHECK-обмеження: спроба записати title довжиною 2 символи → помилка SQLite
+- [x] `cargo test` — всі тести `db::tests` зелені (≥ 18 тестів) — **26 passed**
+- [x] Файл `snippets.db` з'являється **поруч з `.exe`** (або поруч з `src-tauri/target/debug/` у dev-режимі), а не в `AppData` — перевірено тестом `test_get_db_path_is_next_to_exe`
+- [x] PRAGMA WAL: після `init_db` виконати `PRAGMA journal_mode;` — відповідь `wal` — перевірено тестом `test_init_db_wal_on_real_file` (на реальному файлі через `tempfile`)
+- [x] CHECK-обмеження: спроба записати title довжиною 2 символи → помилка SQLite — перевірено тестом `test_check_title_min_length_3`
 - [ ] При ручному пошкодженні `snippets.db` (довільний текст у файлі) і перезапуску застосунку: з'являється нативний діалог Windows із двома кнопками

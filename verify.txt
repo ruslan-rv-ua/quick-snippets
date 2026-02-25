@@ -1,0 +1,46 @@
+﻿cargo :    Compiling quick-snippets v0.1.0 (C:\dev\quick-snippets\src-tauri)
+At line:1 char:1
++ cargo test db::tests -- --test-threads=1 2>&1 | Out-File C:\dev\quick ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling qu...pets\src-tauri):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.38s
+     Running unittests src\lib.rs (target\debug\deps\quick_snippets_lib-c95f8b11d7888133.exe)
+
+running 26 tests
+test db::tests::test_check_content_boundary_65536_bytes_ok ... ok
+test db::tests::test_check_content_max_65536_bytes ... ok
+test db::tests::test_check_title_boundary_3_chars_ok ... ok
+test db::tests::test_check_title_boundary_50_chars_ok ... ok
+test db::tests::test_check_title_max_length_50 ... ok
+test db::tests::test_check_title_min_length_3 ... ok
+test db::tests::test_create_snippet_returns_id ... ok
+test db::tests::test_create_snippet_sets_timestamps ... ok
+test db::tests::test_delete_nonexistent_snippet ... ok
+test db::tests::test_delete_snippet_removes_record ... ok
+test db::tests::test_full_crud_cycle ... ok
+test db::tests::test_get_db_path_is_next_to_exe ... ok
+test db::tests::test_get_snippet_by_id_found ... ok
+test db::tests::test_get_snippet_by_id_not_found ... ok
+test db::tests::test_index_exists_on_updated_at ... ok
+test db::tests::test_init_db_creates_snippets_table ... ok
+test db::tests::test_init_db_is_idempotent ... ok
+test db::tests::test_init_db_sets_busy_timeout ... ok
+test db::tests::test_init_db_sets_wal_journal_mode ... ok
+test db::tests::test_init_db_wal_on_real_file ... ok
+test db::tests::test_list_snippets_empty_db ... ok
+test db::tests::test_list_snippets_returns_id_title_encrypted ... ok
+test db::tests::test_list_snippets_sorted_by_updated_at_desc ... ok
+test db::tests::test_update_snippet_changes_title_and_content ... ok
+test db::tests::test_update_snippet_preserves_encrypted_content ... ok
+test db::tests::test_update_snippet_updates_updated_at ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src\main.rs (target\debug\deps\quick_snippets-7ec81da7aebdd9f1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
