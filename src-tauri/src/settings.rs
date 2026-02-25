@@ -210,7 +210,7 @@ pub fn save_settings(settings: &Settings, window: &tauri::Window) {
 }
 
 #[cfg(not(test))]
-pub fn apply_window_state(window: &tauri::Window, state: &WindowState) {
+pub fn apply_window_state(window: &tauri::WebviewWindow, state: &WindowState) {
     use tauri::PhysicalPosition;
     use tauri::PhysicalSize;
 

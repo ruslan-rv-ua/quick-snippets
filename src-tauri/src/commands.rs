@@ -4,6 +4,45 @@ use crate::{crypto, db, search};
 use rusqlite::Connection;
 
 // ---------------------------------------------------------------------------
+// AppState — defined at module level so it is accessible in tests
+// ---------------------------------------------------------------------------
+
+use std::sync::Mutex;
+
+pub struct AppState {
+    pub conn: Mutex<rusqlite::Connection>,
+    pub settings: Mutex<crate::settings::Settings>,
+    pub pending_notification: Mutex<Option<String>>,
+}
+
+impl AppState {
+    /// Store a one-shot notification (e.g., hotkey registration failure).
+    pub fn set_pending_notification(&self, msg: String) {
+        if let Ok(mut n) = self.pending_notification.lock() {
+            *n = Some(msg);
+        }
+    }
+
+    /// Consume and return the pending notification (returns `None` on second call).
+    pub fn take_pending_notification(&self) -> Option<String> {
+        self.pending_notification.lock().ok().and_then(|mut n| n.take())
+    }
+}
+
+#[cfg(test)]
+impl AppState {
+    pub fn new_for_test() -> Self {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::init_db(&conn).unwrap();
+        AppState {
+            conn: Mutex::new(conn),
+            settings: Mutex::new(crate::settings::Settings::default()),
+            pending_notification: Mutex::new(None),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shared view type
 // ---------------------------------------------------------------------------
 
@@ -109,15 +148,10 @@ pub use tauri_commands::*;
 pub mod tauri_commands {
     use super::*;
     use crate::settings::Settings;
-    use std::sync::Mutex;
     use tauri::{AppHandle, Manager, State, Window};
     use tauri_plugin_clipboard_manager::ClipboardExt;
 
-    pub struct AppState {
-        pub conn: Mutex<rusqlite::Connection>,
-        pub settings: Mutex<Settings>,
-        pub pending_notification: Mutex<Option<String>>,
-    }
+    pub use super::AppState;
 
     #[tauri::command]
     pub fn search_snippets(
