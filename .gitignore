@@ -1,70 +1,24 @@
-# ── Node / npm ─────────────────────────────────────────────
-node_modules/
-dist/
-.npm
+# Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# ── Vite build output ───────────────────────────────────────
-dist-ssr/
+node_modules
+dist
+dist-ssr
 *.local
 
-# ── Rust / Cargo ────────────────────────────────────────────
-src-tauri/target/
-**/*.rs.bk
-Cargo.lock.bak
-
-# ── Tauri ───────────────────────────────────────────────────
-# Generated bundle artefacts
-src-tauri/gen/
-src-tauri/WixTools/
-*.msi
-*.dmg
-*.AppImage
-*.deb
-
-# ── App runtime data (portable files, not committed) ────────
-snippets.db
-snippets.db-shm
-snippets.db-wal
-settings.json
-
-# ── Test coverage ───────────────────────────────────────────
-coverage/
-lcov.info
-
-# ── TypeScript compiled output ──────────────────────────────
-*.tsbuildinfo
-
-# ── Editor / IDE ────────────────────────────────────────────
+# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-.idea/
+.idea
+.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-# ── OS ──────────────────────────────────────────────────────
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# ── Logs & temp files ───────────────────────────────────────
-*.log
-*.tmp
-*.bak
-*.swp
-*.orig

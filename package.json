@@ -1,0 +1,41 @@
+{
+  "name": "quick-snippets",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:rust": "cd src-tauri && cargo test -- --test-threads=1",
+    "test:all": "npm run test && npm run test:rust",
+    "lint": "tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-global-shortcut": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@tauri-apps/plugin-autostart": "^2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^6",
+    "@tauri-apps/cli": "^2",
+    "vitest": "^3",
+    "@testing-library/react": "^16",
+    "@testing-library/dom": "^10",
+    "@testing-library/jest-dom": "^6",
+    "@testing-library/user-event": "^14",
+    "jsdom": "^26",
+    "@vitest/coverage-v8": "^3"
+  }
+}
