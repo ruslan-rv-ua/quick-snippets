@@ -58,8 +58,12 @@ export function saveSettings(settings: Settings): Promise<void> {
   return invoke<void>('save_settings', { settings });
 }
 
-// ── App ───────────────────────────────────────────────────────────────────
+// ── Notifications ─────────────────────────────────────────────────────────
 
+/**
+ * Returns a one-shot pending notification message (if any) set by the
+ * Rust backend, then clears it. Returns null when there is none.
+ */
 export function getPendingNotification(): Promise<string | null> {
   return invoke<string | null>('get_pending_notification');
 }
@@ -67,3 +71,4 @@ export function getPendingNotification(): Promise<string | null> {
 export function quitApp(): Promise<void> {
   return invoke<void>('quit_app');
 }
+

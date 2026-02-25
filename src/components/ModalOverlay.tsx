@@ -1,0 +1,110 @@
+import React, {
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
+
+export interface ModalOverlayProps {
+  isOpen: boolean;
+  onClose: () => void;
+  titleId: string;
+  children: React.ReactNode;
+  /** When true, sets aria-busy="true" on the dialog element. */
+  busy?: boolean;
+}
+
+const FOCUSABLE_SELECTORS =
+  'a[href], button:not([disabled]), textarea:not([disabled]), ' +
+  'input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getFocusable(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
+}
+
+export function ModalOverlay({
+  isOpen,
+  onClose,
+  titleId,
+  children,
+  busy,
+}: ModalOverlayProps): React.ReactElement | null {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // Save and restore focus
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+
+    // Focus first focusable element
+    const el = dialogRef.current;
+    if (el) {
+      const focusable = getFocusable(el);
+      if (focusable.length > 0) focusable[0].focus();
+    }
+
+    return () => {
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [isOpen]);
+
+  // Focus trap
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'Tab') return;
+      const el = dialogRef.current;
+      if (!el) return;
+      const focusable = getFocusable(el);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [],
+  );
+
+  // Click on overlay background
+  const handleOverlayClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // Only close when clicking directly on the overlay, not on dialog content
+      if (e.target === e.currentTarget) onClose();
+    },
+    [onClose],
+  );
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="modal-overlay"
+      onClick={handleOverlayClick}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={busy ? 'true' : undefined}
+        className="modal-dialog"
+        onKeyDown={handleKeyDown}
+        // Stop clicks inside dialog from closing the overlay
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

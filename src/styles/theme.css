@@ -1,0 +1,169 @@
+/* QuickSnippets — design tokens & base styles */
+
+/* ── Google Fonts import ─────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+/* ── Dark theme (default) ────────────────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --color-bg: #121212;
+  --color-bg-item: #121212;
+  --color-bg-active: #2a2d31;
+  --color-bg-input: #1e1e1e;
+
+  /* Borders */
+  --color-border: #333333;
+
+  /* Text */
+  --color-text: #e0e0e0;
+  --color-text-muted: #9e9e9e;
+
+  /* Semantic */
+  --color-match-highlight: #ffb74d;
+  --color-icon-lock: #9e9e9e;
+  --color-destructive: #ef5350;
+  --color-accent: #29b6f6;
+  --color-accent-hover: #4fc3f7;
+  --color-focus-ring: rgba(41, 182, 246, 0.4);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────── */
+.theme-light {
+  --color-bg: #ffffff;
+  --color-bg-item: #ffffff;
+  --color-bg-active: #f0f4f8;
+  --color-bg-input: #f5f7fa;
+  --color-border: #e0e0e0;
+  --color-text: #212121;
+  --color-text-muted: #616161;
+  --color-match-highlight: #f57c00;
+  --color-icon-lock: #757575;
+  --color-destructive: #d32f2f;
+  --color-accent: #0288d1;
+  --color-accent-hover: #0277bd;
+  --color-focus-ring: rgba(2, 136, 209, 0.3);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Reset & base ────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Focus visible ───────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ── Button base ─────────────────────────────────────────────────────────── */
+button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 6px 14px;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary button */
+.btn-primary {
+  background: var(--color-accent);
+  color: #000;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+/* Secondary button */
+.btn-secondary {
+  background: var(--color-bg-input);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-active);
+}
+
+/* Destructive button */
+.btn-destructive {
+  background: var(--color-destructive);
+  color: #fff;
+}
+
+.btn-destructive:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* ── Input base ─────────────────────────────────────────────────────────── */
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: 14px;
+  background: var(--color-bg-input);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+
+input[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--color-destructive);
+}
+
+/* ── Mark (match highlight) ─────────────────────────────────────────────── */
+mark {
+  background: none;
+  color: var(--color-match-highlight);
+  font-weight: 600;
+}

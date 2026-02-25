@@ -51,15 +51,18 @@ export function ThemeProvider({
 
   // Load persisted theme on mount
   useEffect(() => {
-    getSettings()
-      .then((s) => {
-        const t = parseTheme(s.theme);
-        setThemeState(t);
-        applyTheme(t);
-      })
-      .catch(() => {
+    (async () => {
+      try {
+        const s = await Promise.resolve(getSettings());
+        if (s && typeof s.theme === 'string') {
+          const t = parseTheme(s.theme);
+          setThemeState(t);
+          applyTheme(t);
+        }
+      } catch {
         // Fall back to dark on error — already the default
-      });
+      }
+    })();
   }, []);
 
   const toggleTheme = useCallback(() => {

@@ -1,0 +1,90 @@
+import React, { useEffect, useRef, useCallback } from 'react';
+import { ModalOverlay } from './ModalOverlay';
+import { useLanguage } from '../hooks/useLanguage';
+import { deleteSnippet } from '../hooks/useIpc';
+
+export interface DeleteConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  snippetTitle: string;
+  snippetId: number;
+  onSuccess: () => void;
+}
+
+export function DeleteConfirmModal({
+  isOpen,
+  onClose,
+  snippetTitle,
+  snippetId,
+  onSuccess,
+}: DeleteConfirmModalProps): React.ReactElement | null {
+  const { t } = useLanguage();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // Focus Cancel on open
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => cancelRef.current?.focus(), 10);
+    }
+  }, [isOpen]);
+
+  const handleDelete = useCallback(async () => {
+    try {
+      await deleteSnippet(snippetId);
+      onSuccess();
+      onClose();
+    } catch {
+      // ignore
+    }
+  }, [snippetId, onSuccess, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handler(e: KeyboardEvent) {
+      // Enter does NOT confirm delete
+      if (e.key === 'Escape') { onClose(); }
+    }
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <ModalOverlay isOpen={isOpen} onClose={onClose} titleId="delete-modal-title">
+      <h2 id="delete-modal-title">{t('deleteSnippet')}</h2>
+
+      <div
+        style={{
+          borderLeft: `3px solid var(--color-destructive)`,
+          paddingLeft: '8px',
+          margin: '12px 0',
+        }}
+      >
+        «{snippetTitle}»
+      </div>
+
+      <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+        {t('cannotUndo')}
+      </p>
+
+      <div className="modal-actions">
+        <button
+          ref={cancelRef}
+          type="button"
+          className="btn-secondary"
+          onClick={onClose}
+        >
+          {t('cancel')}
+        </button>
+        <button
+          type="button"
+          className="btn-destructive"
+          onClick={handleDelete}
+        >
+          {t('delete')}
+        </button>
+      </div>
+    </ModalOverlay>
+  );
+}

@@ -55,15 +55,18 @@ export function LanguageProvider({
 
   // Load persisted language on mount
   useEffect(() => {
-    getSettings()
-      .then((s) => {
-        const lang = resolveLanguage(s.language);
-        setLanguageState(lang);
-        document.documentElement.lang = lang;
-      })
-      .catch(() => {
+    (async () => {
+      try {
+        const s = await Promise.resolve(getSettings());
+        if (s && typeof s.language === 'string') {
+          const lang = resolveLanguage(s.language);
+          setLanguageState(lang);
+          document.documentElement.lang = lang;
+        }
+      } catch {
         // Fall back to 'en' on error — already the default
-      });
+      }
+    })();
   }, []);
 
   const setLanguage = useCallback((lang: LangCode) => {

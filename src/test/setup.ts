@@ -24,3 +24,16 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
   emit: vi.fn(),
 }))
+
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: vi.fn(() => ({
+    hide: vi.fn().mockResolvedValue(undefined),
+    show: vi.fn().mockResolvedValue(undefined),
+    setFocus: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
+// jsdom does not implement scrollIntoView
+if (typeof window !== 'undefined') {
+  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+}
