@@ -1,6 +1,6 @@
 // Fuzzy search
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct SearchResult {
     pub id: i64,
     pub title: String,
