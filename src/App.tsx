@@ -95,6 +95,25 @@ function AppInner(): React.ReactElement {
     // Other modals stay open
   }, [setQuery, setActiveIndex]);
 
+  // ── Focus search box on window focus (hotkey / tray / startup) ────────
+  const focusSearch = useCallback(() => {
+    if (!showCreate && !showEdit && !showDelete && !showPassword && !showSettings && !showExit) {
+      searchRef.current?.focus();
+    }
+  }, [showCreate, showEdit, showDelete, showPassword, showSettings, showExit]);
+
+  // Focus on initial mount (small delay to let the webview fully activate)
+  useEffect(() => {
+    const t = setTimeout(() => searchRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Focus whenever the OS gives focus to the window
+  useEffect(() => {
+    window.addEventListener('focus', focusSearch);
+    return () => window.removeEventListener('focus', focusSearch);
+  }, [focusSearch]);
+
   // ── Window blur ───────────────────────────────────────────────────────
   useEffect(() => {
     function handleBlur() { partialReset(); }
@@ -121,11 +140,17 @@ function AppInner(): React.ReactElement {
     const unlisten1 = listen('tray:create-snippet', () => setShowCreate(true));
     const unlisten2 = listen('tray:open-settings', () => setShowSettings(true));
     const unlisten3 = listen('window:close-request', () => setShowExit(true));
+    // Fired by Rust whenever the window is programmatically shown (hotkey / tray).
+    // Belt-and-suspenders alongside the native `window focus` handler.
+    const unlisten4 = listen('window:show', () => {
+      setTimeout(() => searchRef.current?.focus(), 60);
+    });
 
     return () => {
       void unlisten1.then((fn) => fn());
       void unlisten2.then((fn) => fn());
       void unlisten3.then((fn) => fn());
+      void unlisten4.then((fn) => fn());
     };
   }, []);
 

@@ -98,6 +98,7 @@ pub fn run() {
                 let _ = win.show();
                 let _ = win.unminimize();
                 let _ = win.set_focus();
+                let _ = win.emit("window:show", ());
             }
         }))
         .manage(AppState {
@@ -201,6 +202,7 @@ pub fn run() {
                         match event.id().as_ref() {
                             "show" => {
                                 show_focus();
+                                let _ = win.emit("window:show", ());
                             }
                             "new_snippet" => {
                                 show_focus();
@@ -226,6 +228,7 @@ pub fn run() {
                                 let _ = win.show();
                                 let _ = win.unminimize();
                                 let _ = win.set_focus();
+                                let _ = win.emit("window:show", ());
                             }
                         }
                     })
@@ -250,6 +253,7 @@ pub fn run() {
                                 let _ = win_hk.show();
                                 let _ = win_hk.unminimize();
                                 let _ = win_hk.set_focus();
+                                let _ = win_hk.emit("window:show", ());
                             }
                         });
                 if result.is_err() {
