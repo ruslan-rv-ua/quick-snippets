@@ -4,7 +4,7 @@ set shell := ["powershell", "-NoProfile", "-Command"]
 
 # Recommended adjustable variables
 PROFILE := "debug"        # build profile: "debug" or "release"
-ARCH := "x64"             # target arch: "x64" or "x86"
+ARCH := "x64"             # target arch: "x64" or "arm64"
 NODE_VERSION := "18"      # informational only
 
 # --- Helpers ---
@@ -21,7 +21,7 @@ help:
     @Write-Output "Тестування:"
     @Write-Output "  test         - Запуск тестів (frontend + backend)"
     @Write-Output "  test-watch   - Watch mode для frontend тестів"
-    @Write-Output "  test-coverage- Coverage для frontend тестів"
+    @Write-Output "  test-coverage - Coverage для frontend тестів"
     @Write-Output "  test-all     - Запуск всіх тестів (npm run test:all)"
     @Write-Output ""
     @Write-Output "Перевірка якості:"
@@ -72,8 +72,12 @@ setup:
     npm install
     Write-Output "If rustup is missing, install from https://rustup.rs"
     Write-Output "Will ensure stable-msvc toolchain (no-op if already present)."
-    rustup toolchain install stable-x86_64-pc-windows-msvc || Write-Output "rustup/toolchain message"
-    rustup default stable-x86_64-pc-windows-msvc || Write-Output "rustup default message"
+    # Select appropriate MSVC Windows toolchain for the target ARCH
+    if ("{{ARCH}}" -eq "x64") { $tc = "stable-x86_64-pc-windows-msvc" } else { $tc = "stable-aarch64-pc-windows-msvc" }
+    rustup toolchain install $tc
+    if ($LASTEXITCODE -ne 0) { Write-Output "rustup/toolchain message" }
+    rustup default $tc
+    if ($LASTEXITCODE -ne 0) { Write-Output "rustup default message" }
 
 # Alias to run npm install only
 install:
@@ -113,7 +117,7 @@ test-coverage:
 final-checks:
     # Запустити фінальні перевірки
     npm install
-    powershell -File scripts/final-checks.ps1
+    & .\scripts\final-checks.ps1
 
 # Прямий виклик test:all
 test-all:
@@ -130,13 +134,14 @@ lint:
 # Format code via Prettier if available
 format:
     # Форматування (встановіть prettier в devDependencies if missing)
-    npx prettier --write . || Write-Output "Prettier not found. Install: npm install --save-dev --save-exact prettier"
+    npx prettier --write .
+    if ($LASTEXITCODE -ne 0) { Write-Output "Prettier not found. Install: npm install --save-dev --save-exact prettier" }
 
 # Package / produce installer (calls Tauri build)
 package:
     # Створити інсталер/бінарні артефакти за допомогою Tauri
     npm install
-    cd src-tauri; npx tauri build; cd ..
+    cd src-tauri; npm run tauri build; cd ..
 
 # Clean node_modules and cargo target
 clean:
@@ -158,7 +163,8 @@ check:
 # DB reset / seed (best-effort; project-specific script)
 db-reset:
     # Reset БД — викличте npm-сценарій якщо він існує, інакше інструкція
-    npm run db:reset || Write-Output "No `db:reset` script. Remove DB or run migration manually in src-tauri."
+    npm run db:reset
+    if ($LASTEXITCODE -ne 0) { Write-Output "No `db:reset` script. Remove DB or run migration manually in src-tauri." }
 
 # Open build output in Explorer
 open:
