@@ -169,8 +169,13 @@ pub fn run() {
             };
 
             // ── Tray icon ─────────────────────────────────────────────────
-            let icon_rgba = generate_tray_icon_rgba();
-            let icon = tauri::image::Image::new_owned(icon_rgba, 16, 16);
+            // Embed the icon at compile time so the path is always available
+            // regardless of the working directory at runtime (fixes the release
+            // build crash where `from_path` resolved against CWD and failed).
+            let icon = tauri::image::Image::from_bytes(
+                include_bytes!("../icons/32x32.png"),
+            )
+            .expect("Failed to decode embedded tray icon");
 
             // ── Tray menu ─────────────────────────────────────────────────
             let labels = get_tray_menu_labels(&lang);
