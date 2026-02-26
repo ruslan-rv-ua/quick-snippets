@@ -40,6 +40,7 @@ function AppInner(): React.ReactElement {
 
   const debouncedQuery = useDebounce(query, 100);
   const searchRef = useRef<SearchBoxHandle>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Modal states
   const [showCreate, setShowCreate] = useState(false);
@@ -55,7 +56,7 @@ function AppInner(): React.ReactElement {
   const [deleteTitle, setDeleteTitle] = useState('');
   const [passwordSnippet, setPasswordSnippet] = useState<SearchResult | null>(null);
 
-  // ── Fetch snippets on debounced query change ──────────────────────────
+  // ── Fetch snippets on debounced query change OR window show ────────────
   useEffect(() => {
     searchSnippets(debouncedQuery)
       .then((results) => {
@@ -64,7 +65,8 @@ function AppInner(): React.ReactElement {
         setActiveIndex(safeResults.length > 0 ? 0 : -1);
       })
       .catch(() => void 0);
-  }, [debouncedQuery, setSnippets, setActiveIndex]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery, refreshTick, setSnippets, setActiveIndex]);
 
   // ── Pending notification on startup ──────────────────────────────────
   useEffect(() => {
@@ -108,10 +110,14 @@ function AppInner(): React.ReactElement {
     return () => clearTimeout(t);
   }, []);
 
-  // Focus whenever the OS gives focus to the window
+  // Focus + reload snippets whenever the OS gives focus to the window
   useEffect(() => {
-    window.addEventListener('focus', focusSearch);
-    return () => window.removeEventListener('focus', focusSearch);
+    function handleWindowFocus() {
+      focusSearch();
+      setRefreshTick((n) => n + 1);
+    }
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
   }, [focusSearch]);
 
   // ── Window blur ───────────────────────────────────────────────────────
@@ -143,6 +149,7 @@ function AppInner(): React.ReactElement {
     // Fired by Rust whenever the window is programmatically shown (hotkey / tray).
     // Belt-and-suspenders alongside the native `window focus` handler.
     const unlisten4 = listen('window:show', () => {
+      setRefreshTick((n) => n + 1);
       setTimeout(() => searchRef.current?.focus(), 60);
     });
 
