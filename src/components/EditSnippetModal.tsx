@@ -66,10 +66,15 @@ export function EditSnippetModal({
       await updateSnippet(snippet.id, title, content);
       onSuccess();
       onClose();
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : String(err);
+      const titleErr = msg.includes('Title already exists')
+        ? t('titleDuplicate')
+        : msg;
+      setErrors({ title: titleErr });
+      titleRef.current?.focus();
     }
-  }, [validate, snippet, title, content, onSuccess, onClose]);
+  }, [validate, snippet, title, content, onSuccess, onClose, t]);
 
   useEffect(() => {
     if (!isOpen) return;

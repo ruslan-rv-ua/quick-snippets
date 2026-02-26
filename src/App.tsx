@@ -222,8 +222,11 @@ function AppInner(): React.ReactElement {
   }, [snippets, activeIndex, t, addToast]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
+  const anyModalOpen = showCreate || showEdit || showDelete || showPassword || showSettings || showExit;
+
   useKeyboard({
     activeIndex,
+    disabled: anyModalOpen,
     onOpenCreate: () => setShowCreate(true),
     onOpenEdit: () => void openEdit(),
     onOpenDelete: openDelete,

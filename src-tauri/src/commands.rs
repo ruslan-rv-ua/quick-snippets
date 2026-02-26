@@ -114,12 +114,20 @@ pub fn create_snippet_inner(
         return Err("Title too long (max 50 chars)".to_string());
     }
 
+    let map_err = |e: rusqlite::Error| -> String {
+        if e.to_string().contains("UNIQUE constraint failed") {
+            "Title already exists".to_string()
+        } else {
+            e.to_string()
+        }
+    };
+
     if password.is_empty() {
         let blob = content.as_bytes().to_vec();
-        db::create_snippet(conn, title, blob, false).map_err(|e| e.to_string())
+        db::create_snippet(conn, title, blob, false).map_err(map_err)
     } else {
         let blob = crypto::encrypt(content.as_bytes(), password).map_err(|e| e.to_string())?;
-        db::create_snippet(conn, title, blob, true).map_err(|e| e.to_string())
+        db::create_snippet(conn, title, blob, true).map_err(map_err)
     }
 }
 
@@ -145,7 +153,13 @@ pub fn update_snippet_inner(
     content: &str,
 ) -> Result<(), String> {
     let blob = content.as_bytes().to_vec();
-    db::update_snippet(conn, id, title, blob).map_err(|e| e.to_string())
+    db::update_snippet(conn, id, title, blob).map_err(|e| {
+        if e.to_string().contains("UNIQUE constraint failed") {
+            "Title already exists".to_string()
+        } else {
+            e.to_string()
+        }
+    })
 }
 
 pub fn delete_snippet_inner(conn: &Connection, id: i64) -> Result<(), String> {
@@ -375,6 +389,26 @@ mod tests {
         let conn = setup();
         let result = create_snippet_inner(&conn, "ab", "content", "");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_snippet_duplicate_title_returns_friendly_error() {
+        let conn = setup();
+        create_snippet_inner(&conn, "my snippet", "content1", "").unwrap();
+        let result = create_snippet_inner(&conn, "my snippet", "content2", "");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Title already exists");
+    }
+
+    #[test]
+    fn test_update_snippet_duplicate_title_returns_friendly_error() {
+        let conn = setup();
+        let id_a = create_snippet_inner(&conn, "snippet A", "content A", "").unwrap();
+        create_snippet_inner(&conn, "snippet B", "content B", "").unwrap();
+        // Try to rename A to the name already used by B
+        let result = update_snippet_inner(&conn, id_a, "snippet B", "content A");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Title already exists");
     }
 
     // === activate_snippet: extract content for clipboard ===

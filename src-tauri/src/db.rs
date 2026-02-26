@@ -45,7 +45,9 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             CHECK (length(content) <= 65536)
         );
         CREATE INDEX IF NOT EXISTS idx_snippets_updated_at
-            ON snippets (updated_at DESC);",
+            ON snippets (updated_at DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_snippets_title
+            ON snippets (title);",
     )?;
     Ok(())
 }
@@ -306,6 +308,22 @@ mod tests {
         let exact = vec![0u8; 65536];
         let result = create_snippet(&conn, "title-ok", exact, false);
         assert!(result.is_ok(), "content of exactly 65536 bytes should be ok");
+    }
+
+    #[test]
+    fn test_duplicate_title_fails() {
+        let conn = setup_test_db();
+        create_snippet(&conn, "same title", b"content1".to_vec(), false).unwrap();
+        let result = create_snippet(&conn, "same title", b"content2".to_vec(), false);
+        assert!(result.is_err(), "duplicate title should fail");
+    }
+
+    #[test]
+    fn test_unique_titles_both_ok() {
+        let conn = setup_test_db();
+        create_snippet(&conn, "title A", b"content1".to_vec(), false).unwrap();
+        let result = create_snippet(&conn, "title B", b"content2".to_vec(), false);
+        assert!(result.is_ok(), "two snippets with different titles should be ok");
     }
 
     // --- CRUD ---

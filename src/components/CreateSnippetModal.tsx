@@ -76,10 +76,15 @@ export function CreateSnippetModal({
       await createSnippet(title, content, password);
       onSuccess();
       onClose();
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : String(err);
+      const titleErr = msg.includes('Title already exists')
+        ? t('titleDuplicate')
+        : msg;
+      setErrors({ title: titleErr });
+      titleRef.current?.focus();
     }
-  }, [validate, title, content, password, onSuccess, onClose]);
+  }, [validate, title, content, password, onSuccess, onClose, t]);
 
   // Keyboard shortcuts
   useEffect(() => {

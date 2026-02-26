@@ -28,6 +28,7 @@ export interface TranslationMap {
 
   // ── Validation messages ──────────────────────────────────────────────────
   titleValidation: string;
+  titleDuplicate: string;
   contentValidation: string;
   passwordMismatch: string;
   wrongPassword: string;
@@ -101,6 +102,7 @@ const en: TranslationMap = {
 
   // Validation
   titleValidation: 'Title must be 3–50 characters',
+  titleDuplicate: 'A snippet with this title already exists',
   contentValidation: 'Content must not be empty',
   passwordMismatch: 'Passwords do not match',
   wrongPassword: 'Wrong password',
@@ -173,6 +175,7 @@ const uk: TranslationMap = {
 
   // Validation
   titleValidation: 'Назва має бути від 3 до 50 символів',
+  titleDuplicate: 'Сніпет з такою назвою вже існує',
   contentValidation: 'Вміст не може бути порожнім',
   passwordMismatch: 'Паролі не збігаються',
   wrongPassword: 'Невірний пароль',

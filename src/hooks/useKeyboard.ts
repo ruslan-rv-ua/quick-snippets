@@ -3,6 +3,8 @@ import { ThemeContext } from '../contexts/ThemeContext';
 
 export interface KeyboardHandlers {
   activeIndex: number;
+  /** When true, all keyboard shortcuts are suppressed (e.g. a modal is open). */
+  disabled?: boolean;
   onOpenCreate: () => void;
   onOpenEdit: () => void;
   onOpenDelete: () => void;
@@ -27,6 +29,9 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
+      // Skip all shortcuts when disabled (e.g. a modal is open)
+      if (handlers.disabled) return;
+
       const ctrl = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
       const key = e.key;
