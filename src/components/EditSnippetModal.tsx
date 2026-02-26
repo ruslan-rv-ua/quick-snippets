@@ -112,14 +112,7 @@ export function EditSnippetModal({
       <div className="form-field">
         <label htmlFor="edit-content">{t('contentLabel')}</label>
         {snippet.is_encrypted ? (
-          <div
-            style={{
-              fontStyle: 'italic',
-              borderLeft: '3px solid var(--color-icon-lock)',
-              paddingLeft: '8px',
-              color: 'var(--color-text-muted)',
-            }}
-          >
+          <div className="modal-snippet-name" style={{ fontStyle: 'italic' }}>
             {t('encrypted')}
           </div>
         ) : (

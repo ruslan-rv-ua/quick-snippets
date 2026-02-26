@@ -16,16 +16,6 @@ export function ToastContainer({
       aria-live="polite"
       aria-atomic="true"
       className="toast-container"
-      style={{
-        position: 'fixed',
-        bottom: '16px',
-        right: '16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
-        zIndex: 9999,
-        pointerEvents: 'none',
-      }}
     >
       {toasts.map((t) => (
         <Toast key={t.id} toast={t} onRemove={onRemove} />

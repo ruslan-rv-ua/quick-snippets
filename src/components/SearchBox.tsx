@@ -89,19 +89,34 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
   );
 
   return (
-    <input
-      ref={inputRef}
-      type="search"
-      role="searchbox"
-      aria-label={t('searchPlaceholder')}
-      aria-autocomplete="list"
-      aria-activedescendant={activeSnippetId}
-      autoComplete="off"
-      spellCheck={false}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={handleKeyDown}
-      placeholder={t('searchPlaceholder')}
-    />
+    <div className="search-box">
+      {/* Magnifying-glass icon — decorative, hidden from assistive tech */}
+      <svg
+        className="search-icon"
+        aria-hidden="true"
+        focusable="false"
+        viewBox="0 0 16 16"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <input
+        ref={inputRef}
+        type="search"
+        className="search-input"
+        role="searchbox"
+        aria-label={t('searchPlaceholder')}
+        aria-autocomplete="list"
+        aria-activedescendant={activeSnippetId}
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={t('searchPlaceholder')}
+      />
+    </div>
   );
 });

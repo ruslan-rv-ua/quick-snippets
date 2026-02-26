@@ -54,17 +54,11 @@ export function DeleteConfirmModal({
     <ModalOverlay isOpen={isOpen} onClose={onClose} titleId="delete-modal-title">
       <h2 id="delete-modal-title">{t('deleteSnippet')}</h2>
 
-      <div
-        style={{
-          borderLeft: `3px solid var(--color-destructive)`,
-          paddingLeft: '8px',
-          margin: '12px 0',
-        }}
-      >
+      <div className="delete-preview">
         «{snippetTitle}»
       </div>
 
-      <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+      <p className="settings-hint">
         {t('cannotUndo')}
       </p>
 

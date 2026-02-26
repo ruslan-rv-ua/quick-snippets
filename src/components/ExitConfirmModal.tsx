@@ -49,7 +49,7 @@ export function ExitConfirmModal({
   return (
     <ModalOverlay isOpen={isOpen} onClose={handleClose} titleId="exit-modal-title">
       <h2 id="exit-modal-title">{t('exitConfirmTitle')}</h2>
-      <p style={{ color: 'var(--color-text-muted)', margin: '12px 0' }}>
+      <p className="settings-hint" style={{ margin: '4px 0' }}>
         {t('exitConfirmMessage')}
       </p>
 

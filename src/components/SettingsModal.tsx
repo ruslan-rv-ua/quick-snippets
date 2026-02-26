@@ -90,9 +90,10 @@ export function SettingsModal({
             {/* Theme */}
             <div className="form-field">
               <span>{t('themeLabel')}</span>
-              <div role="group" aria-label={t('themeLabel')}>
+              <div className="toggle-group" role="group" aria-label={t('themeLabel')}>
                 <button
                   type="button"
+                  className="toggle-btn"
                   aria-pressed={theme === 'dark'}
                   onClick={() => { if (theme !== 'dark') toggleTheme(); }}
                 >
@@ -100,6 +101,7 @@ export function SettingsModal({
                 </button>
                 <button
                   type="button"
+                  className="toggle-btn"
                   aria-pressed={theme === 'light'}
                   onClick={() => { if (theme !== 'light') toggleTheme(); }}
                 >
@@ -165,7 +167,7 @@ export function SettingsModal({
               </label>
             </div>
 
-            <p style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+            <p className="settings-hint">
               {t('restartHint')}
             </p>
 

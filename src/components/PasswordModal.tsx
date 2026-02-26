@@ -81,14 +81,7 @@ export function PasswordModal({
     <ModalOverlay isOpen={isOpen} onClose={onClose} titleId="pwd-modal-title">
       <h2 id="pwd-modal-title">{t('enterPassword')}</h2>
 
-      <div
-        style={{
-          borderLeft: '3px solid var(--color-icon-lock)',
-          paddingLeft: '8px',
-          marginBottom: '12px',
-          color: 'var(--color-text-muted)',
-        }}
-      >
+      <div className="modal-snippet-name">
         {snippetTitle}
       </div>
 
