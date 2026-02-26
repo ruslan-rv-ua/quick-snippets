@@ -92,10 +92,22 @@ dev:
 
 # Build frontend and then run Tauri packaging steps (native build)
 build PROFILE="{{PROFILE}}":
-    # Побудувати frontend, потім пакувати через Tauri
+    # Побудувати frontend, потім пакувати через Tauri або зробити cargo build за вказаним профілем
     npm install
     npm run build
-    cd src-tauri; npm run tauri build; cd ..
+    cd src-tauri
+    if ("{{PROFILE}}" -eq "release") {
+        # Tauri packaging (release artifacts / installers)
+        npm run tauri build
+    } else {
+        # Для debug або кастомних профілів викликаємо cargo build з переданим профілем
+        cargo build --profile "{{PROFILE}}"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Output "cargo build --profile {{PROFILE}} failed, falling back to plain cargo build"
+            cargo build
+        }
+    }
+    cd ..
 
 # Run frontend (Vitest) and Rust tests
 test:

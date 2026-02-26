@@ -68,6 +68,11 @@
   just build PROFILE=release ARCH=x64
   ```
 
+Примітка щодо `PROFILE` і `just build`:
+- Для `PROFILE=release` рецепт викликає упаковку через Tauri (`npm run tauri build`) і створює релізні бінарі/інсталятори у `src-tauri/target/release/bundle`.
+- Для інших профілів (наприклад `debug`) `Justfile` тепер викликає `cargo build --profile <PROFILE>` у `src-tauri`, тобто `just build PROFILE=debug` зробить `cargo build --profile debug` (з fallback на `cargo build` при помилці).
+- Якщо потрібно точніше керувати збіркою Rust — відкрийте `src-tauri` і запускайте `cargo build` / `cargo build --release` вручну.
+
 Приклади запуску окремо
 - Frontend only:
   ```powershell
