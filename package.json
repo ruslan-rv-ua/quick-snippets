@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:rust": "cd src-tauri && cargo test -- --test-threads=1",
+    "test:rust": "cd src-tauri && cargo test --lib -- --test-threads=1",
     "test:all": "npm run test && npm run test:rust",
     "lint": "tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings"
   },
