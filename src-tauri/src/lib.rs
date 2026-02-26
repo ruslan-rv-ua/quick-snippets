@@ -189,7 +189,7 @@ pub fn run() {
             {
                 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 
-                let _tray = TrayIconBuilder::new()
+                let _tray = TrayIconBuilder::with_id("main")
                     .icon(icon)
                     .tooltip("QuickSnippets")
                     .menu(&menu)

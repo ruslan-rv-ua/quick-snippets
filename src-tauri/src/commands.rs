@@ -276,7 +276,48 @@ pub mod tauri_commands {
         crate::settings::save_settings_to_path(&new_settings, &path)
             .map_err(|e| e.to_string())?;
         let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        *s = new_settings;
+        *s = new_settings.clone();
+        drop(s);
+
+        // ── Rebuild tray menu with the (possibly new) language ────────────
+        {
+            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+
+            let app = window.app_handle();
+            let effective_lang = if new_settings.language.is_empty() {
+                crate::settings::detect_language()
+            } else {
+                new_settings.language.clone()
+            };
+            let labels = crate::get_tray_menu_labels(&effective_lang);
+
+            if let Some(tray) = app.tray_by_id("main") {
+                let show = MenuItem::with_id(app, "show", labels.show, true, None::<&str>)
+                    .map_err(|e| e.to_string())?;
+                let new_snippet =
+                    MenuItem::with_id(app, "new_snippet", labels.new_snippet, true, None::<&str>)
+                        .map_err(|e| e.to_string())?;
+                let settings_item = MenuItem::with_id(
+                    app,
+                    "settings_item",
+                    labels.settings,
+                    true,
+                    None::<&str>,
+                )
+                .map_err(|e| e.to_string())?;
+                let sep =
+                    PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
+                let quit =
+                    MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)
+                        .map_err(|e| e.to_string())?;
+                if let Ok(menu) =
+                    Menu::with_items(app, &[&show, &new_snippet, &settings_item, &sep, &quit])
+                {
+                    let _ = tray.set_menu(Some(menu));
+                }
+            }
+        }
+
         Ok(())
     }
 
