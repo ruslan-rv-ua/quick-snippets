@@ -82,6 +82,21 @@ pub fn run() {
     use std::sync::{Arc, Mutex};
     use tauri::{Emitter, Manager};
 
+    // Force WebView2/Chromium to always initialise the accessibility
+    // (UIA) tree.  Without this flag the renderer delays accessibility
+    // activation until a screen reader is detected **while the window
+    // is visible**.  When `start_in_tray` is true the window is hidden
+    // at launch, so the detection never happens and the UIA provider
+    // stays dormant — the screen reader sees nothing even after the
+    // window is shown later.
+    //
+    // The env-var must be set *before* the WebView2 runtime is created.
+    // Called before any threads are spawned (single-threaded main).
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--force-renderer-accessibility",
+    );
+
     let db_path = db::get_db_path();
     let conn = db::open_and_init_db(&db_path).expect("Failed to open database");
 
