@@ -78,7 +78,7 @@ pub fn generate_tray_icon_rgba() -> Vec<u8> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::AppState;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use tauri::{Emitter, Manager};
 
@@ -288,6 +288,11 @@ pub fn run() {
                 // Debounce tracker for Moved / Resized saves
                 let last_save: Arc<Mutex<Option<std::time::Instant>>> =
                     Arc::new(Mutex::new(None));
+                // Debounce flag for blur→hide: when the window briefly loses
+                // focus (resize grab, Alt+Space system menu) we must NOT
+                // hide immediately.  Instead we schedule a delayed hide and
+                // cancel it if focus returns within the grace period.
+                let hide_scheduled: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
                 let win_ev = win.clone();
 
                 win.on_window_event(move |event| match event {
@@ -308,15 +313,28 @@ pub fn run() {
                             app_handle.exit(0);
                         }
                     }
-                    tauri::WindowEvent::Focused(false) => {
-                        // If the exit-confirmation dialog is showing, do NOT
-                        // hide — the user needs to interact with it first.
-                        let pending = app_handle
-                            .try_state::<AppState>()
-                            .map(|s| s.is_close_pending())
-                            .unwrap_or(false);
-                        if !pending {
-                            let _ = win_ev.hide();
+                    tauri::WindowEvent::Focused(focused) => {
+                        if *focused {
+                            // Window regained focus — cancel any pending hide.
+                            hide_scheduled.store(false, Ordering::SeqCst);
+                        } else {
+                            // If the exit-confirmation dialog is showing, do NOT
+                            // hide — the user needs to interact with it first.
+                            let pending = app_handle
+                                .try_state::<AppState>()
+                                .map(|s| s.is_close_pending())
+                                .unwrap_or(false);
+                            if !pending {
+                                hide_scheduled.store(true, Ordering::SeqCst);
+                                let flag = hide_scheduled.clone();
+                                let w = win_ev.clone();
+                                std::thread::spawn(move || {
+                                    std::thread::sleep(std::time::Duration::from_millis(200));
+                                    if flag.load(Ordering::SeqCst) {
+                                        let _ = w.hide();
+                                    }
+                                });
+                            }
                         }
                     }
                     tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
