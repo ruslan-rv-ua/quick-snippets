@@ -163,8 +163,20 @@ clean:
 
 # Release = production build + package
 release:
-    # Виклик build в release режимі
-    just build PROFILE=release ARCH={{ARCH}}
+    # Виклик build в release режимі. Якщо SKIP_BUNDLE встановлено (true),
+    # пропускаємо упаковку інсталятора і будуємо лише exe (frontend + cargo --release).
+    @Write-Output "Release: SKIP_BUNDLE=$env:SKIP_BUNDLE"
+    if ($env:SKIP_BUNDLE -and $env:SKIP_BUNDLE -ne 'false') {
+        Write-Output 'SKIP_BUNDLE=true — збираємо тільки exe (frontend + cargo --release)'
+        npm install
+        npm run build
+        cd src-tauri
+        cargo build --release
+        cd ..
+    } else {
+        # стандартний pipeline: викликає рецепт build (який запустить tauri build для release)
+        just build PROFILE=release ARCH={{ARCH}}
+    }
 
 # Quick static checks
 check:
