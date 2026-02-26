@@ -368,11 +368,11 @@ describe('App', () => {
 - [x] `document.documentElement.lang` оновлюється
 
 ### Поведінка вікна
-- [ ] Blur → вікно ховається; PasswordModal закривається; CreateModal/EditModal/SettingsModal **не закриваються**
-- [ ] × при `confirm_on_close=true` → ExitConfirmModal
-- [ ] Контекстне меню (правий клік) → не з'являється
+- [x] Blur → вікно ховається; PasswordModal закривається; CreateModal/EditModal/SettingsModal **не закриваються**
+- [x] × при `confirm_on_close=true` → ExitConfirmModal
+- [x] Контекстне меню (правий клік) → не з'являється
 
 ### Accessibility
 - [x] Windows Narrator оголошує назву + «зашифрований» при навігації по списку
 - [x] Ctrl+Shift+Space → Narrator оголошує «{назва}, {тип}, {N} з {total}»
-- [ ] CreateModal → Narrator оголошує заголовок; після валідаційної помилки — помилку
+- [x] CreateModal → Narrator оголошує заголовок; після валідаційної помилки — помилку
