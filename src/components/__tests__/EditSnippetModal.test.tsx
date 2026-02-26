@@ -76,13 +76,17 @@ describe('EditSnippetModal', () => {
     });
   });
 
-  it('validates content on save (unencrypted only)', async () => {
+  it('validates content on save (unencrypted only) and focuses textarea', async () => {
     renderModal(plainSnippet);
     fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
-    fireEvent.change(screen.getByLabelText(/content|вміст/i), { target: { value: '' } });
+    const content = screen.getByLabelText(/content|вміст/i);
+    fireEvent.change(content, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(document.activeElement).toBe(content);
+      const err = screen.getByText(/вміст|content/i).closest('span');
+      expect(err).toHaveAttribute('aria-live', 'assertive');
     });
   });
 

@@ -49,21 +49,27 @@ describe('PasswordModal', () => {
     });
   });
 
-  it('shows error for empty password submission', async () => {
+  it('shows error for empty password submission and refocuses field', async () => {
     renderModal();
     fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      const alert = screen.getByRole('alert');
+      expect(alert).toBeInTheDocument();
+      expect(document.activeElement).toBe(screen.getByLabelText(/^(password|пароль)$/i));
+      expect(alert).toHaveAttribute('aria-live', 'assertive');
     });
   });
 
-  it('shows "wrong password" error and clears field', async () => {
+  it('shows "wrong password" error, clears and refocuses field', async () => {
     mockInvoke.mockRejectedValue(new Error('wrong password'));
     renderModal();
     fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      const alert = screen.getByRole('alert');
+      expect(alert).toBeInTheDocument();
+      expect(alert).toHaveAttribute('aria-live', 'assertive');
+      expect(document.activeElement).toBe(screen.getByLabelText(/^(password|пароль)$/i));
     });
     const pwdField = screen.getByLabelText(/^(password|пароль)$/i) as HTMLInputElement;
     expect(pwdField.value).toBe('');

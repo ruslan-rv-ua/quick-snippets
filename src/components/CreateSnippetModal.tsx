@@ -27,6 +27,8 @@ export function CreateSnippetModal({
 }: CreateSnippetModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const titleRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -68,8 +70,18 @@ export function CreateSnippetModal({
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      // Focus first invalid field
-      if (errs.title) titleRef.current?.focus();
+      // Focus first invalid field so that screen readers will announce the
+      // associated message (aria-describedby) instead of merely saying
+      // “warning” which is what some assistive tech does when aria-invalid
+      // toggles while focus remains elsewhere.
+      if (errs.title) {
+        titleRef.current?.focus();
+      } else if (errs.content) {
+        contentRef.current?.focus();
+      } else if (errs.password) {
+        // password mismatch – move focus to the confirmation input
+        confirmRef.current?.focus();
+      }
       return;
     }
     try {
@@ -119,7 +131,13 @@ export function CreateSnippetModal({
           aria-describedby={submitted && errors.title ? 'create-title-err' : undefined}
         />
         {submitted && errors.title && (
-          <span id="create-title-err" role="alert" className="field-error">
+          <span
+            id="create-title-err"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="field-error"
+          >
             {errors.title}
           </span>
         )}
@@ -128,6 +146,7 @@ export function CreateSnippetModal({
       <div className="form-field">
         <label htmlFor="create-content">{t('contentLabel')}</label>
         <textarea
+          ref={contentRef}
           id="create-content"
           maxLength={65536}
           rows={5}
@@ -137,7 +156,13 @@ export function CreateSnippetModal({
           aria-describedby={submitted && errors.content ? 'create-content-err' : undefined}
         />
         {submitted && errors.content && (
-          <span id="create-content-err" role="alert" className="field-error">
+          <span
+            id="create-content-err"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="field-error"
+          >
             {errors.content}
           </span>
         )}
@@ -156,6 +181,7 @@ export function CreateSnippetModal({
       <div className="form-field">
         <label htmlFor="create-confirm">{t('confirmPasswordLabel')}</label>
         <input
+          ref={confirmRef}
           id="create-confirm"
           type="password"
           value={confirmPassword}
@@ -164,7 +190,13 @@ export function CreateSnippetModal({
           aria-describedby={submitted && errors.password ? 'create-confirm-err' : undefined}
         />
         {submitted && errors.password && (
-          <span id="create-confirm-err" role="alert" className="field-error">
+          <span
+            id="create-confirm-err"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="field-error"
+          >
             {errors.password}
           </span>
         )}

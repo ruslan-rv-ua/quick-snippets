@@ -29,6 +29,7 @@ export function EditSnippetModal({
 }: EditSnippetModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const titleRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -59,7 +60,11 @@ export function EditSnippetModal({
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      if (errs.title) titleRef.current?.focus();
+      if (errs.title) {
+        titleRef.current?.focus();
+      } else if (errs.content) {
+        contentRef.current?.focus();
+      }
       return;
     }
     try {
@@ -108,7 +113,13 @@ export function EditSnippetModal({
           aria-describedby={submitted && errors.title ? 'edit-title-err' : undefined}
         />
         {submitted && errors.title && (
-          <span id="edit-title-err" role="alert" className="field-error">
+          <span
+            id="edit-title-err"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="field-error"
+          >
             {errors.title}
           </span>
         )}
@@ -123,6 +134,7 @@ export function EditSnippetModal({
         ) : (
           <>
             <textarea
+              ref={contentRef}
               id="edit-content"
               maxLength={65536}
               rows={5}
@@ -132,7 +144,13 @@ export function EditSnippetModal({
               aria-describedby={submitted && errors.content ? 'edit-content-err' : undefined}
             />
             {submitted && errors.content && (
-              <span id="edit-content-err" role="alert" className="field-error">
+              <span
+                id="edit-content-err"
+                role="alert"
+                aria-live="assertive"
+                aria-atomic="true"
+                className="field-error"
+              >
                 {errors.content}
               </span>
             )}

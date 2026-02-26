@@ -66,7 +66,7 @@ describe('CreateSnippetModal', () => {
     });
   });
 
-  it('validates password match on save click', async () => {
+  it('validates password match on save click and focuses confirm field', async () => {
     renderModal();
     fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
     fireEvent.change(screen.getByLabelText(/^content|^вміст/i), { target: { value: 'some content' } });
@@ -76,7 +76,13 @@ describe('CreateSnippetModal', () => {
     fireEvent.change(confirmPwd, { target: { value: 'pass2' } });
     fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
     await waitFor(() => {
+      // an alert element should appear
       expect(screen.getByRole('alert')).toBeInTheDocument();
+      // focus should land on the confirmation input so that AT reads the message
+      expect(document.activeElement).toBe(confirmPwd);
+      // error span has aria-live so AT can announce text
+      const err = screen.getByText(/парол/i).closest('span');
+      expect(err).toHaveAttribute('aria-live', 'assertive');
     });
   });
 
@@ -94,11 +100,16 @@ describe('CreateSnippetModal', () => {
     });
   });
 
-  it('error elements have role="alert"', async () => {
+  it('error elements have role="alert" and are live regions', async () => {
     renderModal();
     fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
     await waitFor(() => {
-      expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+      const alerts = screen.getAllByRole('alert');
+      expect(alerts.length).toBeGreaterThan(0);
+      alerts.forEach((el) => {
+        expect(el).toHaveAttribute('aria-live', 'assertive');
+        expect(el).toHaveAttribute('aria-atomic', 'true');
+      });
     });
   });
 

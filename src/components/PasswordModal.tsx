@@ -42,6 +42,9 @@ export function PasswordModal({
   const handleSubmit = useCallback(async () => {
     if (!password) {
       setErrorMsg(t('enterPassword'));
+      // move focus back so screen reader announces the message instead of just
+      // reading the ‘warning’ cue that aria-invalid triggers
+      setTimeout(() => pwdRef.current?.focus(), 10);
       return;
     }
     setLoading(true);
@@ -104,7 +107,13 @@ export function PasswordModal({
           aria-describedby={errorMsg ? 'pwd-error' : undefined}
         />
         {errorMsg && (
-          <span id="pwd-error" role="alert" className="field-error">
+          <span
+            id="pwd-error"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            className="field-error"
+          >
             {errorMsg}
           </span>
         )}
