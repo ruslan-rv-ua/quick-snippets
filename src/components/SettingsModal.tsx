@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useCallback,
   useContext,
+  useRef,
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
@@ -16,6 +17,10 @@ export interface SettingsModalProps {
   onClose: () => void;
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), ' +
+  'input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function SettingsModal({
   isOpen,
   onClose,
@@ -27,6 +32,7 @@ export function SettingsModal({
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -39,6 +45,15 @@ export function SettingsModal({
       })
       .catch(() => setLoading(false));
   }, [isOpen]);
+
+  // After async load resolves, move focus to the first interactive element
+  useEffect(() => {
+    if (!isOpen || loading) return;
+    const el = dialogRef.current;
+    if (!el) return;
+    const first = el.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? el).focus();
+  }, [isOpen, loading]);
 
   const handleSave = useCallback(async () => {
     if (!settings || saving) return;
@@ -81,6 +96,7 @@ export function SettingsModal({
       titleId="settings-modal-title"
       busy={loading}
     >
+      <div ref={dialogRef}>
       <h2 id="settings-modal-title">{t('settingsTitle')}</h2>
 
       {loading ? (
@@ -186,6 +202,7 @@ export function SettingsModal({
             </div>
           </>
         )}
+      </div>
     </ModalOverlay>
   );
 }

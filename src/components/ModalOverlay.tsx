@@ -36,11 +36,15 @@ export function ModalOverlay({
     if (!isOpen) return;
     previousFocusRef.current = document.activeElement as HTMLElement;
 
-    // Focus first focusable element
+    // Focus first focusable element; fall back to the dialog itself
     const el = dialogRef.current;
     if (el) {
       const focusable = getFocusable(el);
-      if (focusable.length > 0) focusable[0].focus();
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      } else {
+        el.focus();
+      }
     }
 
     return () => {
@@ -99,6 +103,7 @@ export function ModalOverlay({
         aria-labelledby={titleId}
         aria-busy={busy ? 'true' : undefined}
         className="modal-dialog"
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
         // Stop clicks inside dialog from closing the overlay
         onClick={(e) => e.stopPropagation()}
