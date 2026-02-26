@@ -7,12 +7,16 @@ use rusqlite::Connection;
 // AppState — defined at module level so it is accessible in tests
 // ---------------------------------------------------------------------------
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 pub struct AppState {
     pub conn: Mutex<rusqlite::Connection>,
     pub settings: Mutex<crate::settings::Settings>,
     pub pending_notification: Mutex<Option<String>>,
+    /// When `true`, the exit-confirmation dialog is visible — blur must NOT
+    /// hide the window, otherwise the user cannot click Cancel.
+    pub close_confirmation_pending: AtomicBool,
 }
 
 impl AppState {
@@ -27,6 +31,16 @@ impl AppState {
     pub fn take_pending_notification(&self) -> Option<String> {
         self.pending_notification.lock().ok().and_then(|mut n| n.take())
     }
+
+    /// Mark that exit-confirmation dialog is visible (blur must not hide).
+    pub fn set_close_pending(&self, pending: bool) {
+        self.close_confirmation_pending.store(pending, Ordering::SeqCst);
+    }
+
+    /// Check whether exit-confirmation dialog is visible.
+    pub fn is_close_pending(&self) -> bool {
+        self.close_confirmation_pending.load(Ordering::SeqCst)
+    }
 }
 
 #[cfg(test)]
@@ -38,6 +52,7 @@ impl AppState {
             conn: Mutex::new(conn),
             settings: Mutex::new(crate::settings::Settings::default()),
             pending_notification: Mutex::new(None),
+            close_confirmation_pending: AtomicBool::new(false),
         }
     }
 }
@@ -263,6 +278,11 @@ pub mod tauri_commands {
     #[tauri::command]
     pub fn quit_app(app: AppHandle) {
         app.exit(0);
+    }
+
+    #[tauri::command]
+    pub fn cancel_close(state: State<AppState>) {
+        state.set_close_pending(false);
     }
 }
 

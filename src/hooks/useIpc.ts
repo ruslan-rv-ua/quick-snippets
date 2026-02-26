@@ -72,3 +72,12 @@ export function quitApp(): Promise<void> {
   return invoke<void>('quit_app');
 }
 
+/**
+ * Reset the close-confirmation-pending flag in the Rust backend.
+ * Must be called when the user dismisses (cancels) the exit dialog,
+ * so that blur-to-hide behaviour resumes normally.
+ */
+export function cancelClose(): Promise<void> {
+  return invoke<void>('cancel_close');
+}
+

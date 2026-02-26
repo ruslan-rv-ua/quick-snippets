@@ -14,6 +14,7 @@ import {
   getSnippetById,
   activateSnippet,
   getPendingNotification,
+  cancelClose,
 } from './hooks/useIpc';
 
 import { SearchBox } from './components/SearchBox';
@@ -300,7 +301,10 @@ function AppInner(): React.ReactElement {
 
       <ExitConfirmModal
         isOpen={showExit}
-        onClose={() => setShowExit(false)}
+        onClose={() => {
+          setShowExit(false);
+          cancelClose().catch(() => void 0);
+        }}
       />
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />

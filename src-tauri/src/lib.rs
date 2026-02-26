@@ -78,6 +78,7 @@ pub fn generate_tray_icon_rgba() -> Vec<u8> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::AppState;
+    use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use tauri::{Emitter, Manager};
 
@@ -105,6 +106,7 @@ pub fn run() {
             conn: Mutex::new(conn),
             settings: Mutex::new(app_settings),
             pending_notification: Mutex::new(None),
+            close_confirmation_pending: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             commands::tauri_commands::search_snippets,
@@ -117,6 +119,7 @@ pub fn run() {
             commands::tauri_commands::save_settings,
             commands::tauri_commands::get_pending_notification,
             commands::tauri_commands::quit_app,
+            commands::tauri_commands::cancel_close,
         ])
         .setup(|app| {
             let win = app
@@ -280,13 +283,26 @@ pub fn run() {
                             .unwrap_or(true);
                         if confirm {
                             api.prevent_close();
+                            // Mark that exit-confirmation dialog is visible so
+                            // the Focused(false) handler does NOT hide the window.
+                            if let Some(state) = app_handle.try_state::<AppState>() {
+                                state.set_close_pending(true);
+                            }
                             let _ = win_ev.emit("window:close-request", ());
                         } else {
                             app_handle.exit(0);
                         }
                     }
                     tauri::WindowEvent::Focused(false) => {
-                        let _ = win_ev.hide();
+                        // If the exit-confirmation dialog is showing, do NOT
+                        // hide — the user needs to interact with it first.
+                        let pending = app_handle
+                            .try_state::<AppState>()
+                            .map(|s| s.is_close_pending())
+                            .unwrap_or(false);
+                        if !pending {
+                            let _ = win_ev.hide();
+                        }
                     }
                     tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                         // Debounce: save at most once per 500 ms
@@ -388,5 +404,22 @@ mod tests {
             Some("Warning message".to_string())
         );
         assert_eq!(state.take_pending_notification(), None); // one-shot
+    }
+
+    // === Close confirmation pending flag ===
+
+    #[test]
+    fn test_close_pending_default_false() {
+        let state = AppState::new_for_test();
+        assert!(!state.is_close_pending());
+    }
+
+    #[test]
+    fn test_close_pending_set_and_cancel() {
+        let state = AppState::new_for_test();
+        state.set_close_pending(true);
+        assert!(state.is_close_pending());
+        state.set_close_pending(false);
+        assert!(!state.is_close_pending());
     }
 }
