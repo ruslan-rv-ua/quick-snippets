@@ -33,8 +33,12 @@ export function ExitConfirmModal({
         return;
       }
       if (e.key === 'Enter') {
-        e.preventDefault();
-        void quitApp();
+        // Only quit when Cancel is NOT the focused element —
+        // if Cancel is focused, let the browser fire its own click.
+        if (document.activeElement !== cancelRef.current) {
+          e.preventDefault();
+          void quitApp();
+        }
       }
     }
     document.addEventListener('keydown', handler);

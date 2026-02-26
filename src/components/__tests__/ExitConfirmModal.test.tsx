@@ -34,13 +34,38 @@ describe('ExitConfirmModal', () => {
     expect(document.activeElement).toBe(cancelBtn);
   });
 
-  it('Enter key calls quit_app', async () => {
+  it('Enter key calls quit_app when Cancel is NOT focused', async () => {
     mockInvoke.mockResolvedValue(undefined);
-    renderModal();
+    // Render with isOpen=false so the cancel button is never auto-focused
+    const { rerender } = render(
+      <LanguageProvider>
+        <ExitConfirmModal isOpen={false} onClose={vi.fn()} />
+      </LanguageProvider>,
+    );
+    // Open modal but don't wait for the focus timeout — activeElement stays elsewhere
+    rerender(
+      <LanguageProvider>
+        <ExitConfirmModal isOpen={true} onClose={vi.fn()} />
+      </LanguageProvider>,
+    );
+    // Blur cancel so it's definitely not active
+    (document.activeElement as HTMLElement | null)?.blur();
     fireEvent.keyDown(document, { key: 'Enter' });
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('quit_app');
     });
+  });
+
+  it('Enter key does NOT call quit_app when Cancel button is focused', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    renderModal();
+    const cancelBtn = screen.getByRole('button', { name: /cancel|скасувати/i });
+    cancelBtn.focus();
+    expect(document.activeElement).toBe(cancelBtn);
+    fireEvent.keyDown(document, { key: 'Enter' });
+    // Allow any async IPC calls to settle
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockInvoke).not.toHaveBeenCalledWith('quit_app');
   });
 
   it('Escape closes modal without hiding window', () => {
