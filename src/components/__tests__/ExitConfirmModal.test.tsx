@@ -13,7 +13,6 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof ExitConfirmM
       <ExitConfirmModal
         isOpen={true}
         onClose={vi.fn()}
-        onHideWindow={vi.fn()}
         {...overrides}
       />
     </LanguageProvider>,
@@ -44,22 +43,18 @@ describe('ExitConfirmModal', () => {
     });
   });
 
-  it('Escape closes modal and calls onHideWindow', () => {
+  it('Escape closes modal without hiding window', () => {
     const onClose = vi.fn();
-    const onHideWindow = vi.fn();
-    renderModal({ onClose, onHideWindow });
+    renderModal({ onClose });
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
-    expect(onHideWindow).toHaveBeenCalled();
   });
 
-  it('Cancel button closes modal and calls onHideWindow', () => {
+  it('Cancel button closes modal without hiding window', () => {
     const onClose = vi.fn();
-    const onHideWindow = vi.fn();
-    renderModal({ onClose, onHideWindow });
+    renderModal({ onClose });
     fireEvent.click(screen.getByRole('button', { name: /cancel|скасувати/i }));
     expect(onClose).toHaveBeenCalled();
-    expect(onHideWindow).toHaveBeenCalled();
   });
 
   it('Quit button calls quit_app IPC', async () => {

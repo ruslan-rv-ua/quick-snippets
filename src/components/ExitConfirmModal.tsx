@@ -6,13 +6,11 @@ import { quitApp } from '../hooks/useIpc';
 export interface ExitConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onHideWindow: () => void;
 }
 
 export function ExitConfirmModal({
   isOpen,
   onClose,
-  onHideWindow,
 }: ExitConfirmModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -25,8 +23,7 @@ export function ExitConfirmModal({
 
   const handleClose = useCallback(() => {
     onClose();
-    onHideWindow();
-  }, [onClose, onHideWindow]);
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;

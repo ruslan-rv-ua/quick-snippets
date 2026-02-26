@@ -301,7 +301,6 @@ function AppInner(): React.ReactElement {
       <ExitConfirmModal
         isOpen={showExit}
         onClose={() => setShowExit(false)}
-        onHideWindow={hideWindow}
       />
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
