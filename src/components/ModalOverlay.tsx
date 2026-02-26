@@ -54,6 +54,26 @@ export function ModalOverlay({
     };
   }, [isOpen]);
 
+  // Re-focus dialog when the window regains focus (e.g. restored from tray)
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleWindowFocus() {
+      const el = dialogRef.current;
+      if (!el) return;
+      // If focus fell outside the dialog, pull it back
+      if (!el.contains(document.activeElement)) {
+        const focusable = getFocusable(el);
+        if (focusable.length > 0) {
+          focusable[0].focus();
+        } else {
+          el.focus();
+        }
+      }
+    }
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, [isOpen]);
+
   // Focus trap
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {

@@ -151,7 +151,8 @@ function AppInner(): React.ReactElement {
     // Belt-and-suspenders alongside the native `window focus` handler.
     const unlisten4 = listen('window:show', () => {
       setRefreshTick((n) => n + 1);
-      setTimeout(() => searchRef.current?.focus(), 60);
+      // focusSearch is not accessible here (stale closure), so
+      // rely on the native 'focus' handler that fires right after show.
     });
 
     return () => {
