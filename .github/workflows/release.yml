@@ -26,7 +26,7 @@
 #   Procedure:
 #     1. `npm ci`           → install JS deps
 #     2. `npm run build`    → compile frontend to dist/ (Tauri embeds it)
-#     3. `cargo build --release` in src-tauri/ → produce .exe + WebView2Loader.dll
+#     3. `cargo build --release` in src-tauri/ → produce quick-snippets.exe
 #
 # RELEASE ARTIFACTS
 #   quick-snippets-windows-x64-v{version}.zip   — portable archive
@@ -143,13 +143,39 @@ jobs:
       # ── 7. Rust release build ─────────────────────────────────────────────────
       # Produces two files we need:
       #   src-tauri/target/release/quick-snippets.exe   — main binary
-      #   src-tauri/target/release/WebView2Loader.dll   — WebView2 runtime loader
+      #   src-tauri/target/release/WebView2Loader.dll   — WebView2 bootstrapper
+      #
+      # IMPORTANT: `cargo build --release` compiles the `webview2-com-sys` crate
+      # whose build script downloads and unpacks WebView2Loader.dll into a
+      # hashed build-script output directory:
+      #   target/release/build/webview2-com-sys-{hash}/out/x64/WebView2Loader.dll
+      # The Tauri CLI normally copies this DLL to target/release/ automatically,
+      # but since we invoke cargo directly we do it ourselves in the next step.
       #
       # Release profile (defined in Cargo.toml) applies:
       #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "s"
       - name: Build Rust binary (release profile)
         working-directory: src-tauri
         run: cargo build --release
+
+      # ── 7b. Copy WebView2Loader.dll to target/release/ ───────────────────────
+      # `cargo build --release` places WebView2Loader.dll inside a hashed
+      # build-script output directory under target/release/build/.  We glob
+      # for the x64 variant and copy it next to the exe so the app can launch.
+      # Without this DLL alongside the exe, WebView2 fails to initialise.
+      - name: Copy WebView2Loader.dll to release dir
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem `
+            'src-tauri/target/release/build/webview2-com-sys-*/out/x64/WebView2Loader.dll' `
+            | Select-Object -First 1
+          if (-not $dll) {
+            Write-Error 'WebView2Loader.dll not found in build output'
+            exit 1
+          }
+          Copy-Item $dll.FullName 'src-tauri/target/release/WebView2Loader.dll'
+          $sizeMB = [Math]::Round($dll.Length / 1MB, 2)
+          Write-Host "Copied WebView2Loader.dll from: $($dll.FullName)  ($sizeMB MB)"
 
       # ── 8. Verify artifacts ───────────────────────────────────────────────────
       # Fast sanity check — fail early with a clear message if either file is
@@ -173,7 +199,7 @@ jobs:
           if (-not $allOk) { exit 1 }
 
       # ── 9. Package ZIP archive ────────────────────────────────────────────────
-      # Archive contains only the two portable files needed to run the app.
+      # Archive contains the two portable files needed to run the app.
       # Naming convention: quick-snippets-windows-x64-v{version}.zip
       #   • `windows-x64` — platform/arch (future-proof if arm64 is ever added)
       #   • `v{version}`  — matches the git tag; makes download URLs predictable:
