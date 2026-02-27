@@ -68,6 +68,20 @@ describe('SearchBox', () => {
     expect(onActiveIndexChange).toHaveBeenCalledWith(0);
   });
 
+  it('Home calls onActiveIndexChange with first index', () => {
+    const onActiveIndexChange = vi.fn();
+    renderSearchBox({ snippets: mockSnippets, activeIndex: 1, onActiveIndexChange });
+    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Home' });
+    expect(onActiveIndexChange).toHaveBeenCalledWith(0);
+  });
+
+  it('End calls onActiveIndexChange with last index', () => {
+    const onActiveIndexChange = vi.fn();
+    renderSearchBox({ snippets: mockSnippets, activeIndex: 0, onActiveIndexChange });
+    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'End' });
+    expect(onActiveIndexChange).toHaveBeenCalledWith(2);
+  });
+
   it('ArrowDown at last item does not wrap (stays at last)', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 2, onActiveIndexChange });

@@ -11,6 +11,8 @@ export interface KeyboardHandlers {
   onOpenSettings: () => void;
   onFocusSearch: () => void;
   onAnnounce: () => void;
+  onSelectFirst?: () => void;
+  onSelectLast?: () => void;
 }
 
 /**
@@ -100,6 +102,17 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
         if (tag !== 'input' && tag !== 'textarea') {
           e.preventDefault();
           handlers.onFocusSearch();
+        }
+        return;
+      }
+
+      // Home / End → jump to first / last snippet (only when not in an input)
+      if (!ctrl && !shift && (key === 'Home' || key === 'End')) {
+        const tag = (e.target as HTMLElement).tagName.toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea') {
+          e.preventDefault();
+          if (key === 'Home') handlers.onSelectFirst && handlers.onSelectFirst();
+          if (key === 'End') handlers.onSelectLast && handlers.onSelectLast();
         }
         return;
       }

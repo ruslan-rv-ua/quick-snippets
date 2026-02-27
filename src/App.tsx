@@ -234,6 +234,8 @@ function AppInner(): React.ReactElement {
     onOpenSettings: () => setShowSettings(true),
     onFocusSearch: () => searchRef.current?.focus(),
     onAnnounce: handleAnnounce,
+    onSelectFirst: () => setActiveIndex(snippets.length > 0 ? 0 : -1),
+    onSelectLast: () => setActiveIndex(snippets.length > 0 ? snippets.length - 1 : -1),
   });
 
   return (

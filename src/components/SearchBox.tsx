@@ -61,6 +61,18 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
           }
           break;
         }
+        case 'Home': {
+          e.preventDefault();
+          if (snippets.length === 0) return;
+          onActiveIndexChange(0);
+          break;
+        }
+        case 'End': {
+          e.preventDefault();
+          if (snippets.length === 0) return;
+          onActiveIndexChange(snippets.length - 1);
+          break;
+        }
         case 'Enter': {
           if (activeIndex >= 0 && snippets[activeIndex]) {
             e.preventDefault();
