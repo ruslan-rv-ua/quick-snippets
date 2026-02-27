@@ -34,6 +34,10 @@ export function SnippetList({
   // Announce first result's accessible label after 200ms delay,
   // or `noResults` when there are no snippets.
   useEffect(() => {
+    // Clear the live region first to force AT to re-announce even when
+    // the announced string equals the previous one (many screen readers
+    // ignore identical consecutive messages).
+    setLiveText('');
     const id = setTimeout(() => {
       if (snippets.length > 0) {
         const firstLabel = tf.snippetLabel(snippets[0].title, snippets[0].is_encrypted);

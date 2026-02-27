@@ -64,4 +64,52 @@ describe('SnippetList', () => {
     expect(liveText).toContain('Alpha');
     vi.useRealTimers();
   });
+
+  it('re-announces first title when snippets are replaced with same first title', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <LanguageProvider>
+        <SnippetList
+          snippets={mockSnippets}
+          activeIndex={-1}
+          query="a"
+          onActiveIndexChange={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+
+    // initial announce after delay
+    act(() => { vi.advanceTimersByTime(200); });
+    const firstAnnounce = document.querySelector('[aria-live="polite"]')?.textContent || '';
+    expect(firstAnnounce).toContain('Alpha');
+
+    // Rerender with a new array instance but same first title — live region
+    // should be cleared immediately and then re-populated after delay.
+    const newSnippets = [
+      { id: 3, title: 'Alpha', score: 1, matched_positions: [], is_encrypted: false },
+      { id: 4, title: 'Gamma', score: 0.8, matched_positions: [], is_encrypted: false },
+    ];
+
+    rerender(
+      <LanguageProvider>
+        <SnippetList
+          snippets={newSnippets}
+          activeIndex={-1}
+          query="ab"
+          onActiveIndexChange={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+
+    // Immediately after prop change live region must be cleared
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('');
+
+    // After delay it should announce the first title again
+    act(() => { vi.advanceTimersByTime(200); });
+    const secondAnnounce = document.querySelector('[aria-live="polite"]')?.textContent || '';
+    expect(secondAnnounce).toContain('Alpha');
+    vi.useRealTimers();
+  });
 });
