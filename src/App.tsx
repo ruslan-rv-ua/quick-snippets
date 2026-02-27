@@ -215,7 +215,7 @@ function AppInner(): React.ReactElement {
     const active = snippets[activeIndex];
     if (active) {
       addToast(
-        `${active.title}${active.is_encrypted ? ', ' + t('encrypted') : ''}, ${activeIndex + 1} of ${snippets.length}`,
+        `${active.title}${active.is_encrypted ? ', ' + t('encrypted') : ''}, ${activeIndex + 1} ${t('of')} ${snippets.length}`,
         'info',
         3000,
       );

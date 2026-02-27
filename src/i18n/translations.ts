@@ -25,6 +25,8 @@ export interface TranslationMap {
   passwordLabel: string;
   confirmPasswordLabel: string;
   encrypted: string;
+  /** Small helper word used in aria announcements, e.g. "1 of 41". */
+  of: string;
 
   // ── Validation messages ──────────────────────────────────────────────────
   titleValidation: string;
@@ -100,6 +102,8 @@ const en: TranslationMap = {
   confirmPasswordLabel: 'Confirm password',
   encrypted: 'Encrypted',
 
+  of: 'of',
+
   // Validation
   titleValidation: 'Title must be 3–50 characters',
   titleDuplicate: 'A snippet with this title already exists',
@@ -172,6 +176,8 @@ const uk: TranslationMap = {
   passwordLabel: 'Пароль',
   confirmPasswordLabel: 'Підтвердити пароль',
   encrypted: 'Зашифровано',
+
+  of: 'з',
 
   // Validation
   titleValidation: 'Назва має бути від 3 до 50 символів',
