@@ -143,6 +143,71 @@
   powershell -File scripts/final-checks.ps1
   ```
 
+Release Process
+---------------
+
+### Version management
+
+Single source of truth: **`src-tauri/Cargo.toml`** (`[package].version`).
+When cutting a release, bump the version in all three places and keep them in sync:
+
+```
+src-tauri/Cargo.toml   ← authoritative source (binary embeds this)
+tauri.conf.json         ← "version" field
+package.json            ← "version" field
+```
+
+### Git Flow release procedure
+
+```powershell
+# 1. Start a release branch from develop
+git flow release start 1.2.3
+
+# 2. Bump version in all three files (see above), commit
+git add src-tauri/Cargo.toml tauri.conf.json package.json
+git commit -m "chore: bump version to 1.2.3"
+
+# 3. Finish the release (merges to main + develop, creates tag v1.2.3)
+git flow release finish 1.2.3
+
+# 4. Push main, develop, and the tag
+git push origin main develop --tags
+```
+
+The push to `main` automatically triggers `.github/workflows/release.yml`.
+
+### What the release workflow does
+
+1. Reads the version from `src-tauri/Cargo.toml`
+2. Builds the frontend with `npm run build` (creates `dist/` for Tauri to embed)
+3. Builds the Rust binary with `cargo build --release` in `src-tauri/`
+   - Uses direct `cargo` build — **not** `npm run tauri build` — to avoid
+     triggering the Wix/NSIS bundler (we need only the raw `.exe`, not an installer)
+4. Packages `quick-snippets.exe` + `WebView2Loader.dll` into a ZIP:
+   `quick-snippets-windows-x64-v{version}.zip`
+5. Generates a SHA-256 checksum file
+6. Creates (or updates) a GitHub Release tagged `v{version}` with both files
+
+### Re-running a failed release
+
+If the automatic trigger failed (e.g. transient runner error) and no new commit
+is needed, re-trigger manually via the GitHub Actions UI:
+- Go to **Actions → Release → Run workflow**
+- Leave `version_override` empty to re-read from `Cargo.toml`, or fill it in if
+  needed (format: `1.2.3`, no `v` prefix)
+
+### Planned: Scoop bucket workflow
+
+A future `release-scoop.yml` workflow will listen for the `release` event and
+update a Scoop manifest.  The download URL follows a predictable pattern:
+
+```
+https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-windows-x64-v{version}.zip
+```
+
+The `.sha256` file attached to every release contains the checksum in
+`sha256sum`-compatible format, ready for the Scoop manifest `hash` field.
+
 TDD та безпека
 - Проєкт дотримується TDD: пишіть тести перед фічами.
 - Rust тести для DB використовують in-memory DB (`Connection::open_in_memory()`).

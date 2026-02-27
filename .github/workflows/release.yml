@@ -1,0 +1,266 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# release.yml — Automatic release workflow for QuickSnippets
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# OVERVIEW
+#   Builds the Windows x64 portable binary and publishes a GitHub Release with
+#   a ZIP archive and a SHA-256 checksum file.
+#
+# TRIGGERS
+#   • Push to `main`      — fires automatically after `git flow release finish`
+#                           merges the release branch into main.
+#   • workflow_dispatch   — manual re-trigger (e.g. if the automatic run failed
+#                           after the push but the issue has been resolved).
+#
+# VERSIONING — SINGLE SOURCE OF TRUTH
+#   Version is read from `src-tauri/Cargo.toml` (the `[package].version` field).
+#   Rationale: the Rust binary embeds the version at compile time; Cargo.toml is
+#   therefore the authoritative source.  `tauri.conf.json` and `package.json`
+#   MUST mirror this value — keep all three in sync when cutting a release branch.
+#
+# BUILD STRATEGY
+#   We use `cargo build --release` DIRECTLY instead of `npm run tauri build`.
+#   Why: `tauri.conf.json` has `"bundle": { "active": true, "targets": "all" }`
+#   which would invoke Wix/NSIS to produce MSI/NSIS installers.  The portability
+#   model of this app needs only the raw .exe — no installer.
+#   Procedure:
+#     1. `npm ci`           → install JS deps
+#     2. `npm run build`    → compile frontend to dist/ (Tauri embeds it)
+#     3. `cargo build --release` in src-tauri/ → produce .exe + WebView2Loader.dll
+#
+# RELEASE ARTIFACTS
+#   quick-snippets-windows-x64-v{version}.zip   — portable archive
+#   quick-snippets-windows-x64-v{version}.zip.sha256  — SHA-256 checksum
+#
+# SCOOP BUCKET INTEGRATION (planned)
+#   A separate workflow (release-scoop.yml) will listen to the `release` event
+#   published here and update a Scoop manifest.  The download URL is predictable:
+#     https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-windows-x64-v{version}.zip
+#   The SHA-256 checksum file lets the Scoop bucket workflow populate the `hash`
+#   field without re-downloading the ZIP.
+#
+# PERMISSIONS
+#   Only `contents: write` is required to create releases and upload assets.
+#   All other permissions are left at the default (`read` for public repos,
+#   `none` for private) — principle of least privilege.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: >
+          Optional: override the version string (e.g. 1.2.3, without the "v"
+          prefix). Leave empty to read from src-tauri/Cargo.toml automatically.
+          Use this only when the automatic trigger failed and the issue has been
+          fixed without a new commit (so you can re-publish the same version).
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      # fetch-depth: 0 fetches all tags so GitHub can generate accurate release
+      # notes (what changed since the previous tag).
+      - name: Checkout repository
+        uses: actions/checkout@v4.3.1
+        with:
+          fetch-depth: 0
+
+      # ── 2. Determine version ─────────────────────────────────────────────────
+      # Regex extracts the first `version = "x.y.z"` line in Cargo.toml.
+      # The workflow_dispatch `version_override` input takes priority when set.
+      - name: Read version from Cargo.toml (or use override)
+        id: version
+        shell: pwsh
+        run: |
+          $override = '${{ inputs.version_override }}'.Trim()
+          if ($override -ne '') {
+            $version = $override
+            Write-Host "Using overridden version: $version"
+          } else {
+            $match = Select-String `
+              -Path 'src-tauri/Cargo.toml' `
+              -Pattern '^version\s*=\s*"([^"]+)"'
+            if (-not $match) {
+              Write-Error 'Could not parse version from src-tauri/Cargo.toml'
+              exit 1
+            }
+            $version = $match.Matches[0].Groups[1].Value
+            Write-Host "Version from Cargo.toml: $version"
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # ── 3. Rust toolchain ─────────────────────────────────────────────────────
+      # `@stable` is the recommended usage for dtolnay/rust-toolchain — it selects
+      # the latest stable Rust and respects rust-toolchain.toml if present.
+      # We pin the MSVC target explicitly even though windows-latest defaults to it,
+      # to make the intent unambiguous and ensure the correct std lib is installed.
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # ── 4. Rust build cache ───────────────────────────────────────────────────
+      # Caches ~/.cargo/registry, ~/.cargo/git, and src-tauri/target.
+      # `workspaces` tells the action where the Cargo workspace root is.
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2.8.2
+        with:
+          workspaces: src-tauri -> target
+
+      # ── 5. Node.js ────────────────────────────────────────────────────────────
+      - name: Set up Node.js LTS
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      # ── 6. Frontend build ─────────────────────────────────────────────────────
+      # MUST run before `cargo build --release`.
+      # tauri.conf.json sets `"frontendDist": "../dist"` — Tauri embeds the
+      # compiled frontend from that directory during Rust compilation.
+      # If dist/ does not exist the build will fail with a Tauri error.
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build frontend (Vite + TypeScript)
+        run: npm run build
+
+      # ── 7. Rust release build ─────────────────────────────────────────────────
+      # Produces two files we need:
+      #   src-tauri/target/release/quick-snippets.exe   — main binary
+      #   src-tauri/target/release/WebView2Loader.dll   — WebView2 runtime loader
+      #
+      # Release profile (defined in Cargo.toml) applies:
+      #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "s"
+      - name: Build Rust binary (release profile)
+        working-directory: src-tauri
+        run: cargo build --release
+
+      # ── 8. Verify artifacts ───────────────────────────────────────────────────
+      # Fast sanity check — fail early with a clear message if either file is
+      # missing rather than producing a broken or incomplete ZIP.
+      - name: Verify release artifacts exist
+        shell: pwsh
+        run: |
+          $releaseDir = 'src-tauri/target/release'
+          $required   = @('quick-snippets.exe', 'WebView2Loader.dll')
+          $allOk = $true
+          foreach ($file in $required) {
+            $path = Join-Path $releaseDir $file
+            if (Test-Path $path) {
+              $sizeMB = [Math]::Round((Get-Item $path).Length / 1MB, 2)
+              Write-Host "  OK  $file  ($sizeMB MB)"
+            } else {
+              Write-Error "MISSING: $path"
+              $allOk = $false
+            }
+          }
+          if (-not $allOk) { exit 1 }
+
+      # ── 9. Package ZIP archive ────────────────────────────────────────────────
+      # Archive contains only the two portable files needed to run the app.
+      # Naming convention: quick-snippets-windows-x64-v{version}.zip
+      #   • `windows-x64` — platform/arch (future-proof if arm64 is ever added)
+      #   • `v{version}`  — matches the git tag; makes download URLs predictable:
+      #     https://github.com/{owner}/{repo}/releases/download/v{version}/
+      #       quick-snippets-windows-x64-v{version}.zip
+      - name: Create ZIP archive
+        id: package
+        shell: pwsh
+        run: |
+          $version    = '${{ steps.version.outputs.VERSION }}'
+          $zipName    = "quick-snippets-windows-x64-v$version.zip"
+          $releaseDir = 'src-tauri/target/release'
+
+          Compress-Archive `
+            -Path "$releaseDir/quick-snippets.exe", "$releaseDir/WebView2Loader.dll" `
+            -DestinationPath $zipName `
+            -CompressionLevel Optimal
+
+          $sizeMB = [Math]::Round((Get-Item $zipName).Length / 1MB, 2)
+          Write-Host "Created: $zipName  ($sizeMB MB)"
+          "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # ── 10. SHA-256 checksum ──────────────────────────────────────────────────
+      # Attached to the release alongside the ZIP.
+      # Format: "{hash}  {filename}"  (shasum-compatible, two spaces)
+      #
+      # Scoop bucket integration: the planned release-scoop.yml workflow can read
+      # this file to populate the `hash` field in the Scoop manifest without
+      # having to re-download and hash the full ZIP.
+      - name: Generate SHA-256 checksum
+        id: checksum
+        shell: pwsh
+        run: |
+          $zipName      = '${{ steps.package.outputs.ZIP_NAME }}'
+          $checksumFile = "$zipName.sha256"
+          $hash = (Get-FileHash -Algorithm SHA256 $zipName).Hash.ToLower()
+
+          # Two-space delimiter is the shasum/sha256sum standard format
+          "$hash  $zipName" | Out-File -FilePath $checksumFile -Encoding ascii -NoNewline
+
+          Write-Host "SHA-256: $hash"
+          "CHECKSUM_FILE=$checksumFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "SHA256=$hash"                | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # ── 11. Publish GitHub Release ────────────────────────────────────────────
+      # Creates (or updates) a GitHub Release tagged v{version}.
+      #
+      # • `tag_name` — the action creates the tag on HEAD if it does not exist.
+      #   With standard git flow, `git flow release finish` also creates this tag
+      #   locally and pushes it; in that case the action reuses it.
+      # • `generate_release_notes: true` — GitHub auto-generates a changelog from
+      #   merged PRs / commits since the previous tag; it is appended after `body`.
+      # • `make_latest: true` — marks this as the latest release on the repo page.
+      # • Files attached:
+      #   1. quick-snippets-windows-x64-v{version}.zip       — portable app
+      #   2. quick-snippets-windows-x64-v{version}.zip.sha256 — integrity checksum
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.5.0
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: QuickSnippets v${{ steps.version.outputs.VERSION }}
+          files: |
+            ${{ steps.package.outputs.ZIP_NAME }}
+            ${{ steps.checksum.outputs.CHECKSUM_FILE }}
+          body: |
+            ## Installation
+
+            1. Download `${{ steps.package.outputs.ZIP_NAME }}`
+            2. Extract anywhere — no installer needed
+            3. Run `quick-snippets.exe`
+
+            ## Integrity
+
+            | File | SHA-256 |
+            |------|---------|
+            | `${{ steps.package.outputs.ZIP_NAME }}` | `${{ steps.checksum.outputs.SHA256 }}` |
+
+            <details>
+            <summary>Verify in PowerShell</summary>
+
+            ```powershell
+            (Get-FileHash -Algorithm SHA256 '${{ steps.package.outputs.ZIP_NAME }}').Hash.ToLower()
+            # expected: ${{ steps.checksum.outputs.SHA256 }}
+            ```
+
+            </details>
+
+            ---
+          generate_release_notes: true
+          make_latest: true
