@@ -31,22 +31,19 @@ export function SnippetList({
     item?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex, snippets]);
 
-  // Announce result count after 200ms delay
+  // Announce first result's accessible label after 200ms delay,
+  // or `noResults` when there are no snippets.
   useEffect(() => {
-    if (!query) {
-      setLiveText('');
-      return;
-    }
     const id = setTimeout(() => {
       if (snippets.length > 0) {
         const firstLabel = tf.snippetLabel(snippets[0].title, snippets[0].is_encrypted);
-        setLiveText(`${tf.searchResults(snippets.length, query)} — ${firstLabel}`);
+        setLiveText(firstLabel);
       } else {
         setLiveText(t('noResults'));
       }
     }, 200);
     return () => clearTimeout(id);
-  }, [snippets, query, t, tf]);
+  }, [snippets, t, tf]);
 
   const isEmpty = snippets.length === 0;
 
