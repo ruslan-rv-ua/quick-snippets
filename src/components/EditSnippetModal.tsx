@@ -109,6 +109,9 @@ export function EditSnippetModal({
           maxLength={50}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          autoComplete="off"
+          aria-autocomplete="none"
+          spellCheck={false}
           aria-invalid={submitted && !!errors.title ? 'true' : undefined}
           aria-describedby={submitted && errors.title ? 'edit-title-err' : undefined}
         />
