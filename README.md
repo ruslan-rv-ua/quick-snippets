@@ -1,11 +1,12 @@
-# QuickSnippets
-
-![QuickSnippets logo](logo.png)
-
-**A portable Windows launcher for your text snippets — always one keystroke away.**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](https://github.com/ruslan-rv-ua/quick-snippets/releases)
+<div align="center">
+	<img src="logo-readme.png" alt="QuickSnippets logo" />
+	<h1>QuickSnippets</h1>
+	<p><strong>A portable Windows launcher for your text snippets — always one keystroke away.</strong></p>
+	<p>
+		<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+		<a href="https://github.com/ruslan-rv-ua/quick-snippets/releases"><img src="https://img.shields.io/badge/Platform-Windows-0078D4.svg" alt="Platform: Windows"></a>
+	</p>
+</div>
 
 ---
 
@@ -155,4 +156,4 @@ The project uses **Tauri v2** (Rust backend) + **React 19 / TypeScript / Vite** 
 
 ## License
 
-[MIT](LICENSE) — Copyright (c) 2026 ruslan-rv-ua
+[MIT](LICENSE) — Copyright (c) 2026 Ruslan Iskov
