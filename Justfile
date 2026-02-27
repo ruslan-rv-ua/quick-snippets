@@ -1,120 +1,146 @@
-"""
-QuickSnippets Justfile - minimal, cross-platform helpers (Tauri + React + Rust)
-Keep commands POSIX-friendly; on Windows we prefer PowerShell invocation when needed.
+# QuickSnippets · Justfile  (Windows · PowerShell 7 / pwsh)
+# Docs:  https://just.systems/man/en/
+# Usage: just <recipe>   |   just --list   |   just -l
 
-Usage:
-  just install
-  just dev
-  just build
-  just test
+set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 
-Note: wrappers use a small runtime OS-check to invoke PowerShell on native Windows.
-"""
+# Default build profile ("debug" | "release")
+profile := "debug"
 
-# Helper: detect Windows at runtime and run either PowerShell or plain command.
-# We wrap each critical command in `sh -lc '...if windows then powershell ... else ... fi'`
-# so this Justfile works from POSIX shells (Linux/macOS) and Git/MSYS shells on Windows.
+# ── Aliases (short forms) ─────────────────────────────────────────────────────
+alias s   := setup
+alias d   := dev
+alias b   := build
+alias r   := release
+alias t   := test
+alias tf  := test-front
+alias tb  := test-back
+alias tw  := test-watch
+alias tc  := test-cov
+alias c   := check
+alias l   := lint
+alias fmt := format
+alias fc  := final-checks
 
-install:
-    # Install frontend deps and check for rustup (prints a hint if missing)
-    sh -lc 'if [ "${OS:-}" = "Windows_NT" ] || uname -s 2>/dev/null | grep -qiE "mingw|msys|cygwin"; then \
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "npm install" ; \
-    else \
-        npm install ; \
-    fi'
-    sh -lc 'if command -v rustup >/dev/null 2>&1; then \
-        echo "rustup: found"; \
-    else \
-        echo "rustup: NOT found - install from https://rustup.rs"; \
-    fi'
+# Show this list
+[private]
+default: help
 
-check:
-    # Typecheck frontend (no emit) and cargo check for Rust backend
-    sh -lc 'npx tsc --noEmit'
-    sh -lc 'cd src-tauri && cargo check'
+# ═════════════════════════════════════════════════════════════════════════════
+# SETUP / INSTALL
+# ═════════════════════════════════════════════════════════════════════════════
 
+# Install npm deps · verify Rust & Node toolchains
+setup:
+    npm install
+    node --version
+    rustup show active-toolchain
+    cargo --version
+    @Write-Host "`n[OK] Setup complete" -ForegroundColor Green
+
+# ═════════════════════════════════════════════════════════════════════════════
+# DEVELOPMENT
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Start Tauri dev server — frontend + backend with hot-reload  (alias: d)
 dev:
-    # Start the full dev experience (Tauri dev - runs frontend + backend)
-    sh -lc 'if [ "${OS:-}" = "Windows_NT" ] || uname -s 2>/dev/null | grep -qiE "mingw|msys|cygwin"; then \
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run tauri dev" ; \
-    else \
-        npm run tauri dev ; \
-    fi'
+    npm run tauri dev
 
-frontend-dev:
-    # Run the frontend dev server only (usually `npm run dev`)
-    sh -lc 'if [ "${OS:-}" = "Windows_NT" ] || uname -s 2>/dev/null | grep -qiE "mingw|msys|cygwin"; then \
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run dev" ; \
-    else \
-        npm run dev ; \
-    fi'
+# Start Vite frontend-only dev server
+vite:
+    npm run dev
 
-build:
-    # Build frontend then compile backend (debug build by default)
-    sh -lc 'npm run build'
-    sh -lc 'cd src-tauri && cargo build'
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTING   just t / tf / tb / tw / tc
+#           just test-mod db::tests     ← specific Rust module
+# ═════════════════════════════════════════════════════════════════════════════
 
-tauri-build:
-    # Full production build (invokes npm build + tauri bundling via npm script)
-    sh -lc 'if [ "${OS:-}" = "Windows_NT" ] || uname -s 2>/dev/null | grep -qiE "mingw|msys|cygwin"; then \
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run tauri build" ; \
-    else \
-        npm run tauri build ; \
-    fi'
-
+# All tests: Vitest + cargo test  (alias: t)
 test:
-    # Run frontend and backend tests
-    just test:frontend
-    just test:backend
+    npx vitest run
+    cd src-tauri; cargo test --lib -- --test-threads=1
 
-test:frontend:
-    # Frontend unit tests (Vitest)
-    sh -lc 'npx vitest run'
+# Frontend tests — Vitest, one-shot  (alias: tf)
+test-front:
+    npx vitest run
 
-test:backend:
-    # Rust tests (run in src-tauri)
-    sh -lc 'cd src-tauri && cargo test -- --test-threads=1'
+# Backend tests — cargo test, single-threaded  (alias: tb)
+test-back:
+    cd src-tauri; cargo test --lib -- --test-threads=1
 
+# Frontend tests in watch mode — TDD inner loop  (alias: tw)
+test-watch:
+    npx vitest
+
+# Frontend tests with V8 coverage report  (alias: tc)
+test-cov:
+    npx vitest run --coverage
+
+# Test a specific Rust module  →  just test-mod db::tests  (alias: tm)
+test-mod module:
+    cd src-tauri; cargo test --lib {{ module }} -- --test-threads=1
+
+alias tm := test-mod
+
+# ═════════════════════════════════════════════════════════════════════════════
+# QUALITY   check · lint · format
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Fast static check: tsc --noEmit + cargo check  (alias: c)
+check:
+    npx tsc --noEmit
+    cd src-tauri; cargo check
+
+# Full lint: tsc --noEmit + cargo clippy -D warnings  (alias: l)
 lint:
-    # Frontend lint (if npm script exists) and Rust clippy
-    sh -lc 'if npm run lint --silent >/dev/null 2>&1; then npm run lint || true; else echo "npm lint script not found"; fi'
-    sh -lc 'cd src-tauri && cargo clippy -- -D warnings'
+    npx tsc --noEmit
+    cd src-tauri; cargo clippy -- -D warnings
 
+# Format Rust source with cargo fmt  (alias: fmt)
 format:
-    # Format frontend (if script) and Rust
-    sh -lc 'if npm run format --silent >/dev/null 2>&1; then npm run format || true; else echo "npm format script not found"; fi'
-    sh -lc 'cd src-tauri && cargo fmt'
+    cd src-tauri; cargo fmt
+    @Write-Host "[OK] Formatted" -ForegroundColor Green
 
-clean:
-    # Remove frontend build artifacts and Rust target directory
-    sh -lc 'rm -rf dist || true'
-    sh -lc 'rm -rf src-tauri/target || true'
+# ═════════════════════════════════════════════════════════════════════════════
+# BUILD & RELEASE
+# ═════════════════════════════════════════════════════════════════════════════
 
+# Debug build (frontend + cargo build).  profile=release → full tauri bundle  (alias: b)
+build profile=profile:
+    if ("{{ profile }}" -eq "release") { Write-Host "[build] Production bundle..." -ForegroundColor Cyan; npm run tauri build } else { Write-Host "[build] Debug build..." -ForegroundColor Cyan; npm run build; Push-Location src-tauri; cargo build; Pop-Location }
+
+# Production bundle — npm run tauri build → .exe + installer  (alias: r)
 release:
-    # Production release: runs the tauri build script (bundles installers)
-    sh -lc 'if [ "${OS:-}" = "Windows_NT" ] || uname -s 2>/dev/null | grep -qiE "mingw|msys|cygwin"; then \
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "npm run tauri build" ; \
-    else \
-        npm run tauri build ; \
-    fi'
+    npm run tauri build
 
+# Open the release bundle folder in Explorer
+open-release:
+    Invoke-Item src-tauri\target\release\bundle
+
+# ═════════════════════════════════════════════════════════════════════════════
+# UTILITIES
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Run the final CI pipeline  (alias: fc)
+final-checks:
+    powershell -NoProfile -File scripts/final-checks.ps1
+
+# Delete dev snippets.db to reset local database
+db-reset:
+    Remove-Item -Force snippets.db -ErrorAction SilentlyContinue
+    @Write-Host "[OK] snippets.db removed" -ForegroundColor Yellow
+
+# Remove dist/ and src-tauri/target/
+clean:
+    Remove-Item -Recurse -Force dist            -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force src-tauri\target -ErrorAction SilentlyContinue
+    @Write-Host "[OK] Cleaned" -ForegroundColor Green
+
+# ═════════════════════════════════════════════════════════════════════════════
+# HELP
+# ═════════════════════════════════════════════════════════════════════════════
+
+# List all recipes
 help:
-    # Print a short help summary
-    sh -lc 'cat <<EOF
-QuickSnippets - Justfile targets:
-  install        Install npm deps and check Rust toolchain
-  check          Run TypeScript check and cargo check
-  dev            Start Tauri dev (frontend + backend)
-  frontend-dev   Start frontend dev server only
-  build          Frontend build + cargo build (debug)
-  tauri-build    Full production bundle (npm run tauri build)
-  test           Run frontend and backend tests
-  test:frontend  Run frontend tests (Vitest)
-  test:backend   Run Rust tests (cargo test)
-  lint           Run frontend lint and cargo clippy
-  format         Run frontend format (if script) and cargo fmt
-  clean          Remove dist and src-tauri/target
-  release        Create production artifacts (tauri build)
-  help           Show this help
-EOF'
+    @just --list
 
