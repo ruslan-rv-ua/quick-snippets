@@ -216,14 +216,27 @@ pub mod tauri_commands {
         app: AppHandle,
         state: State<AppState>,
     ) -> Result<(), String> {
+        use zeroize::Zeroize;
+
         // Get plaintext in a limited scope so it is dropped before we return
         let plaintext = {
             let conn = state.conn.lock().map_err(|e| e.to_string())?;
             activate_snippet_get_content(&conn, id, &password)?
         };
-        // SECURITY: only clipboard call here — plaintext never enters IPC response
-        let text = String::from_utf8(plaintext).map_err(|e| e.to_string())?;
-        app.clipboard().write_text(text).map_err(|e| e.to_string())?;
+        // SECURITY: only clipboard call here — plaintext never enters IPC response.
+        // Zeroize the local String after writing to clipboard so decrypted
+        // content does not linger on the heap.
+        let mut text = match String::from_utf8(plaintext) {
+            Ok(s) => s,
+            Err(e) => {
+                let mut bytes = e.into_bytes();
+                bytes.zeroize();
+                return Err("Invalid UTF-8 content".to_string());
+            }
+        };
+        let result = app.clipboard().write_text(text.clone()).map_err(|e| e.to_string());
+        text.zeroize();
+        result?;
         Ok(()) // IPC response is Ok(()) — no content
     }
 

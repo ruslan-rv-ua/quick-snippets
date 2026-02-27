@@ -101,18 +101,17 @@ pub fn decrypt(ciphertext_b64: &[u8], password: &str) -> Result<Vec<u8>, CryptoE
     let cipher = Aes256Gcm::new_from_slice(&key)
         .map_err(|_| CryptoError::InvalidData)?;
     let nonce = Nonce::from_slice(nonce_bytes);
-    let mut plaintext = cipher
+    let plaintext = cipher
         .decrypt(nonce, ciphertext)
         .map_err(|_| CryptoError::WrongPassword)?;
 
     // Zeroize key
     key.zeroize();
 
-    // Clone plaintext before zeroizing
-    let result = plaintext.clone();
-    plaintext.zeroize();
-
-    Ok(result)
+    // Return plaintext directly — caller is responsible for zeroizing after use.
+    // Previous code cloned plaintext and zeroized the original, but the clone
+    // was never zeroized, leaving decrypted data on the heap.
+    Ok(plaintext)
 }
 
 #[cfg(test)]

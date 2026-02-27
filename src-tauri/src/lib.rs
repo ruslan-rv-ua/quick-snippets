@@ -144,14 +144,14 @@ pub fn run() {
             // ── Apply saved window state ──────────────────────────────────
             {
                 let state: tauri::State<AppState> = app.state();
-                let s = state.settings.lock().unwrap();
+                let s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
                 settings::apply_window_state(&win, &s.window_state);
             }
 
             // ── start_in_tray ─────────────────────────────────────────────
             {
                 let state: tauri::State<AppState> = app.state();
-                let start_in_tray = state.settings.lock().unwrap().start_in_tray;
+                let start_in_tray = state.settings.lock().unwrap_or_else(|e| e.into_inner()).start_in_tray;
                 if start_in_tray {
                     let _ = win.hide();
                 }
@@ -160,7 +160,7 @@ pub fn run() {
             // ── Resolve display language ──────────────────────────────────
             let lang = {
                 let state: tauri::State<AppState> = app.state();
-                let configured = state.settings.lock().unwrap().language.clone();
+                let configured = state.settings.lock().unwrap_or_else(|e| e.into_inner()).language.clone();
                 if configured.is_empty() {
                     settings::detect_language()
                 } else {
@@ -345,7 +345,7 @@ pub fn run() {
                     tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                         // Debounce: save at most once per 500 ms
                         let should_save = {
-                            let mut last = last_save.lock().unwrap();
+                            let mut last = last_save.lock().unwrap_or_else(|e| e.into_inner());
                             let now = std::time::Instant::now();
                             let save = last
                                 .is_none_or(|t| now.duration_since(t).as_millis() >= 500);
