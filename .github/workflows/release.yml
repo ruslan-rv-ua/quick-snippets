@@ -26,9 +26,13 @@
 #   Procedure:
 #     1. `npm ci`                       → install JS deps
 #     2. `npx tauri build --no-bundle` → runs `npm run build` (via
-#        beforeBuildCommand), embeds the frontend into the binary, copies
-#        WebView2Loader.dll, and compiles the Rust release binary — all
-#        without invoking Wix/NSIS to produce an installer.
+#        beforeBuildCommand), sets compile-time constants that embed the
+#        frontend into the binary, and compiles the Rust release binary —
+#        all without invoking Wix/NSIS to produce an installer.
+#        NOTE: --no-bundle skips the bundler, which means WebView2Loader.dll
+#        is NOT automatically copied to target/release/.
+#     3. Manual copy of WebView2Loader.dll from the webview2-com-sys build
+#        output directory to target/release/ (step 7b).
 #
 # RELEASE ARTIFACTS
 #   quick-snippets-windows-x64-v{version}.zip   — portable archive
@@ -146,12 +150,12 @@ jobs:
       #      connecting to the devUrl (localhost:1420).  A raw cargo invocation
       #      skips this, producing a binary that shows ERR_CONNECTION_REFUSED.
       #
-      #   2. WebView2Loader.dll — the CLI copies this from the build-script output
-      #      directory to target/release/ automatically.  Raw cargo does not.
-      #
-      #   3. beforeBuildCommand — the CLI runs `npm run build` (as configured in
+      #   2. beforeBuildCommand — the CLI runs `npm run build` (as configured in
       #      tauri.conf.json) before compiling Rust, ensuring the frontend dist/
       #      directory is always fresh and in sync.
+      #
+      # WebView2Loader.dll is NOT copied by --no-bundle (that happens in the
+      # bundler step which we skip).  It is copied manually in step 7b below.
       #
       # `--no-bundle` skips Wix/NSIS installer generation entirely, even though
       # `bundle.active = true` in tauri.conf.json.  This is distinct from
@@ -162,6 +166,31 @@ jobs:
       #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "s"
       - name: Build Tauri app (release, no installer bundle)
         run: npx tauri build --no-bundle
+
+      # ── 7b. Copy WebView2Loader.dll to target/release/ ───────────────────────
+      # `--no-bundle` skips the Tauri bundler entirely, including the step that
+      # copies WebView2Loader.dll from the webview2-com-sys build-script output
+      # directory to target/release/.  Without this DLL next to the exe, the
+      # WebView2 bootstrapper cannot locate the runtime and the app shows
+      # ERR_CONNECTION_REFUSED on launch.
+      #
+      # The DLL is produced by the `webview2-com-sys` crate's build script and
+      # lands at a hashed path:
+      #   target/release/build/webview2-com-sys-{hash}/out/x64/WebView2Loader.dll
+      # We glob for the x64 variant and copy it to target/release/.
+      - name: Copy WebView2Loader.dll to release dir
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem `
+            'src-tauri/target/release/build/webview2-com-sys-*/out/x64/WebView2Loader.dll' `
+            | Select-Object -First 1
+          if (-not $dll) {
+            Write-Error 'WebView2Loader.dll not found in build output — check webview2-com-sys build output'
+            exit 1
+          }
+          Copy-Item $dll.FullName 'src-tauri/target/release/WebView2Loader.dll'
+          $sizeMB = [Math]::Round($dll.Length / 1MB, 2)
+          Write-Host "Copied: $($dll.FullName)  ($sizeMB MB)"
 
       # ── 8. Verify artifacts ───────────────────────────────────────────────────
       # Fast sanity check — fail early with a clear message if either file is
