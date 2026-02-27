@@ -24,9 +24,11 @@
 #   which would invoke Wix/NSIS to produce MSI/NSIS installers.  The portability
 #   model of this app needs only the raw .exe — no installer.
 #   Procedure:
-#     1. `npm ci`           → install JS deps
-#     2. `npm run build`    → compile frontend to dist/ (Tauri embeds it)
-#     3. `cargo build --release` in src-tauri/ → produce quick-snippets.exe
+#     1. `npm ci`                       → install JS deps
+#     2. `npx tauri build --no-bundle` → runs `npm run build` (via
+#        beforeBuildCommand), embeds the frontend into the binary, copies
+#        WebView2Loader.dll, and compiles the Rust release binary — all
+#        without invoking Wix/NSIS to produce an installer.
 #
 # RELEASE ARTIFACTS
 #   quick-snippets-windows-x64-v{version}.zip   — portable archive
@@ -129,53 +131,37 @@ jobs:
           node-version: 'lts/*'
           cache: 'npm'
 
-      # ── 6. Frontend build ─────────────────────────────────────────────────────
-      # MUST run before `cargo build --release`.
-      # tauri.conf.json sets `"frontendDist": "../dist"` — Tauri embeds the
-      # compiled frontend from that directory during Rust compilation.
-      # If dist/ does not exist the build will fail with a Tauri error.
+      # ── 6. Install JS dependencies ────────────────────────────────────────────
+      # `tauri build` will run `beforeBuildCommand` (npm run build) internally,
+      # so we only need `npm ci` here — no separate frontend build step.
       - name: Install JS dependencies
         run: npm ci
 
-      - name: Build frontend (Vite + TypeScript)
-        run: npm run build
-
-      # ── 7. Rust release build ─────────────────────────────────────────────────
-      # Produces two files we need:
-      #   src-tauri/target/release/quick-snippets.exe   — main binary
-      #   src-tauri/target/release/WebView2Loader.dll   — WebView2 bootstrapper
+      # ── 7. Tauri release build (no installer bundle) ──────────────────────────
+      # We use `npx tauri build --no-bundle` instead of raw
+      # `cargo build --release` for three critical reasons:
       #
-      # IMPORTANT: `cargo build --release` compiles the `webview2-com-sys` crate
-      # whose build script downloads and unpacks WebView2Loader.dll into a
-      # hashed build-script output directory:
-      #   target/release/build/webview2-com-sys-{hash}/out/x64/WebView2Loader.dll
-      # The Tauri CLI normally copies this DLL to target/release/ automatically,
-      # but since we invoke cargo directly we do it ourselves in the next step.
+      #   1. FRONTEND EMBEDDING — the Tauri CLI sets compile-time constants that
+      #      tell the binary to serve assets from the embedded bundle instead of
+      #      connecting to the devUrl (localhost:1420).  A raw cargo invocation
+      #      skips this, producing a binary that shows ERR_CONNECTION_REFUSED.
+      #
+      #   2. WebView2Loader.dll — the CLI copies this from the build-script output
+      #      directory to target/release/ automatically.  Raw cargo does not.
+      #
+      #   3. beforeBuildCommand — the CLI runs `npm run build` (as configured in
+      #      tauri.conf.json) before compiling Rust, ensuring the frontend dist/
+      #      directory is always fresh and in sync.
+      #
+      # `--no-bundle` skips Wix/NSIS installer generation entirely, even though
+      # `bundle.active = true` in tauri.conf.json.  This is distinct from
+      # `--bundles` whose only valid values are `msi` and `nsis` — there is no
+      # `none` value in Tauri v2.
       #
       # Release profile (defined in Cargo.toml) applies:
       #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "s"
-      - name: Build Rust binary (release profile)
-        working-directory: src-tauri
-        run: cargo build --release
-
-      # ── 7b. Copy WebView2Loader.dll to target/release/ ───────────────────────
-      # `cargo build --release` places WebView2Loader.dll inside a hashed
-      # build-script output directory under target/release/build/.  We glob
-      # for the x64 variant and copy it next to the exe so the app can launch.
-      # Without this DLL alongside the exe, WebView2 fails to initialise.
-      - name: Copy WebView2Loader.dll to release dir
-        shell: pwsh
-        run: |
-          $dll = Get-ChildItem `
-            'src-tauri/target/release/build/webview2-com-sys-*/out/x64/WebView2Loader.dll' `
-            | Select-Object -First 1
-          if (-not $dll) {
-            Write-Error 'WebView2Loader.dll not found in build output'
-            exit 1
-          }
-          Copy-Item $dll.FullName 'src-tauri/target/release/WebView2Loader.dll'
-          $sizeMB = [Math]::Round($dll.Length / 1MB, 2)
-          Write-Host "Copied WebView2Loader.dll from: $($dll.FullName)  ($sizeMB MB)"
+      - name: Build Tauri app (release, no installer bundle)
+        run: npx tauri build --no-bundle
 
       # ── 8. Verify artifacts ───────────────────────────────────────────────────
       # Fast sanity check — fail early with a clear message if either file is
