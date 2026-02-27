@@ -59,7 +59,9 @@ describe('SnippetList', () => {
     renderList({ snippets: mockSnippets, query: 'a' });
     expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('');
     act(() => { vi.advanceTimersByTime(200); });
-    expect(document.querySelector('[aria-live="polite"]')?.textContent).not.toBe('');
+    const liveText = document.querySelector('[aria-live="polite"]')?.textContent || '';
+    expect(liveText).not.toBe('');
+    expect(liveText).toContain('Alpha');
     vi.useRealTimers();
   });
 });

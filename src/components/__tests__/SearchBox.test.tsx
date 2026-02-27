@@ -26,94 +26,94 @@ function renderSearchBox(overrides: Partial<React.ComponentProps<typeof SearchBo
 describe('SearchBox', () => {
   it('has type="search"', () => {
     renderSearchBox();
-    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
   it('has aria-label for search placeholder', () => {
     renderSearchBox();
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('combobox');
     expect(input).toHaveAttribute('aria-label');
   });
 
   it('has autocomplete="off" and spellcheck="false"', () => {
     renderSearchBox();
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('combobox');
     expect(input).toHaveAttribute('autocomplete', 'off');
     expect(input.getAttribute('spellcheck')).toBe('false');
   });
 
   it('sets aria-activedescendant to active snippet id', () => {
     renderSearchBox({ snippets: mockSnippets, activeIndex: 0 });
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('combobox');
     expect(input).toHaveAttribute('aria-activedescendant', 'snippet-1');
   });
 
   it('clears aria-activedescendant when activeIndex is -1', () => {
     renderSearchBox({ snippets: mockSnippets, activeIndex: -1 });
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('combobox');
     expect(input.getAttribute('aria-activedescendant') ?? '').toBe('');
   });
 
   it('ArrowDown calls onActiveIndexChange with index+1', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 0, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowDown' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(1);
   });
 
   it('ArrowUp calls onActiveIndexChange with index-1', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 1, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowUp' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(0);
   });
 
   it('Home calls onActiveIndexChange with first index', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 1, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Home' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Home' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(0);
   });
 
   it('End calls onActiveIndexChange with last index', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 0, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'End' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'End' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(2);
   });
 
   it('ArrowDown at last item does not wrap (stays at last)', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 2, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowDown' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(2);
   });
 
   it('ArrowUp at first item does not wrap (stays at first)', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 0, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowUp' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(0);
   });
 
   it('ArrowDown/Up when activeIndex=-1 selects first item', () => {
     const onActiveIndexChange = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: -1, onActiveIndexChange });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'ArrowDown' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
     expect(onActiveIndexChange).toHaveBeenCalledWith(0);
   });
 
   it('Enter calls onActivate with active snippet', () => {
     const onActivate = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: 1, onActivate });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(onActivate).toHaveBeenCalledWith(mockSnippets[1]);
   });
 
   it('Enter with no active snippet does nothing', () => {
     const onActivate = vi.fn();
     renderSearchBox({ snippets: mockSnippets, activeIndex: -1, onActivate });
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(onActivate).not.toHaveBeenCalled();
   });
 
@@ -122,7 +122,7 @@ describe('SearchBox', () => {
     const parentHandler = vi.fn();
     const { container } = renderSearchBox({ value: 'hello', onChange });
     container.addEventListener('keydown', parentHandler);
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape', bubbles: true });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape', bubbles: true });
     expect(onChange).toHaveBeenCalledWith('');
     expect(parentHandler).not.toHaveBeenCalled();
   });
@@ -132,7 +132,7 @@ describe('SearchBox', () => {
     const parentHandler = vi.fn();
     const { container } = renderSearchBox({ value: '', onChange });
     container.addEventListener('keydown', parentHandler);
-    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape', bubbles: true });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape', bubbles: true });
     expect(parentHandler).toHaveBeenCalled();
   });
 
@@ -140,7 +140,7 @@ describe('SearchBox', () => {
     renderSearchBox();
     const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true });
     const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
-    screen.getByRole('searchbox').dispatchEvent(event);
+    screen.getByRole('combobox').dispatchEvent(event);
     expect(preventDefaultSpy).toHaveBeenCalled();
   });
 });

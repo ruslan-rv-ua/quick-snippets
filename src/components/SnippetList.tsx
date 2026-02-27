@@ -39,7 +39,8 @@ export function SnippetList({
     }
     const id = setTimeout(() => {
       if (snippets.length > 0) {
-        setLiveText(tf.searchResults(snippets.length, query));
+        const firstLabel = tf.snippetLabel(snippets[0].title, snippets[0].is_encrypted);
+        setLiveText(`${tf.searchResults(snippets.length, query)} — ${firstLabel}`);
       } else {
         setLiveText(t('noResults'));
       }
@@ -58,6 +59,7 @@ export function SnippetList({
 
       <div
         ref={listRef}
+        id="snippet-list"
         role="listbox"
         className="snippet-list"
       >
