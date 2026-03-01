@@ -125,6 +125,7 @@ The application icon lives in the system tray. Right-click it for quick access t
 | Ctrl+Shift+T | Toggle light / dark theme |
 | Ctrl+Shift+Space | Announce selected snippet (screen reader) |
 | Escape | Close modal / clear search |
+| Alt+F4 | Quit the application |
 
 ### In forms and modals
 
