@@ -6,12 +6,6 @@
 		<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="Lizenz: MIT"></a>
 		<a href="https://github.com/ruslan-rv-ua/quick-snippets/releases"><img src="https://img.shields.io/badge/Platform-Windows-0078D4.svg" alt="Plattform: Windows"></a>
 	</p>
-	<p>
-		🌐 <strong>Dieses Dokument lesen:</strong>
-		<a href="README.md">English</a> ·
-		<a href="README.uk.md">Українська</a> ·
-		<a href="README.de.md">Deutsch</a>
-	</p>
 </div>
 
 ---
