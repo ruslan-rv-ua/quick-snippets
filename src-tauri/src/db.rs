@@ -58,7 +58,15 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 
 /// Open the database and initialize it; show a native corruption dialog if
 /// SQLite reports any error (open *or* first query / pragma execution).
+///
+/// If the path is a **directory** (e.g. created by Scoop `persist` before the
+/// first run), it is silently removed so SQLite can create a proper file.
 pub fn open_and_init_db(db_path: &std::path::Path) -> Result<Connection> {
+    if db_path.is_dir() {
+        // Scoop creates a directory stub when the file doesn't exist in the
+        // release archive and `persist` is listed in the manifest.
+        std::fs::remove_dir_all(db_path).ok();
+    }
     let conn_result = Connection::open(db_path).and_then(|conn| {
         init_db(&conn)?;
         Ok(conn)
@@ -83,7 +91,12 @@ pub fn handle_db_corruption(
                 .show();
 
             if answer == rfd::MessageDialogResult::Yes {
-                std::fs::remove_file(db_path).ok();
+                // Remove whether it's a file *or* a directory
+                if db_path.is_dir() {
+                    std::fs::remove_dir_all(db_path).ok();
+                } else {
+                    std::fs::remove_file(db_path).ok();
+                }
                 let conn = Connection::open(db_path)?;
                 init_db(&conn)?;
                 Ok(conn)
@@ -448,6 +461,31 @@ mod tests {
     }
 
     // --- Verification helpers ---
+
+    #[test]
+    fn test_open_and_init_db_when_path_is_directory() {
+        // Scoop creates a directory stub for persisted files that don't exist
+        // in the release archive.  The app must delete it and open a real DB.
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::create_dir_all(&db_path).unwrap();
+        assert!(db_path.is_dir(), "precondition: path is a directory");
+
+        let conn = open_and_init_db(&db_path).unwrap();
+        assert!(
+            !db_path.is_dir(),
+            "directory should have been replaced by a file"
+        );
+        // DB must be functional
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='snippets'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
 
     #[test]
     fn test_get_db_path_is_next_to_exe() {

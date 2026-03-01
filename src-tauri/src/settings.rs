@@ -68,9 +68,15 @@ pub fn get_settings_path() -> PathBuf {
 
 /// Load settings from an explicit path.
 ///
+/// * Path is a directory (e.g. Scoop `persist` stub) → remove it, then treat as absent.
 /// * File absent → create it with defaults and return `Ok(Settings::default())`.
 /// * File present but invalid JSON → return `Err`.
 pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
+    if path.is_dir() {
+        // Scoop creates a directory stub when the file doesn't exist in the
+        // release archive and `persist` is listed in the manifest.
+        std::fs::remove_dir_all(path)?;
+    }
     if !path.exists() {
         let defaults = Settings::default();
         save_settings_to_path(&defaults, path)?;
@@ -294,6 +300,23 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         let parsed: Settings = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed, Settings::default());
+    }
+
+    #[test]
+    fn test_load_settings_when_path_is_directory() {
+        // Scoop creates a directory stub for persisted files that don't exist
+        // in the release archive.  The app must delete it and return defaults.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::create_dir_all(&path).unwrap();
+        assert!(path.is_dir(), "precondition: path is a directory");
+
+        let result = load_settings_from_path(&path).unwrap();
+        assert_eq!(result, Settings::default());
+        assert!(
+            path.is_file(),
+            "directory should have been replaced by a JSON file"
+        );
     }
 
     #[test]
