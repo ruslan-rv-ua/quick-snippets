@@ -47,6 +47,13 @@ describe('DeleteConfirmModal', () => {
     expect(mockInvoke).not.toHaveBeenCalledWith('delete_snippet', expect.anything());
   });
 
+  it('Ctrl+Enter triggers delete', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    renderModal();
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => { expect(mockInvoke).toHaveBeenCalledWith('delete_snippet', { id: 42 }); });
+  });
+
   it('clicking Delete button calls delete_snippet IPC', async () => {
     mockInvoke.mockResolvedValue(undefined);
     renderModal();
