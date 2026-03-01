@@ -83,7 +83,11 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
         return Ok(defaults);
     }
     let content = std::fs::read_to_string(path)?;
-    let settings: Settings = serde_json::from_str(&content)?;
+    // Strip UTF-8 BOM (EF BB BF / U+FEFF) that PowerShell 5.x `Set-Content
+    // -Encoding UTF8` silently prepends. Without this serde_json rejects the
+    // file even though the payload (e.g. `{}`) is otherwise valid JSON.
+    let content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+    let settings: Settings = serde_json::from_str(content)?;
     Ok(settings)
 }
 
@@ -300,6 +304,18 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         let parsed: Settings = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed, Settings::default());
+    }
+
+    #[test]
+    fn test_load_settings_with_utf8_bom() {
+        // PowerShell 5.x `Set-Content -Encoding UTF8` writes a UTF-8 BOM
+        // (U+FEFF) before the JSON payload.  The loader must strip it.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let bom_json = "\u{FEFF}{}";
+        std::fs::write(&path, bom_json.as_bytes()).unwrap();
+        let result = load_settings_from_path(&path).unwrap();
+        assert_eq!(result, Settings::default());
     }
 
     #[test]

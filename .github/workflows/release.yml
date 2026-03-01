@@ -20,14 +20,36 @@
 #   SCOOP_BUCKET_TOKEN  — Fine-grained PAT з правом Contents: write на scoop-bucket
 #
 # BUILD STRATEGY
-#   Використовуємо `cargo build --release` НАПРЯМУ замість `npm run tauri build`.
-#   Причина: `tauri.conf.json` має `"bundle": { "active": true, "targets": "all" }`
-#   що запустило б Wix/NSIS для створення MSI/NSIS-інсталяторів. Для портативного
-#   застосунку потрібен лише .exe без інсталятора.
-#   Порядок:
-#     1. `npm ci`           → встановити JS-залежності
-#     2. `npm run build`    → скомпілювати frontend у dist/ (Tauri вбудовує його)
-#     3. `cargo build --release` у src-tauri/ → створити quick-snippets.exe
+#   We use `cargo build --release` DIRECTLY instead of `npm run tauri build`.
+#   Why: `tauri.conf.json` has `"bundle": { "active": true, "targets": "all" }`
+#   which would invoke Wix/NSIS to produce MSI/NSIS installers.  The portability
+#   model of this app needs only the raw .exe — no installer.
+#   Procedure:
+#     1. `npm ci`                       → install JS deps
+#     2. `npx tauri build --no-bundle` → runs `npm run build` (via
+#        beforeBuildCommand), sets compile-time constants that embed the
+#        frontend into the binary, and compiles the Rust release binary —
+#        all without invoking Wix/NSIS to produce an installer.
+#        NOTE: --no-bundle skips the bundler, which means WebView2Loader.dll
+#        is NOT automatically copied to target/release/.
+#     3. Manual copy of WebView2Loader.dll from the webview2-com-sys build
+#        output directory to target/release/ (step 7b).
+#
+# RELEASE ARTIFACTS
+#   quick-snippets-windows-x64-v{version}.zip   — portable archive
+#   quick-snippets-windows-x64-v{version}.zip.sha256  — SHA-256 checksum
+#
+# SCOOP BUCKET INTEGRATION (planned)
+#   A separate workflow (release-scoop.yml) will listen to the `release` event
+#   published here and update a Scoop manifest.  The download URL is predictable:
+#     https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-windows-x64-v{version}.zip
+#   The SHA-256 checksum file lets the Scoop bucket workflow populate the `hash`
+#   field without re-downloading the ZIP.
+#
+# PERMISSIONS
+#   Only `contents: write` is required to create releases and upload assets.
+#   All other permissions are left at the default (`read` for public repos,
+#   `none` for private) — principle of least privilege.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Release
@@ -90,32 +112,49 @@ jobs:
           node-version: 'lts/*'
           cache: 'npm'
 
-      # ── Frontend build ────────────────────────────────────────────────────────
-      # ОБОВ'ЯЗКОВО до `cargo build --release`.
-      # tauri.conf.json має `"frontendDist": "../dist"` — Tauri вбудовує скомпільований
-      # frontend під час компіляції Rust. Якщо dist/ відсутній — збірка впаде.
+      # ── 6. Install JS dependencies ────────────────────────────────────────────
+      # `tauri build` will run `beforeBuildCommand` (npm run build) internally,
+      # so we only need `npm ci` here — no separate frontend build step.
       - name: Install JS dependencies
         run: npm ci
 
-      - name: Build frontend (Vite + TypeScript)
-        run: npm run build
-
-      # ── Rust release build ────────────────────────────────────────────────────
-      # Створює два потрібних файли:
-      #   src-tauri/target/release/quick-snippets.exe   — основний бінарник
-      #   src-tauri/target/release/WebView2Loader.dll   — WebView2 bootstrapper
+      # ── 7. Tauri release build (no installer bundle) ──────────────────────────
+      # We use `npx tauri build --no-bundle` instead of raw
+      # `cargo build --release` for three critical reasons:
       #
-      # ВАЖЛИВО: `cargo build --release` компілює crate `webview2-com-sys`,
-      # чий build-скрипт розпаковує WebView2Loader.dll у хешовану директорію:
-      #   target/release/build/webview2-com-sys-{hash}/out/x64/WebView2Loader.dll
-      # Tauri CLI зазвичай копіює цей DLL автоматично, але оскільки ми викликаємо
-      # cargo напряму — робимо це самостійно в наступному кроці.
-      - name: Build Rust binary (release profile)
-        working-directory: src-tauri
-        run: cargo build --release
+      #   1. FRONTEND EMBEDDING — the Tauri CLI sets compile-time constants that
+      #      tell the binary to serve assets from the embedded bundle instead of
+      #      connecting to the devUrl (localhost:1420).  A raw cargo invocation
+      #      skips this, producing a binary that shows ERR_CONNECTION_REFUSED.
+      #
+      #   2. beforeBuildCommand — the CLI runs `npm run build` (as configured in
+      #      tauri.conf.json) before compiling Rust, ensuring the frontend dist/
+      #      directory is always fresh and in sync.
+      #
+      # WebView2Loader.dll is NOT copied by --no-bundle (that happens in the
+      # bundler step which we skip).  It is copied manually in step 7b below.
+      #
+      # `--no-bundle` skips Wix/NSIS installer generation entirely, even though
+      # `bundle.active = true` in tauri.conf.json.  This is distinct from
+      # `--bundles` whose only valid values are `msi` and `nsis` — there is no
+      # `none` value in Tauri v2.
+      #
+      # Release profile (defined in Cargo.toml) applies:
+      #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "s"
+      - name: Build Tauri app (release, no installer bundle)
+        run: npx tauri build --no-bundle
 
-      # ── Copy WebView2Loader.dll ───────────────────────────────────────────────
-      # Без цього DLL поруч з .exe WebView2 не ініціалізується.
+      # ── 7b. Copy WebView2Loader.dll to target/release/ ───────────────────────
+      # `--no-bundle` skips the Tauri bundler entirely, including the step that
+      # copies WebView2Loader.dll from the webview2-com-sys build-script output
+      # directory to target/release/.  Without this DLL next to the exe, the
+      # WebView2 bootstrapper cannot locate the runtime and the app shows
+      # ERR_CONNECTION_REFUSED on launch.
+      #
+      # The DLL is produced by the `webview2-com-sys` crate's build script and
+      # lands at a hashed path:
+      #   target/release/build/webview2-com-sys-{hash}/out/x64/WebView2Loader.dll
+      # We glob for the x64 variant and copy it to target/release/.
       - name: Copy WebView2Loader.dll to release dir
         shell: pwsh
         run: |
@@ -123,12 +162,12 @@ jobs:
             'src-tauri/target/release/build/webview2-com-sys-*/out/x64/WebView2Loader.dll' `
             | Select-Object -First 1
           if (-not $dll) {
-            Write-Error 'WebView2Loader.dll not found in build output'
+            Write-Error 'WebView2Loader.dll not found in build output — check webview2-com-sys build output'
             exit 1
           }
           Copy-Item $dll.FullName 'src-tauri/target/release/WebView2Loader.dll'
           $sizeMB = [Math]::Round($dll.Length / 1MB, 2)
-          Write-Host "Copied WebView2Loader.dll from: $($dll.FullName)  ($sizeMB MB)"
+          Write-Host "Copied: $($dll.FullName)  ($sizeMB MB)"
 
       # ── Verify artifacts ──────────────────────────────────────────────────────
       # Швидка перевірка — падаємо одразу з чітким повідомленням якщо файл відсутній.
