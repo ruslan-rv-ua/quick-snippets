@@ -69,6 +69,15 @@ QuickSnippets is a portable application — no installer needed.
 3. Extract the ZIP to any folder (e.g. `C:\Tools\QuickSnippets\`).
 4. Run `quick-snippets.exe`.
 
+### Installing via Scoop
+
+If you use [Scoop](https://scoop.sh/), you can install QuickSnippets from the official bucket:
+
+```powershell
+scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
+scoop install quick-snippets
+```
+
 Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the same folder as the executable. To move or back up the app, copy the entire folder.
 
 > **SHA-256 checksum** — a `.sha256` file is attached to every release for verification.
