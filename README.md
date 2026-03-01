@@ -109,6 +109,9 @@ The application icon lives in the system tray. Right-click it for quick access t
 
 ### In the main window
 
+> All letter shortcuts (Ctrl+N, Ctrl+E, Ctrl+D, Ctrl+F, etc.) use the physical key
+> position, so they work regardless of the active OS keyboard layout (e.g. Ukrainian).
+
 | Shortcut | Action |
 |---|---|
 | Arrow Up / Down | Move selection in the snippet list |
@@ -116,7 +119,7 @@ The application icon lives in the system tray. Right-click it for quick access t
 | Enter | Copy selected snippet to clipboard |
 | Ctrl+N or Insert | Create new snippet |
 | Ctrl+E | Edit selected snippet |
-| Delete | Delete selected snippet |
+| Delete or Ctrl+D | Delete selected snippet |
 | Ctrl+F or / | Focus the search box |
 | Ctrl+, | Open Settings |
 | Ctrl+Shift+T | Toggle light / dark theme |
@@ -127,7 +130,7 @@ The application icon lives in the system tray. Right-click it for quick access t
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+Enter | Save / submit the form |
+| Ctrl+Enter | Confirm / save (works in all dialogs including exit and delete confirmation) |
 | Escape | Cancel and close the modal |
 
 ---
