@@ -31,7 +31,7 @@ pub fn get_db_path() -> PathBuf {
 // ---------------------------------------------------------------------------
 
 pub fn init_db(conn: &Connection) -> Result<()> {
-    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    conn.execute_batch("PRAGMA journal_mode=DELETE;")?;
     conn.execute_batch("PRAGMA busy_timeout=5000;")?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS snippets (
@@ -221,15 +221,15 @@ mod tests {
     }
 
     #[test]
-    fn test_init_db_sets_wal_journal_mode() {
+    fn test_init_db_sets_delete_journal_mode() {
         let conn = setup_test_db();
         // In-memory DBs always report "memory" for journal_mode, so we verify
         // that init_db executes without error and the PRAGMA is accepted.
         let mode: String = conn
             .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
             .unwrap();
-        // Acceptable values: "wal" (file) or "memory" (in-memory)
-        assert!(mode == "wal" || mode == "memory");
+        // Acceptable values: "delete" (file) or "memory" (in-memory)
+        assert!(mode == "delete" || mode == "memory");
     }
 
     #[test]
@@ -466,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn test_init_db_wal_on_real_file() {
+    fn test_init_db_delete_journal_on_real_file() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         let conn = rusqlite::Connection::open(&db_path).unwrap();
@@ -474,7 +474,7 @@ mod tests {
         let mode: String = conn
             .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(mode, "wal", "WAL mode must be enabled on a real file DB");
+        assert_eq!(mode, "delete", "DELETE journal mode must be enabled on a real file DB");
     }
 
     #[test]
