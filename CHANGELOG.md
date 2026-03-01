@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## v0.1.1 - 2026-03-01
+
+**Fixed**
+- Keyboard shortcuts (Ctrl+N, Ctrl+E, Ctrl+F, Ctrl+,, Ctrl+Shift+T, /) now work
+  regardless of the active OS keyboard layout (e.g. Ukrainian). Root cause: switched
+  from `event.key` (layout-dependent) to `event.code` (physical key position) for all
+  letter and symbol shortcuts.
+- `Ctrl+Enter` in the Exit Confirmation dialog now always quits the app, even when the
+  Cancel button is focused (previously bare Enter was blocked by the Cancel focus guard).
+- `Ctrl+Enter` in the Delete Confirmation dialog now confirms deletion, consistent with
+  all other modal dialogs.
+
+**Added**
+- `Ctrl+D` as an alternative shortcut for deleting the selected snippet (in addition to
+  the existing `Delete` key). Like all letter shortcuts, it is layout-independent.
+
+---
+
 ## v0.1.0 - 2026-02-27
 
 Summary: Initial public MVP release of QuickSnippets — a portable Windows launcher for secure text snippets with local encryption, search, and a basic set of UI/UX features.
