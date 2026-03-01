@@ -32,9 +32,14 @@ export function ExitConfirmModal({
         handleClose();
         return;
       }
+      // Ctrl+Enter always confirms quit (regardless of focused element)
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        void quitApp();
+        return;
+      }
+      // Bare Enter confirms quit only when Cancel is NOT the focused element
       if (e.key === 'Enter') {
-        // Only quit when Cancel is NOT the focused element —
-        // if Cancel is focused, let the browser fire its own click.
         if (document.activeElement !== cancelRef.current) {
           e.preventDefault();
           void quitApp();

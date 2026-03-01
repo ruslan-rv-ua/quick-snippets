@@ -6,6 +6,12 @@
 		<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
 		<a href="https://github.com/ruslan-rv-ua/quick-snippets/releases"><img src="https://img.shields.io/badge/Platform-Windows-0078D4.svg" alt="Platform: Windows"></a>
 	</p>
+	<p>
+		🌐 <strong>Read this document in:</strong>
+		<a href="README.md">English</a> ·
+		<a href="README.uk.md">Українська</a> ·
+		<a href="README.de.md">Deutsch</a>
+	</p>
 </div>
 
 ---
@@ -30,7 +36,7 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Portable** — no installer, no registry, no `AppData`; the whole app lives in one folder
 - **System tray** — stays out of your way when not in use; right-click the tray icon for quick actions
 - **Light and dark themes** — switch with a single shortcut or from Settings
-- **Two languages** — English and Ukrainian; language auto-detected from your system
+- **Three languages** — English, Ukrainian, and German; language auto-detected from your system
 - **Single-instance** — launching the app again simply brings the existing window to focus
 - **Auto-hide on blur** — the window disappears when you switch away, just like a launcher
 
@@ -68,6 +74,15 @@ QuickSnippets is a portable application — no installer needed.
 2. Download the latest `quick-snippets-windows-x64-vX.Y.Z.zip`.
 3. Extract the ZIP to any folder (e.g. `C:\Tools\QuickSnippets\`).
 4. Run `quick-snippets.exe`.
+
+### Installing via Scoop
+
+If you use [Scoop](https://scoop.sh/), you can install QuickSnippets from the official bucket:
+
+```powershell
+scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
+scoop install quick-snippets
+```
 
 Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the same folder as the executable. To move or back up the app, copy the entire folder.
 
@@ -109,6 +124,9 @@ The application icon lives in the system tray. Right-click it for quick access t
 
 ### In the main window
 
+> All letter shortcuts (Ctrl+N, Ctrl+E, Ctrl+D, Ctrl+F, etc.) use the physical key
+> position, so they work regardless of the active OS keyboard layout (e.g. Ukrainian).
+
 | Shortcut | Action |
 |---|---|
 | Arrow Up / Down | Move selection in the snippet list |
@@ -116,18 +134,19 @@ The application icon lives in the system tray. Right-click it for quick access t
 | Enter | Copy selected snippet to clipboard |
 | Ctrl+N or Insert | Create new snippet |
 | Ctrl+E | Edit selected snippet |
-| Delete | Delete selected snippet |
+| Delete or Ctrl+D | Delete selected snippet |
 | Ctrl+F or / | Focus the search box |
 | Ctrl+, | Open Settings |
 | Ctrl+Shift+T | Toggle light / dark theme |
 | Ctrl+Shift+Space | Announce selected snippet (screen reader) |
 | Escape | Close modal / clear search |
+| Alt+F4 | Quit the application |
 
 ### In forms and modals
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+Enter | Save / submit the form |
+| Ctrl+Enter | Confirm / save (works in all dialogs including exit and delete confirmation) |
 | Escape | Cancel and close the modal |
 
 ---
@@ -139,7 +158,7 @@ Open Settings with **Ctrl+,** or via the tray menu.
 | Setting | Description |
 |---|---|
 | Theme | Light or dark interface |
-| Language | English, Ukrainian, or auto-detect from system |
+| Language | English, Ukrainian, German, or auto-detect from system |
 | Start in tray | Hide the window on launch; only the tray icon is visible |
 | Launch on startup | Start QuickSnippets automatically when Windows starts |
 | Confirm on close | Show a confirmation dialog before quitting |

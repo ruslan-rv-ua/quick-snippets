@@ -41,12 +41,14 @@ export function DeleteConfirmModal({
   useEffect(() => {
     if (!isOpen) return;
     function handler(e: KeyboardEvent) {
-      // Enter does NOT confirm delete
-      if (e.key === 'Escape') { onClose(); }
+      if (e.key === 'Escape') { onClose(); return; }
+      // Ctrl+Enter confirms delete (consistent with other modals)
+      // Bare Enter intentionally does NOT confirm delete (safety)
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); void handleDelete(); }
     }
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, handleDelete]);
 
   if (!isOpen) return null;
 

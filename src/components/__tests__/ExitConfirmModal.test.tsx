@@ -68,6 +68,18 @@ describe('ExitConfirmModal', () => {
     expect(mockInvoke).not.toHaveBeenCalledWith('quit_app');
   });
 
+  it('Ctrl+Enter calls quit_app even when Cancel button IS focused', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    renderModal();
+    const cancelBtn = screen.getByRole('button', { name: /cancel|скасувати/i });
+    cancelBtn.focus();
+    expect(document.activeElement).toBe(cancelBtn);
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('quit_app');
+    });
+  });
+
   it('Escape closes modal without hiding window', () => {
     const onClose = vi.fn();
     renderModal({ onClose });

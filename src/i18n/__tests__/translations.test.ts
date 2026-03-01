@@ -4,15 +4,18 @@ import { translations } from '../translations';
 describe('translations', () => {
   const langCodes = Object.keys(translations) as Array<keyof typeof translations>;
 
-  it('has both en and uk translations', () => {
+  it('has en, uk and de translations', () => {
     expect(langCodes).toContain('en');
     expect(langCodes).toContain('uk');
+    expect(langCodes).toContain('de');
   });
 
-  it('en and uk have identical keys', () => {
+  it('en, uk and de have identical keys', () => {
     const enKeys = Object.keys(translations.en).sort();
     const ukKeys = Object.keys(translations.uk).sort();
-    expect(enKeys).toEqual(ukKeys);
+    const deKeys = Object.keys(translations.de).sort();
+    expect(ukKeys).toEqual(enKeys);
+    expect(deKeys).toEqual(enKeys);
   });
 
   it('no empty string values in en', () => {
@@ -31,14 +34,31 @@ describe('translations', () => {
     }
   });
 
+  it('no empty string values in de', () => {
+    for (const [key, value] of Object.entries(translations.de)) {
+      if (typeof value === 'string') {
+        expect(value.trim(), `de.${key} is empty`).not.toBe('');
+      }
+    }
+  });
+
   it('parametrized functions return strings', () => {
     expect(typeof translations.en.searchResults(5, 'test')).toBe('string');
     expect(typeof translations.uk.searchResults(5, 'test')).toBe('string');
+    expect(typeof translations.de.searchResults(5, 'test')).toBe('string');
   });
 
   it('pluralization works for en (1 vs many)', () => {
     const one = translations.en.snippetCount(1);
     const many = translations.en.snippetCount(5);
+    expect(one).toContain('1');
+    expect(many).toContain('5');
+    expect(one).not.toEqual(many);
+  });
+
+  it('pluralization works for de (1 vs many)', () => {
+    const one = translations.de.snippetCount(1);
+    const many = translations.de.snippetCount(5);
     expect(one).toContain('1');
     expect(many).toContain('5');
     expect(one).not.toEqual(many);
@@ -66,6 +86,7 @@ describe('translations', () => {
     it(`has required key: ${key}`, () => {
       expect(translations.en).toHaveProperty(key);
       expect(translations.uk).toHaveProperty(key);
+      expect(translations.de).toHaveProperty(key);
     });
   }
 });

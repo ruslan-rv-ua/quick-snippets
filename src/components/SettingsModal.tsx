@@ -137,6 +137,7 @@ export function SettingsModal({
                 <option value="">{t('autoLanguage')}</option>
                 <option value="en">English</option>
                 <option value="uk">Українська</option>
+                <option value="de">Deutsch</option>
               </select>
             </div>
 

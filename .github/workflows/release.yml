@@ -1,22 +1,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# release.yml — Automatic release workflow for QuickSnippets
+# release.yml — GitHub Actions release workflow for QuickSnippets
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# OVERVIEW
-#   Builds the Windows x64 portable binary and publishes a GitHub Release with
-#   a ZIP archive and a SHA-256 checksum file.
+# ЩО ВІДБУВАЄТЬСЯ ПРИ ЗАПУСКУ
+#   push тегу v*  →  збірка  →  ZIP + SHA256  →  GitHub Release  →
+#   →  repository_dispatch  →  scoop-bucket автоматично оновлює маніфест
 #
-# TRIGGERS
-#   • Push to `main`      — fires automatically after `git flow release finish`
-#                           merges the release branch into main.
-#   • workflow_dispatch   — manual re-trigger (e.g. if the automatic run failed
-#                           after the push but the issue has been resolved).
+# ТРИГЕРИ
+#   • push тегу  v*        — основний шлях: git tag v1.2.3 && git push --tags
+#   • workflow_dispatch    — ручний перезапуск (наприклад, якщо автоматичний
+#                            завершився з помилкою, а код вже виправлено)
 #
-# VERSIONING — SINGLE SOURCE OF TRUTH
-#   Version is read from `src-tauri/Cargo.toml` (the `[package].version` field).
-#   Rationale: the Rust binary embeds the version at compile time; Cargo.toml is
-#   therefore the authoritative source.  `tauri.conf.json` and `package.json`
-#   MUST mirror this value — keep all three in sync when cutting a release branch.
+# PRE-RELEASE
+#   Теги з суфіксами -alpha, -beta, -rc автоматично позначаються як pre-release.
+#   Крім того, при ручному запуску можна явно поставити прапорець prerelease.
+#   Для pre-release крок "Update Scoop bucket" пропускається.
+#
+# НЕОБХІДНІ СЕКРЕТИ
+#   SCOOP_BUCKET_TOKEN  — Fine-grained PAT з правом Contents: write на scoop-bucket
 #
 # BUILD STRATEGY
 #   We use `cargo build --release` DIRECTLY instead of `npm run tauri build`.
@@ -55,82 +56,58 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
-      version_override:
-        description: >
-          Optional: override the version string (e.g. 1.2.3, without the "v"
-          prefix). Leave empty to read from src-tauri/Cargo.toml automatically.
-          Use this only when the automatic trigger failed and the issue has been
-          fixed without a new commit (so you can re-publish the same version).
-        required: false
-        default: ''
+      version:
+        description: 'Версія (без "v", наприклад: 1.2.3)'
+        required: true
         type: string
+      prerelease:
+        description: 'Позначити як pre-release?'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  # ─── ЄДИНЕ МІСЦЕ ДЕ ТРЕБА ЗМІНИТИ ІМ'Я ───────────────────────────────────
+  # Регістр важливий: це ім'я буде використано в назві ZIP-архіву.
+  # APP_ID (для event-type у scoop-bucket) буде автоматично приведено до lowercase.
+  APP_NAME: quick-snippets
+  # ──────────────────────────────────────────────────────────────────────────
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and Release (Windows x64)
+  build:
     runs-on: windows-latest
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
-      # fetch-depth: 0 fetches all tags so GitHub can generate accurate release
-      # notes (what changed since the previous tag).
-      - name: Checkout repository
-        uses: actions/checkout@v4.3.1
-        with:
-          fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # ── 2. Determine version ─────────────────────────────────────────────────
-      # Regex extracts the first `version = "x.y.z"` line in Cargo.toml.
-      # The workflow_dispatch `version_override` input takes priority when set.
-      - name: Read version from Cargo.toml (or use override)
-        id: version
-        shell: pwsh
-        run: |
-          $override = '${{ inputs.version_override }}'.Trim()
-          if ($override -ne '') {
-            $version = $override
-            Write-Host "Using overridden version: $version"
-          } else {
-            $match = Select-String `
-              -Path 'src-tauri/Cargo.toml' `
-              -Pattern '^version\s*=\s*"([^"]+)"'
-            if (-not $match) {
-              Write-Error 'Could not parse version from src-tauri/Cargo.toml'
-              exit 1
-            }
-            $version = $match.Matches[0].Groups[1].Value
-            Write-Host "Version from Cargo.toml: $version"
-          }
-          "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      # ── ЗБІРКА ───────────────────────────────────────────────────────────────
 
-      # ── 3. Rust toolchain ─────────────────────────────────────────────────────
-      # `@stable` is the recommended usage for dtolnay/rust-toolchain — it selects
-      # the latest stable Rust and respects rust-toolchain.toml if present.
-      # We pin the MSVC target explicitly even though windows-latest defaults to it,
-      # to make the intent unambiguous and ensure the correct std lib is installed.
+      # ── Rust toolchain ────────────────────────────────────────────────────────
+      # `@stable` вибирає останній стабільний Rust і враховує rust-toolchain.toml.
+      # MSVC target вказано явно для однозначності (хоча windows-latest і так його використовує).
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
-      # ── 4. Rust build cache ───────────────────────────────────────────────────
-      # Caches ~/.cargo/registry, ~/.cargo/git, and src-tauri/target.
-      # `workspaces` tells the action where the Cargo workspace root is.
+      # ── Rust build cache ──────────────────────────────────────────────────────
+      # Кешує ~/.cargo/registry, ~/.cargo/git та src-tauri/target.
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2.8.2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
 
-      # ── 5. Node.js ────────────────────────────────────────────────────────────
+      # ── Node.js ───────────────────────────────────────────────────────────────
       - name: Set up Node.js LTS
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
           cache: 'npm'
@@ -192,9 +169,8 @@ jobs:
           $sizeMB = [Math]::Round($dll.Length / 1MB, 2)
           Write-Host "Copied: $($dll.FullName)  ($sizeMB MB)"
 
-      # ── 8. Verify artifacts ───────────────────────────────────────────────────
-      # Fast sanity check — fail early with a clear message if either file is
-      # missing rather than producing a broken or incomplete ZIP.
+      # ── Verify artifacts ──────────────────────────────────────────────────────
+      # Швидка перевірка — падаємо одразу з чітким повідомленням якщо файл відсутній.
       - name: Verify release artifacts exist
         shell: pwsh
         run: |
@@ -213,95 +189,75 @@ jobs:
           }
           if (-not $allOk) { exit 1 }
 
-      # ── 9. Package ZIP archive ────────────────────────────────────────────────
-      # Archive contains the two portable files needed to run the app.
-      # Naming convention: quick-snippets-windows-x64-v{version}.zip
-      #   • `windows-x64` — platform/arch (future-proof if arm64 is ever added)
-      #   • `v{version}`  — matches the git tag; makes download URLs predictable:
-      #     https://github.com/{owner}/{repo}/releases/download/v{version}/
-      #       quick-snippets-windows-x64-v{version}.zip
-      - name: Create ZIP archive
+      # ─────────────────────────────────────────────────────────────────────────
+
+      # При push-тегу: VERSION береться з тегу (refs/tags/v1.2.3 → 1.2.3)
+      # При ручному запуску: VERSION береться з inputs.version
+      - name: Get version and app info
+        id: info
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          APP_ID=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "APP_ID=$APP_ID" >> $GITHUB_OUTPUT
+          echo "Building ${{ env.APP_NAME }} version $VERSION (app id: $APP_ID)"
+
+      - name: Create release package
         id: package
         shell: pwsh
         run: |
-          $version    = '${{ steps.version.outputs.VERSION }}'
-          $zipName    = "quick-snippets-windows-x64-v$version.zip"
-          $releaseDir = 'src-tauri/target/release'
+          $appName = "${{ env.APP_NAME }}"
+          $version = "${{ steps.info.outputs.VERSION }}"
+          $packageDir = $appName
+          $zipName = "$appName-$version-windows-x64.zip"
 
-          Compress-Archive `
-            -Path "$releaseDir/quick-snippets.exe", "$releaseDir/WebView2Loader.dll" `
-            -DestinationPath $zipName `
-            -CompressionLevel Optimal
+          New-Item -ItemType Directory -Force -Path $packageDir
 
-          $sizeMB = [Math]::Round((Get-Item $zipName).Length / 1MB, 2)
-          Write-Host "Created: $zipName  ($sizeMB MB)"
-          "ZIP_NAME=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Copy-Item "src-tauri/target/release/quick-snippets.exe" -Destination $packageDir
+          Copy-Item "src-tauri/target/release/WebView2Loader.dll" -Destination $packageDir
 
-      # ── 10. SHA-256 checksum ──────────────────────────────────────────────────
-      # Attached to the release alongside the ZIP.
-      # Format: "{hash}  {filename}"  (shasum-compatible, two spaces)
-      #
-      # Scoop bucket integration: the planned release-scoop.yml workflow can read
-      # this file to populate the `hash` field in the Scoop manifest without
-      # having to re-download and hash the full ZIP.
-      - name: Generate SHA-256 checksum
-        id: checksum
-        shell: pwsh
-        run: |
-          $zipName      = '${{ steps.package.outputs.ZIP_NAME }}'
-          $checksumFile = "$zipName.sha256"
-          $hash = (Get-FileHash -Algorithm SHA256 $zipName).Hash.ToLower()
+          Compress-Archive -Path $packageDir -DestinationPath $zipName -Force
 
-          # Two-space delimiter is the shasum/sha256sum standard format
-          "$hash  $zipName" | Out-File -FilePath $checksumFile -Encoding ascii -NoNewline
+          $hash = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash.ToLower()
+          $hash | Out-File -FilePath "$zipName.sha256" -NoNewline -Encoding ascii
 
-          Write-Host "SHA-256: $hash"
-          "CHECKSUM_FILE=$checksumFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "SHA256=$hash"                | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Package: $zipName"
+          Write-Host "SHA256:  $hash"
 
-      # ── 11. Publish GitHub Release ────────────────────────────────────────────
-      # Creates (or updates) a GitHub Release tagged v{version}.
-      #
-      # • `tag_name` — the action creates the tag on HEAD if it does not exist.
-      #   With standard git flow, `git flow release finish` also creates this tag
-      #   locally and pushes it; in that case the action reuses it.
-      # • `generate_release_notes: true` — GitHub auto-generates a changelog from
-      #   merged PRs / commits since the previous tag; it is appended after `body`.
-      # • `make_latest: true` — marks this as the latest release on the repo page.
-      # • Files attached:
-      #   1. quick-snippets-windows-x64-v{version}.zip       — portable app
-      #   2. quick-snippets-windows-x64-v{version}.zip.sha256 — integrity checksum
+          echo "HASH=$hash" >> $env:GITHUB_OUTPUT
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_OUTPUT
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.5.0
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.VERSION }}
-          name: QuickSnippets v${{ steps.version.outputs.VERSION }}
+          tag_name: v${{ steps.info.outputs.VERSION }}
           files: |
-            ${{ steps.package.outputs.ZIP_NAME }}
-            ${{ steps.checksum.outputs.CHECKSUM_FILE }}
-          body: |
-            ## Installation
-
-            1. Download `${{ steps.package.outputs.ZIP_NAME }}`
-            2. Extract anywhere — no installer needed
-            3. Run `quick-snippets.exe`
-
-            ## Integrity
-
-            | File | SHA-256 |
-            |------|---------|
-            | `${{ steps.package.outputs.ZIP_NAME }}` | `${{ steps.checksum.outputs.SHA256 }}` |
-
-            <details>
-            <summary>Verify in PowerShell</summary>
-
-            ```powershell
-            (Get-FileHash -Algorithm SHA256 '${{ steps.package.outputs.ZIP_NAME }}').Hash.ToLower()
-            # expected: ${{ steps.checksum.outputs.SHA256 }}
-            ```
-
-            </details>
-
-            ---
+            ${{ env.APP_NAME }}-*.zip
+            ${{ env.APP_NAME }}-*.zip.sha256
           generate_release_notes: true
-          make_latest: true
+          draft: false
+          # Pre-release якщо: тег містить -alpha/-beta/-rc АБО вручну позначено
+          prerelease: ${{ inputs.prerelease || contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Оновлення scoop-bucket пропускається для pre-release (будь-якого виду)
+      - name: Update Scoop bucket
+        if: ${{ !inputs.prerelease && !contains(github.ref, '-alpha') && !contains(github.ref, '-beta') && !contains(github.ref, '-rc') }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          repository: ruslan-rv-ua/scoop-bucket
+          event-type: update-${{ steps.info.outputs.APP_ID }}
+          client-payload: |
+            {
+              "app": "${{ steps.info.outputs.APP_ID }}",
+              "version": "${{ steps.info.outputs.VERSION }}",
+              "hash": "${{ steps.package.outputs.HASH }}",
+              "url": "https://github.com/${{ github.repository }}/releases/download/v${{ steps.info.outputs.VERSION }}/${{ steps.package.outputs.ZIP_NAME }}"
+            }
