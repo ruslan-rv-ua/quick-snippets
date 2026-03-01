@@ -37,10 +37,11 @@ export const LanguageContext = createContext<LanguageContextValue>({
 // ── Helper ────────────────────────────────────────────────────────────────
 
 function resolveLanguage(raw: string): LangCode {
-  if (raw === 'en' || raw === 'uk') return raw;
+  if (raw === 'en' || raw === 'uk' || raw === 'de') return raw;
   // Auto-detect from browser locale
   const browserLang = navigator.language.slice(0, 2);
   if (browserLang === 'uk') return 'uk';
+  if (browserLang === 'de') return 'de';
   return 'en';
 }
 

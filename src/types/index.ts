@@ -1,6 +1,6 @@
 // TypeScript types synchronized with Rust structs
 
-export type LangCode = 'en' | 'uk';
+export type LangCode = 'en' | 'uk' | 'de';
 
 /** Raw snippet row — used internally; content is a byte array. */
 export interface Snippet {

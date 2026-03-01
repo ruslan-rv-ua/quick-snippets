@@ -231,4 +231,79 @@ const uk: TranslationMap = {
     encrypted ? `${title} (зашифровано)` : title,
 };
 
-export const translations: Record<LangCode, TranslationMap> = { en, uk };
+const de: TranslationMap = {
+  // Search
+  searchPlaceholder: 'Snippets suchen…',
+  noResults: 'Keine Ergebnisse gefunden',
+  nothingSelected: 'Snippet auswählen, um eine Vorschau zu sehen',
+
+  // Actions
+  copy: 'Kopieren',
+  save: 'Speichern',
+  cancel: 'Abbrechen',
+  delete: 'Löschen',
+  quit: 'Beenden',
+
+  // Toasts
+  copySuccess: 'Kopiert',
+  saveSuccess: 'Gespeichert',
+  deleteSuccess: 'Gelöscht',
+
+  // Form labels
+  titleLabel: 'Titel',
+  contentLabel: 'Inhalt',
+  passwordLabel: 'Passwort',
+  confirmPasswordLabel: 'Passwort bestätigen',
+  encrypted: 'Verschlüsselt',
+
+  of: 'von',
+
+  // Validation
+  titleValidation: 'Titel muss 3–50 Zeichen lang sein',
+  titleDuplicate: 'Ein Snippet mit diesem Titel existiert bereits',
+  contentValidation: 'Inhalt darf nicht leer sein',
+  passwordMismatch: 'Passwörter stimmen nicht überein',
+  wrongPassword: 'Falsches Passwort',
+  decryptError: 'Snippet konnte nicht entschlüsselt werden',
+  enterPassword: 'Passwort zum Entschlüsseln eingeben',
+
+  // CRUD headings
+  createSnippet: 'Snippet erstellen',
+  editSnippet: 'Snippet bearbeiten',
+  deleteSnippet: 'Snippet löschen',
+
+  // Empty states
+  noSnippets: 'Noch keine Snippets — erstellen Sie das erste!',
+
+  // Settings
+  settingsTitle: 'Einstellungen',
+  themeLabel: 'Design',
+  languageLabel: 'Sprache',
+  startInTrayLabel: 'Im Infobereich starten',
+  autostartLabel: 'Mit Windows starten',
+  confirmOnCloseLabel: 'Vor dem Schließen bestätigen',
+  darkTheme: 'Dunkel',
+  lightTheme: 'Hell',
+  autoLanguage: 'Automatisch (System)',
+  restartHint: 'Einige Einstellungen treten nach einem Neustart in Kraft',
+
+  // Exit dialog
+  exitConfirmTitle: 'QuickSnippets beenden?',
+  exitConfirmMessage: 'Die Anwendung wird geschlossen.',
+  cannotUndo: 'Diese Aktion kann nicht rückgängig gemacht werden',
+
+  // Warnings / errors
+  hotkeyWarning: 'Globale Tastenkombination konnte nicht registriert werden',
+  decrypting: 'Entschlüsseln…',
+  corruptedDb: 'Datenbank scheint beschädigt — bitte sichern Sie sie, bevor Sie fortfahren',
+  corruptedSettings: 'Einstellungsdatei ist ungültig — Standardwerte wurden angewendet',
+
+  // Parametrized
+  searchResults: (n, query) =>
+    n === 1 ? `1 Ergebnis für „${query}"` : `${n} Ergebnisse für „${query}"`,
+  snippetCount: (n) => (n === 1 ? '1 Snippet' : `${n} Snippets`),
+  snippetLabel: (title, encrypted) =>
+    encrypted ? `${title} (verschlüsselt)` : title,
+};
+
+export const translations: Record<LangCode, TranslationMap> = { en, uk, de };

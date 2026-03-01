@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.1.2 - 2026-03-01
+
+**Added**
+- German (Deutsch) localization — complete translation of all UI strings and parametrized messages.
+- Language selector in Settings now includes Deutsch as a third option.
+- Auto-detect falls back to German when the system locale is `de`.
+- `README.uk.md` — Ukrainian version of the readme.
+- `README.de.md` — German version of the readme.
+- Language links in `README.md` following GitHub best practices.
+
+---
+
 ## v0.1.1 - 2026-03-01
 
 **Fixed**
