@@ -18,13 +18,18 @@ export interface KeyboardHandlers {
 /**
  * Registers global keyboard shortcuts for the main window.
  *
- *  Ctrl+N / Insert  → openCreate
- *  Ctrl+E           → openEdit   (only if activeIndex >= 0)
- *  Delete           → openDelete (only if activeIndex >= 0)
- *  Ctrl+,           → openSettings
- *  Ctrl+Shift+T     → toggleTheme
- *  Ctrl+F / /       → focusSearch
- *  Ctrl+Shift+Space → announce (screen reader)
+ * All letter/symbol shortcuts use `event.code` (physical key position) rather than
+ * `event.key` so they work regardless of the active OS keyboard layout (e.g. Ukrainian).
+ * Special keys (Insert, Delete, Home, End, Space, Enter, Escape) use `event.key`
+ * because they are layout-independent already.
+ *
+ *  Ctrl+N / Insert     → openCreate
+ *  Ctrl+E              → openEdit   (only if activeIndex >= 0)
+ *  Delete / Ctrl+D     → openDelete (only if activeIndex >= 0)
+ *  Ctrl+,              → openSettings
+ *  Ctrl+Shift+T        → toggleTheme
+ *  Ctrl+F / /          → focusSearch
+ *  Ctrl+Shift+Space    → announce (screen reader)
  */
 export function useKeyboard(handlers: KeyboardHandlers): void {
   const { toggleTheme } = useContext(ThemeContext);
@@ -36,10 +41,11 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
 
       const ctrl = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
-      const key = e.key;
+      const key = e.key;   // layout-dependent; used only for special keys
+      const code = e.code; // layout-independent physical key; used for letters/symbols
 
       // Ctrl+Shift+T → toggle theme
-      if (ctrl && shift && key === 'T') {
+      if (ctrl && shift && code === 'KeyT') {
         e.preventDefault();
         toggleTheme();
         return;
@@ -53,7 +59,7 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
       }
 
       // Ctrl+N → create
-      if (ctrl && !shift && key === 'n') {
+      if (ctrl && !shift && code === 'KeyN') {
         e.preventDefault();
         handlers.onOpenCreate();
         return;
@@ -67,7 +73,7 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
       }
 
       // Ctrl+E → edit
-      if (ctrl && !shift && key === 'e') {
+      if (ctrl && !shift && code === 'KeyE') {
         e.preventDefault();
         if (handlers.activeIndex >= 0) handlers.onOpenEdit();
         return;
@@ -82,23 +88,32 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
         return;
       }
 
+      // Ctrl+D → delete
+      if (ctrl && !shift && code === 'KeyD') {
+        if (handlers.activeIndex >= 0) {
+          e.preventDefault();
+          handlers.onOpenDelete();
+        }
+        return;
+      }
+
       // Ctrl+, → settings
-      if (ctrl && !shift && key === ',') {
+      if (ctrl && !shift && code === 'Comma') {
         e.preventDefault();
         handlers.onOpenSettings();
         return;
       }
 
       // Ctrl+F → focus search
-      if (ctrl && !shift && key === 'f') {
+      if (ctrl && !shift && code === 'KeyF') {
         e.preventDefault();
         handlers.onFocusSearch();
         return;
       }
 
       // / → focus search (only when not in an input)
-      if (key === '/' && !ctrl && !shift) {
-        const tag = (e.target as HTMLElement).tagName.toLowerCase();
+      if (code === 'Slash' && !ctrl && !shift) {
+        const tag = ((e.target as HTMLElement)?.tagName ?? '').toLowerCase();
         if (tag !== 'input' && tag !== 'textarea') {
           e.preventDefault();
           handlers.onFocusSearch();
@@ -108,7 +123,7 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
 
       // Home / End → jump to first / last snippet (only when not in an input)
       if (!ctrl && !shift && (key === 'Home' || key === 'End')) {
-        const tag = (e.target as HTMLElement).tagName.toLowerCase();
+        const tag = ((e.target as HTMLElement)?.tagName ?? '').toLowerCase();
         if (tag !== 'input' && tag !== 'textarea') {
           e.preventDefault();
           if (key === 'Home') handlers.onSelectFirst && handlers.onSelectFirst();
