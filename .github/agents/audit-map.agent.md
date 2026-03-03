@@ -2,7 +2,7 @@
 name: audit-map
 description: 'Субагент аудиту. Картографує проект: технології, архітектуру, точки входу, модулі, залежності.'
 model: Claude Opus 4.6 (copilot)
-tools: ['read_file', 'list_dir', 'create_file', 'grep_search', 'file_search']
+tools: [vscode, execute, read, agent, edit, search, web, 'context7/*', todo]
 ---
 
 # Субагент: Картографування проекту

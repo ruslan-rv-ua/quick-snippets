@@ -1,7 +1,7 @@
 ---
 name: audit-coordinator
 description: 'Головний агент аудиту. Координує роботу всіх спеціалізованих субагентів, збирає результати і генерує фінальний звіт.'
-tools: ['read_file', 'create_file', 'list_dir', 'run_subagent']
+tools: [vscode, execute, read, agent, edit, search, web, 'context7/*', todo]
 ---
 
 # Координатор аудиту коду

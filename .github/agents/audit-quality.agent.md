@@ -2,7 +2,7 @@
 name: audit-quality
 description: 'Субагент аудиту. Аналізує якість коду: дублювання, читабельність, консистентність, типізацію, обробку помилок, продуктивність.'
 model: Claude Opus 4.6 (copilot)
-tools: ['read_file', 'list_dir', 'create_file', 'grep_search', 'file_search']
+tools: [vscode, execute, read, agent, edit, search, web, 'context7/*', todo]
 ---
 
 # Субагент: Аналіз якості коду

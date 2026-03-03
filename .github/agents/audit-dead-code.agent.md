@@ -2,7 +2,7 @@
 name: audit-dead-code
 description: 'Субагент аудиту. Шукає мертвий код: невикористані файли, змінні, функції, залежності, недосяжний код.'
 model: Claude Opus 4.6 (copilot)
-tools: ['read_file', 'list_dir', 'create_file', 'grep_search', 'file_search']
+tools: [vscode, execute, read, agent, edit, search, web, 'context7/*', todo]
 ---
 
 # Субагент: Пошук мертвого коду
