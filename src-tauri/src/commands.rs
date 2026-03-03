@@ -259,6 +259,42 @@ pub mod tauri_commands {
         Ok(s.clone())
     }
 
+    /// Enable or disable OS autostart depending on `autostart` flag.
+    fn apply_autostart(autostart: bool, app: &AppHandle) {
+        use tauri_plugin_autostart::ManagerExt;
+        let autolaunch = app.autolaunch();
+        if autostart {
+            let _ = autolaunch.enable();
+        } else {
+            let _ = autolaunch.disable();
+        }
+    }
+
+    /// Rebuild the tray context menu with labels matching `lang`.
+    fn rebuild_tray_menu(app: &AppHandle, lang: &str) -> Result<(), String> {
+        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+        let labels = crate::get_tray_menu_labels(lang);
+        if let Some(tray) = app.tray_by_id("main") {
+            let show = MenuItem::with_id(app, "show", labels.show, true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let new_snippet =
+                MenuItem::with_id(app, "new_snippet", labels.new_snippet, true, None::<&str>)
+                    .map_err(|e| e.to_string())?;
+            let settings_item =
+                MenuItem::with_id(app, "settings_item", labels.settings, true, None::<&str>)
+                    .map_err(|e| e.to_string())?;
+            let sep = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
+            let quit = MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            if let Ok(menu) =
+                Menu::with_items(app, &[&show, &new_snippet, &settings_item, &sep, &quit])
+            {
+                let _ = tray.set_menu(Some(menu));
+            }
+        }
+        Ok(())
+    }
+
     #[tauri::command]
     pub fn save_settings(
         settings: Settings,
@@ -274,13 +310,10 @@ pub mod tauri_commands {
                 height: size.height,
             };
         }
-        use tauri_plugin_autostart::ManagerExt;
-        let autolaunch = window.app_handle().autolaunch();
-        if new_settings.autostart {
-            let _ = autolaunch.enable();
-        } else {
-            let _ = autolaunch.disable();
-        }
+
+        let app = window.app_handle();
+        apply_autostart(new_settings.autostart, app);
+
         let path = crate::settings::get_settings_path();
         crate::settings::save_settings_to_path(&new_settings, &path)
             .map_err(|e| e.to_string())?;
@@ -288,44 +321,12 @@ pub mod tauri_commands {
         *s = new_settings.clone();
         drop(s);
 
-        // ── Rebuild tray menu with the (possibly new) language ────────────
-        {
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-
-            let app = window.app_handle();
-            let effective_lang = if new_settings.language.is_empty() {
-                crate::settings::detect_language()
-            } else {
-                new_settings.language.clone()
-            };
-            let labels = crate::get_tray_menu_labels(&effective_lang);
-
-            if let Some(tray) = app.tray_by_id("main") {
-                let show = MenuItem::with_id(app, "show", labels.show, true, None::<&str>)
-                    .map_err(|e| e.to_string())?;
-                let new_snippet =
-                    MenuItem::with_id(app, "new_snippet", labels.new_snippet, true, None::<&str>)
-                        .map_err(|e| e.to_string())?;
-                let settings_item = MenuItem::with_id(
-                    app,
-                    "settings_item",
-                    labels.settings,
-                    true,
-                    None::<&str>,
-                )
-                .map_err(|e| e.to_string())?;
-                let sep =
-                    PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
-                let quit =
-                    MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)
-                        .map_err(|e| e.to_string())?;
-                if let Ok(menu) =
-                    Menu::with_items(app, &[&show, &new_snippet, &settings_item, &sep, &quit])
-                {
-                    let _ = tray.set_menu(Some(menu));
-                }
-            }
-        }
+        let effective_lang = if new_settings.language.is_empty() {
+            crate::settings::detect_language()
+        } else {
+            new_settings.language.clone()
+        };
+        rebuild_tray_menu(app, &effective_lang)?;
 
         Ok(())
     }

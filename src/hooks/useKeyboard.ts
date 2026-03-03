@@ -126,8 +126,8 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
         const tag = ((e.target as HTMLElement)?.tagName ?? '').toLowerCase();
         if (tag !== 'input' && tag !== 'textarea') {
           e.preventDefault();
-          if (key === 'Home') handlers.onSelectFirst && handlers.onSelectFirst();
-          if (key === 'End') handlers.onSelectLast && handlers.onSelectLast();
+          if (key === 'Home') handlers.onSelectFirst?.();
+          if (key === 'End') handlers.onSelectLast?.();
         }
         return;
       }

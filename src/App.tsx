@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+
+import { useModalState } from './hooks/useModalState';
+import { useWindowEvents } from './hooks/useWindowEvents';
 
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -28,7 +30,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ExitConfirmModal } from './components/ExitConfirmModal';
 import { ToastContainer } from './components/ToastContainer';
 
-import type { SearchResult, SnippetView } from './types';
+import type { SearchResult } from './types';
 import './styles/theme.css';
 
 // ── Inner app (inside providers) ─────────────────────────────────────────
@@ -43,19 +45,20 @@ function AppInner(): React.ReactElement {
   const searchRef = useRef<SearchBoxHandle>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
-  // Modal states
-  const [showCreate, setShowCreate] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
-  const [showDelete, setShowDelete] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showExit, setShowExit] = useState(false);
-
-  // Data for modals
-  const [editSnippet, setEditSnippet] = useState<SnippetView | null>(null);
-  const [deleteId, setDeleteId] = useState(0);
-  const [deleteTitle, setDeleteTitle] = useState('');
-  const [passwordSnippet, setPasswordSnippet] = useState<SearchResult | null>(null);
+  const {
+    showCreate, setShowCreate,
+    showEdit, setShowEdit,
+    showDelete, setShowDelete,
+    showPassword, setShowPassword,
+    showSettings, setShowSettings,
+    showExit, setShowExit,
+    editSnippet, setEditSnippet,
+    deleteId, setDeleteId,
+    deleteTitle, setDeleteTitle,
+    passwordSnippet, setPasswordSnippet,
+    anyModalOpen,
+    closeAll,
+  } = useModalState();
 
   // ── Fetch snippets on debounced query change OR window show ────────────
   useEffect(() => {
@@ -81,14 +84,9 @@ function AppInner(): React.ReactElement {
   // ── Full reset + hide window ──────────────────────────────────────────
   const hideWindow = useCallback(() => {
     resetState();
-    setShowPassword(false);
-    setShowCreate(false);
-    setShowEdit(false);
-    setShowDelete(false);
-    setShowSettings(false);
-    setShowExit(false);
+    closeAll();
     getCurrentWindow().hide().catch(() => void 0);
-  }, [resetState]);
+  }, [resetState, closeAll]);
 
   // ── Partial reset (blur) ──────────────────────────────────────────────
   const partialReset = useCallback(() => {
@@ -96,72 +94,33 @@ function AppInner(): React.ReactElement {
     setActiveIndex(-1);
     setShowPassword(false);
     // Other modals stay open
-  }, [setQuery, setActiveIndex]);
+  }, [setQuery, setActiveIndex, setShowPassword]);
 
-  // ── Focus search box on window focus (hotkey / tray / startup) ────────
+  // ── Focus search box when no modal is open ────────────────────────────
   const focusSearch = useCallback(() => {
-    if (!showCreate && !showEdit && !showDelete && !showPassword && !showSettings && !showExit) {
-      searchRef.current?.focus();
-    }
-  }, [showCreate, showEdit, showDelete, showPassword, showSettings, showExit]);
+    if (!anyModalOpen) searchRef.current?.focus();
+  }, [anyModalOpen]);
 
-  // Focus on initial mount (small delay to let the webview fully activate)
-  useEffect(() => {
-    const t = setTimeout(() => searchRef.current?.focus(), 60);
-    return () => clearTimeout(t);
-  }, []);
-
-  // Focus + reload snippets whenever the OS gives focus to the window
-  useEffect(() => {
-    function handleWindowFocus() {
-      focusSearch();
-      setRefreshTick((n) => n + 1);
-    }
-    window.addEventListener('focus', handleWindowFocus);
-    return () => window.removeEventListener('focus', handleWindowFocus);
-  }, [focusSearch]);
-
-  // ── Window blur ───────────────────────────────────────────────────────
-  useEffect(() => {
-    function handleBlur() { partialReset(); }
-    window.addEventListener('blur', handleBlur);
-    return () => window.removeEventListener('blur', handleBlur);
-  }, [partialReset]);
+  // ── Window events (focus, blur, tray, hotkey) ─────────────────────────
+  useWindowEvents({
+    onInitialFocus: () => searchRef.current?.focus(),
+    onShow: () => { focusSearch(); setRefreshTick((n) => n + 1); },
+    onBlur: partialReset,
+    onTrayCreate: () => setShowCreate(true),
+    onTraySettings: () => setShowSettings(true),
+    onCloseRequest: () => setShowExit(true),
+  });
 
   // ── Escape key on empty query → hide window ───────────────────────────
   useEffect(() => {
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape' && query === '') {
-        // Only if no modal is open
-        if (!showCreate && !showEdit && !showDelete && !showPassword && !showSettings && !showExit) {
-          hideWindow();
-        }
+      if (e.key === 'Escape' && query === '' && !anyModalOpen) {
+        hideWindow();
       }
     }
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [query, hideWindow, showCreate, showEdit, showDelete, showPassword, showSettings, showExit]);
-
-  // ── Tauri event subscriptions ─────────────────────────────────────────
-  useEffect(() => {
-    const unlisten1 = listen('tray:create-snippet', () => setShowCreate(true));
-    const unlisten2 = listen('tray:open-settings', () => setShowSettings(true));
-    const unlisten3 = listen('window:close-request', () => setShowExit(true));
-    // Fired by Rust whenever the window is programmatically shown (hotkey / tray).
-    // Belt-and-suspenders alongside the native `window focus` handler.
-    const unlisten4 = listen('window:show', () => {
-      setRefreshTick((n) => n + 1);
-      // focusSearch is not accessible here (stale closure), so
-      // rely on the native 'focus' handler that fires right after show.
-    });
-
-    return () => {
-      void unlisten1.then((fn) => fn());
-      void unlisten2.then((fn) => fn());
-      void unlisten3.then((fn) => fn());
-      void unlisten4.then((fn) => fn());
-    };
-  }, []);
+  }, [query, hideWindow, anyModalOpen]);
 
   // ── Snippet activation ────────────────────────────────────────────────
   const handleActivate = useCallback(
@@ -223,8 +182,6 @@ function AppInner(): React.ReactElement {
   }, [snippets, activeIndex, t, addToast]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
-  const anyModalOpen = showCreate || showEdit || showDelete || showPassword || showSettings || showExit;
-
   useKeyboard({
     activeIndex,
     disabled: anyModalOpen,
