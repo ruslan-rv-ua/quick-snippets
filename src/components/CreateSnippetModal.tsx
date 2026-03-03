@@ -50,13 +50,6 @@ export function CreateSnippetModal({
     }
   }, [isOpen]);
 
-  // Focus title on open
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => titleRef.current?.focus(), 10);
-    }
-  }, [isOpen]);
-
   const validate = useCallback((): FormErrors => {
     const errs: FormErrors = {};
     if (title.length < 3 || title.length > 50) errs.title = t('titleValidation');

@@ -43,7 +43,6 @@ export function EditSnippetModal({
       setContent(snippet.content);
       setErrors({});
       setSubmitted(false);
-      setTimeout(() => titleRef.current?.focus(), 10);
     }
   }, [isOpen, snippet]);
 

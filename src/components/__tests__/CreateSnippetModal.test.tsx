@@ -81,7 +81,7 @@ describe('CreateSnippetModal', () => {
       // focus should land on the confirmation input so that AT reads the message
       expect(document.activeElement).toBe(confirmPwd);
       // error span has aria-live so AT can announce text
-      const err = screen.getByText(/парол/i).closest('span');
+      const err = screen.getByRole('alert');
       expect(err).toHaveAttribute('aria-live', 'assertive');
     });
   });
