@@ -6,6 +6,7 @@ import React, {
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { activateSnippet } from '../hooks/useIpc';
 
 export interface PasswordModalProps {
@@ -62,21 +63,12 @@ export function PasswordModal({
     }
   }, [password, snippetId, onSuccess, onClose, t]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setPassword('');
-        onClose();
-        return;
-      }
-      if (e.key === 'Enter' && (e.target as HTMLElement).id === 'pwd-input') {
-        void handleSubmit();
-      }
-    }
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, handleSubmit]);
+  const handleEscape = useCallback(() => {
+    setPassword('');
+    onClose();
+  }, [onClose]);
+
+  useModalKeyboard(isOpen, { onEscape: handleEscape });
 
   if (!isOpen) return null;
 

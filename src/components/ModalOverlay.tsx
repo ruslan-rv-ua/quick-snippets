@@ -3,6 +3,7 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
+import { getFocusable } from '../utils/focusable';
 
 export interface ModalOverlayProps {
   isOpen: boolean;
@@ -11,14 +12,6 @@ export interface ModalOverlayProps {
   children: React.ReactNode;
   /** When true, sets aria-busy="true" on the dialog element. */
   busy?: boolean;
-}
-
-const FOCUSABLE_SELECTORS =
-  'a[href], button:not([disabled]), textarea:not([disabled]), ' +
-  'input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function getFocusable(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
 }
 
 export function ModalOverlay({

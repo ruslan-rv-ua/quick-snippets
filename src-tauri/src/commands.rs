@@ -84,6 +84,16 @@ pub fn search_snippets_inner(
     Ok(search::search(query, &rows))
 }
 
+/// Maps a rusqlite error to a user-facing string.
+/// Unique constraint violations are reported as a friendly message.
+fn map_rusqlite_err(e: rusqlite::Error) -> String {
+    if e.to_string().contains("UNIQUE constraint failed") {
+        "Title already exists".to_string()
+    } else {
+        e.to_string()
+    }
+}
+
 pub fn get_snippet_by_id_inner(conn: &Connection, id: i64) -> Result<SnippetView, String> {
     let row = db::get_snippet_by_id(conn, id).map_err(|e| e.to_string())?;
     let content = if row.is_encrypted {
@@ -114,20 +124,12 @@ pub fn create_snippet_inner(
         return Err("Title too long (max 50 chars)".to_string());
     }
 
-    let map_err = |e: rusqlite::Error| -> String {
-        if e.to_string().contains("UNIQUE constraint failed") {
-            "Title already exists".to_string()
-        } else {
-            e.to_string()
-        }
-    };
-
     if password.is_empty() {
         let blob = content.as_bytes().to_vec();
-        db::create_snippet(conn, title, blob, false).map_err(map_err)
+        db::create_snippet(conn, title, blob, false).map_err(map_rusqlite_err)
     } else {
         let blob = crypto::encrypt(content.as_bytes(), password).map_err(|e| e.to_string())?;
-        db::create_snippet(conn, title, blob, true).map_err(map_err)
+        db::create_snippet(conn, title, blob, true).map_err(map_rusqlite_err)
     }
 }
 
@@ -153,13 +155,7 @@ pub fn update_snippet_inner(
     content: &str,
 ) -> Result<(), String> {
     let blob = content.as_bytes().to_vec();
-    db::update_snippet(conn, id, title, blob).map_err(|e| {
-        if e.to_string().contains("UNIQUE constraint failed") {
-            "Title already exists".to_string()
-        } else {
-            e.to_string()
-        }
-    })
+    db::update_snippet(conn, id, title, blob).map_err(map_rusqlite_err)
 }
 
 pub fn delete_snippet_inner(conn: &Connection, id: i64) -> Result<(), String> {

@@ -6,7 +6,9 @@ import React, {
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { updateSnippet } from '../hooks/useIpc';
+import { ipcErrorToString } from '../utils/errors';
 import type { SnippetView } from '../types';
 
 export interface EditSnippetModalProps {
@@ -71,7 +73,7 @@ export function EditSnippetModal({
       onSuccess();
       onClose();
     } catch (err: unknown) {
-      const msg = typeof err === 'string' ? err : String(err);
+      const msg = ipcErrorToString(err);
       const titleErr = msg.includes('Title already exists')
         ? t('titleDuplicate')
         : msg;
@@ -80,18 +82,7 @@ export function EditSnippetModal({
     }
   }, [validate, snippet, title, content, onSuccess, onClose, t]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') { onClose(); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void handleSubmit();
-      }
-    }
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, handleSubmit]);
+  useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });
 
   if (!isOpen || !snippet) return null;
 

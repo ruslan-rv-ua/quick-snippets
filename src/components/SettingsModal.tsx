@@ -10,16 +10,14 @@ import { useLanguage } from '../hooks/useLanguage';
 import { ThemeContext } from '../contexts/ThemeContext';
 import { LanguageContext } from '../contexts/LanguageContext';
 import { getSettings, saveSettings } from '../hooks/useIpc';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
+import { FOCUSABLE_SELECTORS } from '../utils/focusable';
 import type { Settings, LangCode } from '../types';
 
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), ' +
-  'input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function SettingsModal({
   isOpen,
@@ -51,7 +49,7 @@ export function SettingsModal({
     if (!isOpen || loading) return;
     const el = dialogRef.current;
     if (!el) return;
-    const first = el.querySelector<HTMLElement>(FOCUSABLE);
+    const first = el.querySelector<HTMLElement>(FOCUSABLE_SELECTORS);
     (first ?? el).focus();
   }, [isOpen, loading]);
 
@@ -74,18 +72,7 @@ export function SettingsModal({
     }
   }, [settings, saving, theme, language, onClose]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') { onClose(); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void handleSave();
-      }
-    }
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, handleSave]);
+  useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSave });
 
   if (!isOpen) return null;
 
