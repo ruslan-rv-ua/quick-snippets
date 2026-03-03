@@ -9,8 +9,8 @@
 	<p>
 		🌐 <strong>Read this document in:</strong>
 		<a href="README.md">English</a> ·
-		<a href="README.uk.md">Українська</a> ·
-		<a href="README.de.md">Deutsch</a>
+		<a href="README_UK.md">Українська</a> ·
+		<a href="README_DE.md">Deutsch</a>
 	</p>
 </div>
 
