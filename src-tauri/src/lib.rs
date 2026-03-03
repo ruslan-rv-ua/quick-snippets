@@ -429,9 +429,83 @@ mod tests {
     }
 
     #[test]
+    fn test_tray_menu_labels_de() {
+        // "de" is explicitly supported — must return German labels, not English fallback
+        let labels = get_tray_menu_labels("de");
+        assert_eq!(labels.show, "Anzeigen");
+        assert_eq!(labels.new_snippet, "Neues Snippet");
+        assert_eq!(labels.settings, "Einstellungen");
+        assert_eq!(labels.quit, "Beenden");
+    }
+
+    #[test]
     fn test_tray_menu_labels_unknown_defaults_to_en() {
         let labels = get_tray_menu_labels("xx");
         assert_eq!(labels.show, "Show");
+    }
+
+    #[test]
+    fn test_generate_tray_icon_border_pixels_opaque() {
+        // Pixels on the document border (e.g. top edge y=1, x=2..13) must be fully opaque
+        let data = generate_tray_icon_rgba();
+        for x in 2usize..=13 {
+            // top border row
+            let i = (1 * 16 + x) * 4;
+            assert_eq!(data[i + 3], 255, "top border pixel ({x},1) should be opaque");
+            // bottom border row
+            let i = (14 * 16 + x) * 4;
+            assert_eq!(data[i + 3], 255, "bottom border pixel ({x},14) should be opaque");
+        }
+        for y in 2usize..=13 {
+            // left border column
+            let i = (y * 16 + 2) * 4;
+            assert_eq!(data[i + 3], 255, "left border pixel (2,{y}) should be opaque");
+            // right border column
+            let i = (y * 16 + 13) * 4;
+            assert_eq!(data[i + 3], 255, "right border pixel (13,{y}) should be opaque");
+        }
+    }
+
+    #[test]
+    fn test_generate_tray_icon_border_pixels_color() {
+        // Border pixels should be light grey (220, 220, 220)
+        let data = generate_tray_icon_rgba();
+        let i = (1 * 16 + 2) * 4; // top-left corner of border, (2,1)
+        assert_eq!(data[i], 220, "R should be 220");
+        assert_eq!(data[i + 1], 220, "G should be 220");
+        assert_eq!(data[i + 2], 220, "B should be 220");
+    }
+
+    #[test]
+    fn test_generate_tray_icon_text_line_pixels() {
+        // "Text" line pixels (y=4,6,8, x=4..11) should be medium grey (170, 170, 170) and opaque
+        let data = generate_tray_icon_rgba();
+        for y in [4usize, 6, 8] {
+            for x in 4usize..=11 {
+                let i = (y * 16 + x) * 4;
+                assert_eq!(data[i], 170, "R at ({x},{y}) should be 170");
+                assert_eq!(data[i + 1], 170, "G at ({x},{y}) should be 170");
+                assert_eq!(data[i + 2], 170, "B at ({x},{y}) should be 170");
+                assert_eq!(data[i + 3], 255, "A at ({x},{y}) should be 255");
+            }
+        }
+        // Shorter line at y=10, x=4..8
+        for x in 4usize..=8 {
+            let i = (10 * 16 + x) * 4;
+            assert_eq!(data[i], 170, "R at ({x},10) should be 170");
+            assert_eq!(data[i + 3], 255, "A at ({x},10) should be 255");
+        }
+    }
+
+    #[test]
+    fn test_generate_tray_icon_corner_transparent() {
+        // Corners of the 16x16 grid (outside the document border) should be fully transparent
+        let data = generate_tray_icon_rgba();
+        // Top-left absolute corner (0,0)
+        assert_eq!(data[3], 0, "pixel (0,0) should be transparent");
+        // Top-right absolute corner (15,0)
+        let i = (0 * 16 + 15) * 4;
+        assert_eq!(data[i + 3], 0, "pixel (15,0) should be transparent");
     }
 
     // === AppState pending notification ===
