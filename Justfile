@@ -112,6 +112,7 @@ build profile=profile:
 
 # Production bundle — npm run tauri build → .exe + installer  (alias: r)
 release:
+    npx tsc --noEmit
     npm run tauri build
 
 # Open the release bundle folder in Explorer
