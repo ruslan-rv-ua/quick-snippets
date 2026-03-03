@@ -10,7 +10,6 @@
     "core:window:allow-set-focus",
     "global-shortcut:default",
     "clipboard-manager:default",
-    "autostart:default",
-    "dialog:default"
+    "autostart:default"
   ]
 }

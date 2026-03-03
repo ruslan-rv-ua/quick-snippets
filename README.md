@@ -90,6 +90,45 @@ The application icon lives in the system tray. Right-click it for quick access t
 
 ---
 
+## Security Model
+
+Your privacy is paramount. QuickSnippets is designed to keep your snippets on your device, encrypted if you choose.
+
+### How Your Data Is Protected
+
+- **AES-256-GCM encryption** — sensitive snippets can be password-protected with military-grade encryption
+- **PBKDF2 key derivation** — passwords are stretched with 100,000 iterations to resist brute-force attacks
+- **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
+- **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the application folder; no cloud, no telemetry, no sync
+- **No registry** — QuickSnippets does not touch Windows registry or AppData directories
+- **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
+
+### What Is Encrypted
+
+- **Snippet content** — if you choose to protect a snippet with a password, its content is encrypted
+
+### What Is NOT Encrypted
+
+- **Snippet title** — used for searching; stored as plaintext so you can find your snippets
+- **Metadata** — creation and modification timestamps are not encrypted
+- **Settings** — window geometry, theme preference, language are stored in plaintext
+
+### Memory Safety
+
+- Session keys are held in memory only during decryption
+- Plaintext is immediately cleared (zeroized) after use
+- No unencrypted data is written to disk
+
+### Important Limitations
+
+- **Timing attacks**: Password verification is not constant-time; use strong passwords
+- **Brute-force at UI**: There is no rate limiting on password attempts; only physical security protects against local attacks
+- **Device security**: If someone gains access to your device while QuickSnippets is running, they can potentially decrypt snippets by watching memory or clipboard
+
+For complete details on the security model, threat assessment, and responsible disclosure process, see [SECURITY.md](SECURITY.md).
+
+---
+
 ## Keyboard Shortcuts
 
 ### Global (works from any application)

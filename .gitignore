@@ -25,3 +25,7 @@ dist-ssr
 
 # Temporary Rust/Cargo output files
 src-tauri/*.txt
+# QuickSnippets generated/local files
+# Database files and settings are generated at runtime
+*.db
+settings.json
