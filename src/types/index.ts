@@ -3,21 +3,6 @@
 export type LangCode = 'en' | 'uk' | 'de';
 
 /**
- * @internal
- * Raw snippet row mirroring the Rust DB struct.
- * Content is a byte array and is NEVER transmitted to the frontend.
- * Use {@link SnippetView} for all IPC/UI code.
- */
-export interface Snippet {
-  id: number;
-  title: string;
-  content: Uint8Array;
-  is_encrypted: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
  * Snippet as sent by the backend to the frontend.
  * content is always an empty string for encrypted snippets —
  * plaintext is NEVER transmitted over IPC.
