@@ -42,30 +42,6 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 
 ---
 
-## Accessibility
-
-QuickSnippets is built accessibility-first. Every feature is designed to work without a mouse and to be announced correctly by assistive technologies.
-
-- All interactive elements carry descriptive ARIA labels and roles
-- The snippet list is a proper `listbox` with `aria-activedescendant`; screen readers announce the selected snippet and its position (e.g. "Greeting, 1 of 12")
-- Focus is trapped inside modal dialogs and returned to the originating element on close
-- Live regions announce copy confirmations and error messages without moving focus
-- The WebView2 accessibility tree is force-initialized at startup, so screen readers work correctly even when the app starts minimized to the tray
-- `Ctrl+Shift+Space` reads the currently selected snippet aloud via a polite live region
-- High contrast and system theme changes are respected
-- Form inputs disable browser autocomplete to prevent assistive-technology confusion
-
----
-
-## Security
-
-- **Local-only encryption.** Encrypted snippets are stored as AES-256-GCM ciphertext in a local SQLite database. The decrypted content is never sent to the frontend process.
-- **Strong key derivation.** Encryption keys are derived from your password using PBKDF2-HMAC-SHA256 with 100,000 iterations, a unique random salt, and a unique random nonce per encryption.
-- **Clipboard operations in Rust.** When you activate an encrypted snippet, the Rust backend decrypts it and writes directly to the clipboard. The plaintext never crosses the IPC boundary.
-- **No network access.** The application makes no outbound connections.
-
----
-
 ## Installation
 
 QuickSnippets is a portable application — no installer needed.
@@ -96,7 +72,7 @@ Your snippets database (`snippets.db`) and settings (`settings.json`) are saved 
 
 On first launch the snippet list is empty. Press **Ctrl+N** (or **Insert**) to create your first snippet.
 
-Give it a short, memorable title — that's what you search by. Paste or type the content. Optionally check the **Encrypted** box to protect it with a password. Press **Ctrl+Enter** or click **Save**.
+Give it a short, memorable title — that's what you search by. Paste or type the content. Optionally protect it with a password. Press **Ctrl+Enter** or click **Save**.
 
 ### Finding and copying a snippet
 
@@ -162,14 +138,6 @@ Open Settings with **Ctrl+,** or via the tray menu.
 | Start in tray | Hide the window on launch; only the tray icon is visible |
 | Launch on startup | Start QuickSnippets automatically when Windows starts |
 | Confirm on close | Show a confirmation dialog before quitting |
-
----
-
-## For Developers
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the full developer guide: prerequisites, build commands, testing, the release process, and troubleshooting.
-
-The project uses **Tauri v2** (Rust backend) + **React 19 / TypeScript / Vite** (frontend) and follows a TDD approach.
 
 ---
 
