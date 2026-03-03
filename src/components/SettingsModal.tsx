@@ -12,16 +12,19 @@ import { LanguageContext } from '../contexts/LanguageContext';
 import { getSettings, saveSettings } from '../hooks/useIpc';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { FOCUSABLE_SELECTORS } from '../utils/focusable';
+import { ipcErrorToString } from '../utils/errors';
 import type { Settings, LangCode } from '../types';
 
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onError?: (msg: string) => void;
 }
 
 export function SettingsModal({
   isOpen,
   onClose,
+  onError,
 }: SettingsModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const { theme, toggleTheme } = useContext(ThemeContext);
@@ -65,8 +68,8 @@ export function SettingsModal({
       await saveSettings(updated);
       // Apply language & theme immediately (already applied via context)
       onClose();
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      onError?.(ipcErrorToString(err));
     } finally {
       setSaving(false);
     }

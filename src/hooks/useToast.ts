@@ -9,7 +9,7 @@ export interface Toast {
   duration: number;
 }
 
-let nextId = 0;
+let nextId = Date.now();
 
 const DEFAULT_DURATION = 2000;
 

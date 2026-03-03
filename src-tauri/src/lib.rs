@@ -23,6 +23,12 @@ pub fn get_tray_menu_labels(lang: &str) -> TrayMenuLabels {
             settings: "Налаштування",
             quit: "Вихід",
         },
+        "de" => TrayMenuLabels {
+            show: "Anzeigen",
+            new_snippet: "Neues Snippet",
+            settings: "Einstellungen",
+            quit: "Beenden",
+        },
         _ => TrayMenuLabels {
             show: "Show",
             new_snippet: "New Snippet",

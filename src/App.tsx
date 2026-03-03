@@ -134,7 +134,7 @@ function AppInner(): React.ReactElement {
             addToast(t('copySuccess'), 'success');
             hideWindow();
           })
-          .catch(() => void 0);
+          .catch((err: unknown) => addToast(String(err), 'error'));
       }
     },
     [t, addToast, hideWindow],
@@ -148,8 +148,8 @@ function AppInner(): React.ReactElement {
       const sv = await getSnippetById(active.id);
       setEditSnippet(sv);
       setShowEdit(true);
-    } catch { /* ignore */ }
-  }, [snippets, activeIndex]);
+    } catch (err) { addToast(String(err), 'error'); }
+  }, [snippets, activeIndex, addToast]);
 
   const openDelete = useCallback(() => {
     const active = snippets[activeIndex];
@@ -166,8 +166,8 @@ function AppInner(): React.ReactElement {
         setSnippets(results);
         setActiveIndex(results.length > 0 ? 0 : -1);
       })
-      .catch(() => void 0);
-  }, [debouncedQuery, setSnippets, setActiveIndex]);
+      .catch((err: unknown) => addToast(String(err), 'error'));
+  }, [debouncedQuery, setSnippets, setActiveIndex, addToast]);
 
   // Announce for accessibility
   const handleAnnounce = useCallback(() => {
@@ -260,6 +260,7 @@ function AppInner(): React.ReactElement {
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
+        onError={(msg) => addToast(msg, 'error')}
       />
 
       <ExitConfirmModal
