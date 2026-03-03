@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary Rust/Cargo output files
+src-tauri/*.txt
