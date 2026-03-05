@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [Unreleased]
+
+### Security
+- Comprehensive hardening: eliminated plaintext heap leaks with Zeroizing buffers for clipboard operations
+- Refactored key derivation to use reference-based output parameters, preventing uncertain copy-on-return of sensitive data
+- Added explicit content length validation (max 65,536 bytes) for all snippet content with readable error messages
+- Removed unnecessary dialog permissions from capabilities configuration
+- Implemented Content Security Policy (CSP) in both Tauri configuration and HTML meta tags to prevent XSS attacks
+- Added comprehensive security documentation: Security.md with responsible disclosure process and Security Model section in README
+
+---
+
 ## v0.1.1 - 2026-03-02
 
 **Added**
