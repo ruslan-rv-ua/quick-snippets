@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import { useModalManager } from './hooks/useModalManager';
-import { useWindowLifecycle } from './hooks/useWindowLifecycle';
+import { useModalState } from './hooks/useModalState';
 import { useWindowEvents } from './hooks/useWindowEvents';
 
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -46,8 +45,20 @@ function AppInner(): React.ReactElement {
   const searchRef = useRef<SearchBoxHandle>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
-  // Use new modal manager hook
-  const { modals, anyModalOpen, openModal, closeModal, closeAll, setData } = useModalManager();
+  const {
+    showCreate, setShowCreate,
+    showEdit, setShowEdit,
+    showDelete, setShowDelete,
+    showPassword, setShowPassword,
+    showSettings, setShowSettings,
+    showExit, setShowExit,
+    editSnippet, setEditSnippet,
+    deleteId, setDeleteId,
+    deleteTitle, setDeleteTitle,
+    passwordSnippet, setPasswordSnippet,
+    anyModalOpen,
+    closeAll,
+  } = useModalState();
 
   // ── Fetch snippets on debounced query change OR window show ────────────
   useEffect(() => {
@@ -81,32 +92,23 @@ function AppInner(): React.ReactElement {
   const partialReset = useCallback(() => {
     setQuery('');
     setActiveIndex(-1);
-    closeModal('password');
+    setShowPassword(false);
     // Other modals stay open
-  }, [setQuery, setActiveIndex, closeModal]);
+  }, [setQuery, setActiveIndex, setShowPassword]);
 
   // ── Focus search box when no modal is open ────────────────────────────
   const focusSearch = useCallback(() => {
     if (!anyModalOpen) searchRef.current?.focus();
   }, [anyModalOpen]);
 
-  // ── Window lifecycle ────────────────────────────────────────────────────
-  useWindowLifecycle({
-    onFocus: () => {
-      focusSearch();
-      hideWindow();
-    },
-    onBlur: partialReset,
-  });
-
-  // ── Window events (tray, hotkey, etc.) ──────────────────────────────────
+  // ── Window events (focus, blur, tray, hotkey) ─────────────────────────
   useWindowEvents({
     onInitialFocus: () => searchRef.current?.focus(),
     onShow: () => { focusSearch(); setRefreshTick((n) => n + 1); },
     onBlur: partialReset,
-    onTrayCreate: () => openModal('create'),
-    onTraySettings: () => openModal('settings'),
-    onCloseRequest: () => openModal('exit'),
+    onTrayCreate: () => setShowCreate(true),
+    onTraySettings: () => setShowSettings(true),
+    onCloseRequest: () => setShowExit(true),
   });
 
   // ── Escape key on empty query → hide window ───────────────────────────
@@ -124,8 +126,8 @@ function AppInner(): React.ReactElement {
   const handleActivate = useCallback(
     (snippet: SearchResult) => {
       if (snippet.is_encrypted) {
-        setData('password', snippet);
-        openModal('password');
+        setPasswordSnippet(snippet);
+        setShowPassword(true);
       } else {
         activateSnippet(snippet.id, '')
           .then(() => {
@@ -135,7 +137,7 @@ function AppInner(): React.ReactElement {
           .catch((err: unknown) => addToast(String(err), 'error'));
       }
     },
-    [t, addToast, hideWindow, openModal, setData],
+    [t, addToast, hideWindow],
   );
 
   // ── Modal helpers ─────────────────────────────────────────────────────
@@ -144,17 +146,18 @@ function AppInner(): React.ReactElement {
     if (!active) return;
     try {
       const sv = await getSnippetById(active.id);
-      setData('edit', sv);
-      openModal('edit');
+      setEditSnippet(sv);
+      setShowEdit(true);
     } catch (err) { addToast(String(err), 'error'); }
-  }, [snippets, activeIndex, addToast, openModal, setData]);
+  }, [snippets, activeIndex, addToast]);
 
   const openDelete = useCallback(() => {
     const active = snippets[activeIndex];
     if (!active) return;
-    setData('delete', { id: active.id, title: active.title });
-    openModal('delete');
-  }, [snippets, activeIndex, openModal, setData]);
+    setDeleteId(active.id);
+    setDeleteTitle(active.title);
+    setShowDelete(true);
+  }, [snippets, activeIndex]);
 
   // Reload snippets list after CRUD
   const refreshSnippets = useCallback(() => {
@@ -182,10 +185,10 @@ function AppInner(): React.ReactElement {
   useKeyboard({
     activeIndex,
     disabled: anyModalOpen,
-    onOpenCreate: () => openModal('create'),
+    onOpenCreate: () => setShowCreate(true),
     onOpenEdit: () => void openEdit(),
     onOpenDelete: openDelete,
-    onOpenSettings: () => openModal('settings'),
+    onOpenSettings: () => setShowSettings(true),
     onFocusSearch: () => searchRef.current?.focus(),
     onAnnounce: handleAnnounce,
     onSelectFirst: () => setActiveIndex(snippets.length > 0 ? 0 : -1),
@@ -212,8 +215,8 @@ function AppInner(): React.ReactElement {
       />
 
       <CreateSnippetModal
-        isOpen={modals.create.isOpen}
-        onClose={() => closeModal('create')}
+        isOpen={showCreate}
+        onClose={() => setShowCreate(false)}
         onSuccess={() => {
           addToast(t('saveSuccess'), 'success');
           refreshSnippets();
@@ -221,9 +224,9 @@ function AppInner(): React.ReactElement {
       />
 
       <EditSnippetModal
-        isOpen={modals.edit.isOpen}
-        onClose={() => closeModal('edit')}
-        snippet={modals.edit.data}
+        isOpen={showEdit}
+        onClose={() => setShowEdit(false)}
+        snippet={editSnippet}
         onSuccess={() => {
           addToast(t('saveSuccess'), 'success');
           refreshSnippets();
@@ -231,22 +234,22 @@ function AppInner(): React.ReactElement {
       />
 
       <DeleteConfirmModal
-        isOpen={modals.delete.isOpen}
-        onClose={() => closeModal('delete')}
-        snippetTitle={modals.delete.data.title}
-        snippetId={modals.delete.data.id}
+        isOpen={showDelete}
+        onClose={() => setShowDelete(false)}
+        snippetTitle={deleteTitle}
+        snippetId={deleteId}
         onSuccess={() => {
           addToast(t('deleteSuccess'), 'success');
           refreshSnippets();
         }}
       />
 
-      {modals.password.data && (
+      {passwordSnippet && (
         <PasswordModal
-          isOpen={modals.password.isOpen}
-          onClose={() => closeModal('password')}
-          snippetId={modals.password.data!.id}
-          snippetTitle={modals.password.data!.title}
+          isOpen={showPassword}
+          onClose={() => setShowPassword(false)}
+          snippetId={passwordSnippet.id}
+          snippetTitle={passwordSnippet.title}
           onSuccess={() => {
             addToast(t('copySuccess'), 'success');
             hideWindow();
@@ -255,15 +258,15 @@ function AppInner(): React.ReactElement {
       )}
 
       <SettingsModal
-        isOpen={modals.settings.isOpen}
-        onClose={() => closeModal('settings')}
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
         onError={(msg) => addToast(msg, 'error')}
       />
 
       <ExitConfirmModal
-        isOpen={modals.exit.isOpen}
+        isOpen={showExit}
         onClose={() => {
-          closeModal('exit');
+          setShowExit(false);
           cancelClose().catch(() => void 0);
         }}
       />
