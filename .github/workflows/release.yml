@@ -221,7 +221,7 @@ jobs:
           Copy-Item "src-tauri/target/release/quick-snippets.exe" -Destination $packageDir
           Copy-Item "src-tauri/target/release/WebView2Loader.dll" -Destination $packageDir
 
-          Compress-Archive -Path $packageDir -DestinationPath $zipName -Force
+          Compress-Archive -Path "$packageDir\*" -DestinationPath $zipName -Force
 
           $hash = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash.ToLower()
           $hash | Out-File -FilePath "$zipName.sha256" -NoNewline -Encoding ascii
