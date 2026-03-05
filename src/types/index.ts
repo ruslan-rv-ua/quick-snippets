@@ -2,7 +2,12 @@
 
 export type LangCode = 'en' | 'uk' | 'de';
 
-/** Raw snippet row — used internally; content is a byte array. */
+/**
+ * @internal
+ * Raw snippet row mirroring the Rust DB struct.
+ * Content is a byte array and is NEVER transmitted to the frontend.
+ * Use {@link SnippetView} for all IPC/UI code.
+ */
 export interface Snippet {
   id: number;
   title: string;

@@ -23,6 +23,12 @@ pub fn get_tray_menu_labels(lang: &str) -> TrayMenuLabels {
             settings: "Налаштування",
             quit: "Вихід",
         },
+        "de" => TrayMenuLabels {
+            show: "Anzeigen",
+            new_snippet: "Neues Snippet",
+            settings: "Einstellungen",
+            quit: "Beenden",
+        },
         _ => TrayMenuLabels {
             show: "Show",
             new_snippet: "New Snippet",
@@ -74,12 +80,203 @@ pub fn generate_tray_icon_rgba() -> Vec<u8> {
 // Tauri application entry point
 // ---------------------------------------------------------------------------
 
+/// Build the system-tray icon, menu, and event handlers.
+#[cfg(not(test))]
+fn setup_tray(app: &mut tauri::App, lang: &str) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+    use tauri::{Emitter, Manager};
+
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+        .expect("Failed to decode embedded tray icon");
+
+    let labels = get_tray_menu_labels(lang);
+    let menu = Menu::with_items(
+        app,
+        &[
+            &MenuItem::with_id(app, "show", labels.show, true, None::<&str>)?,
+            &MenuItem::with_id(app, "new_snippet", labels.new_snippet, true, None::<&str>)?,
+            &MenuItem::with_id(app, "settings_item", labels.settings, true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)?,
+        ],
+    )?;
+
+    let _tray = TrayIconBuilder::with_id("main")
+        .icon(icon)
+        .tooltip("QuickSnippets")
+        .menu(&menu)
+        .on_menu_event(|app, event| {
+            let Some(win) = app.get_webview_window("main") else {
+                return;
+            };
+            let show_focus = || {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            };
+            match event.id().as_ref() {
+                "show" => {
+                    show_focus();
+                    let _ = win.emit("window:show", ());
+                }
+                "new_snippet" => {
+                    show_focus();
+                    let _ = win.emit("tray:create-snippet", ());
+                }
+                "settings_item" => {
+                    show_focus();
+                    let _ = win.emit("tray:open-settings", ());
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
+                if let Some(win) = tray.app_handle().get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                    let _ = win.emit("window:show", ());
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+/// Register the global hotkey Ctrl+Alt+Space that shows the main window.
+#[cfg(not(test))]
+fn setup_hotkey(app: &mut tauri::App, win: tauri::WebviewWindow) {
+    use commands::AppState;
+    use tauri::{Emitter, Manager};
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, ShortcutState};
+
+    let shortcut = tauri_plugin_global_shortcut::Shortcut::new(
+        Some(Modifiers::CONTROL | Modifiers::ALT),
+        Code::Space,
+    );
+    let result = app
+        .global_shortcut()
+        .on_shortcut(shortcut, move |_app, _s, event| {
+            if event.state() == ShortcutState::Pressed {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+                let _ = win.emit("window:show", ());
+            }
+        });
+    if result.is_err() {
+        let state: tauri::State<AppState> = app.state();
+        state.set_pending_notification(
+            "Failed to register global hotkey Ctrl+Alt+Space".to_string(),
+        );
+    }
+}
+
+/// Attach window event handlers: close-request, focus/blur hide, move/resize save.
+#[cfg(not(test))]
+fn setup_window_events(win: tauri::WebviewWindow, app_handle: tauri::AppHandle) {
+    use commands::AppState;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use tauri::{Emitter, Manager};
+
+    // Debounce tracker for Moved / Resized saves.
+    let last_save: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+    // Debounce flag for blur→hide: when the window briefly loses
+    // focus (resize grab, Alt+Space system menu) we must NOT hide
+    // immediately — schedule a delayed hide, cancelled if focus returns.
+    let hide_scheduled: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let win_ev = win.clone();
+
+    win.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            let confirm = app_handle
+                .try_state::<AppState>()
+                .and_then(|s| s.settings.lock().ok().map(|st| st.confirm_on_close))
+                .unwrap_or(true);
+            if confirm {
+                api.prevent_close();
+                // Mark that exit-confirmation dialog is visible so
+                // the Focused(false) handler does NOT hide the window.
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.set_close_pending(true);
+                }
+                let _ = win_ev.emit("window:close-request", ());
+            } else {
+                app_handle.exit(0);
+            }
+        }
+        tauri::WindowEvent::Focused(focused) => {
+            if *focused {
+                // Window regained focus — cancel any pending hide.
+                hide_scheduled.store(false, Ordering::SeqCst);
+            } else {
+                // If the exit-confirmation dialog is showing, do NOT hide.
+                let pending = app_handle
+                    .try_state::<AppState>()
+                    .map(|s| s.is_close_pending())
+                    .unwrap_or(false);
+                if !pending {
+                    hide_scheduled.store(true, Ordering::SeqCst);
+                    let flag = hide_scheduled.clone();
+                    let w = win_ev.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                        if flag.load(Ordering::SeqCst) {
+                            let _ = w.hide();
+                        }
+                    });
+                }
+            }
+        }
+        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+            // Debounce: save at most once per 500 ms
+            let should_save = {
+                let mut last = last_save.lock().unwrap_or_else(|e| e.into_inner());
+                let now = std::time::Instant::now();
+                let save = last.is_none_or(|t| now.duration_since(t).as_millis() >= 500);
+                if save {
+                    *last = Some(now);
+                }
+                save
+            };
+            if should_save {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    if let Ok(mut guard) = state.settings.lock() {
+                        if let Ok(pos) = win_ev.outer_position() {
+                            guard.window_state.x = pos.x;
+                            guard.window_state.y = pos.y;
+                        }
+                        if let Ok(size) = win_ev.outer_size() {
+                            guard.window_state.width = size.width;
+                            guard.window_state.height = size.height;
+                        }
+                        let path = settings::get_settings_path();
+                        let _ = settings::save_settings_to_path(&guard, &path);
+                    }
+                }
+            }
+        }
+        _ => {}
+    });
+}
+
 #[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::AppState;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Mutex;
     use tauri::{Emitter, Manager};
 
     // Force WebView2/Chromium to always initialise the accessibility
@@ -151,7 +348,11 @@ pub fn run() {
             // ── start_in_tray ─────────────────────────────────────────────
             {
                 let state: tauri::State<AppState> = app.state();
-                let start_in_tray = state.settings.lock().unwrap_or_else(|e| e.into_inner()).start_in_tray;
+                let start_in_tray = state
+                    .settings
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .start_in_tray;
                 if start_in_tray {
                     let _ = win.hide();
                 }
@@ -160,7 +361,12 @@ pub fn run() {
             // ── Resolve display language ──────────────────────────────────
             let lang = {
                 let state: tauri::State<AppState> = app.state();
-                let configured = state.settings.lock().unwrap_or_else(|e| e.into_inner()).language.clone();
+                let configured = state
+                    .settings
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .language
+                    .clone();
                 if configured.is_empty() {
                     settings::detect_language()
                 } else {
@@ -168,212 +374,9 @@ pub fn run() {
                 }
             };
 
-            // ── Tray icon ─────────────────────────────────────────────────
-            // Embed the icon at compile time so the path is always available
-            // regardless of the working directory at runtime (fixes the release
-            // build crash where `from_path` resolved against CWD and failed).
-            let icon = tauri::image::Image::from_bytes(
-                include_bytes!("../icons/32x32.png"),
-            )
-            .expect("Failed to decode embedded tray icon");
-
-            // ── Tray menu ─────────────────────────────────────────────────
-            let labels = get_tray_menu_labels(&lang);
-            let menu = {
-                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-                Menu::with_items(
-                    app,
-                    &[
-                        &MenuItem::with_id(app, "show", labels.show, true, None::<&str>)?,
-                        &MenuItem::with_id(
-                            app,
-                            "new_snippet",
-                            labels.new_snippet,
-                            true,
-                            None::<&str>,
-                        )?,
-                        &MenuItem::with_id(
-                            app,
-                            "settings_item",
-                            labels.settings,
-                            true,
-                            None::<&str>,
-                        )?,
-                        &PredefinedMenuItem::separator(app)?,
-                        &MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)?,
-                    ],
-                )?
-            };
-
-            // ── Build tray ────────────────────────────────────────────────
-            {
-                use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-
-                let _tray = TrayIconBuilder::with_id("main")
-                    .icon(icon)
-                    .tooltip("QuickSnippets")
-                    .menu(&menu)
-                    .on_menu_event(|app, event| {
-                        let Some(win) = app.get_webview_window("main") else {
-                            return;
-                        };
-                        let show_focus = || {
-                            let _ = win.show();
-                            let _ = win.unminimize();
-                            let _ = win.set_focus();
-                        };
-                        match event.id().as_ref() {
-                            "show" => {
-                                show_focus();
-                                let _ = win.emit("window:show", ());
-                            }
-                            "new_snippet" => {
-                                show_focus();
-                                let _ = win.emit("tray:create-snippet", ());
-                            }
-                            "settings_item" => {
-                                show_focus();
-                                let _ = win.emit("tray:open-settings", ());
-                            }
-                            "quit" => {
-                                app.exit(0);
-                            }
-                            _ => {}
-                        }
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            ..
-                        } = event
-                        {
-                            if let Some(win) = tray.app_handle().get_webview_window("main") {
-                                let _ = win.show();
-                                let _ = win.unminimize();
-                                let _ = win.set_focus();
-                                let _ = win.emit("window:show", ());
-                            }
-                        }
-                    })
-                    .build(app)?;
-            }
-
-            // ── Global hotkey Ctrl+Alt+Space ──────────────────────────────
-            {
-                use tauri_plugin_global_shortcut::{
-                    Code, GlobalShortcutExt, Modifiers, ShortcutState,
-                };
-
-                let shortcut = tauri_plugin_global_shortcut::Shortcut::new(
-                    Some(Modifiers::CONTROL | Modifiers::ALT),
-                    Code::Space,
-                );
-                let win_hk = win.clone();
-                let result =
-                    app.global_shortcut()
-                        .on_shortcut(shortcut, move |_app, _s, event| {
-                            if event.state() == ShortcutState::Pressed {
-                                let _ = win_hk.show();
-                                let _ = win_hk.unminimize();
-                                let _ = win_hk.set_focus();
-                                let _ = win_hk.emit("window:show", ());
-                            }
-                        });
-                if result.is_err() {
-                    let state: tauri::State<AppState> = app.state();
-                    state.set_pending_notification(
-                        "Failed to register global hotkey Ctrl+Alt+Space".to_string(),
-                    );
-                }
-            }
-
-            // ── Window events ─────────────────────────────────────────────
-            {
-                let app_handle = app.handle().clone();
-                // Debounce tracker for Moved / Resized saves
-                let last_save: Arc<Mutex<Option<std::time::Instant>>> =
-                    Arc::new(Mutex::new(None));
-                // Debounce flag for blur→hide: when the window briefly loses
-                // focus (resize grab, Alt+Space system menu) we must NOT
-                // hide immediately.  Instead we schedule a delayed hide and
-                // cancel it if focus returns within the grace period.
-                let hide_scheduled: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
-                let win_ev = win.clone();
-
-                win.on_window_event(move |event| match event {
-                    tauri::WindowEvent::CloseRequested { api, .. } => {
-                        let confirm = app_handle
-                            .try_state::<AppState>()
-                            .and_then(|s| s.settings.lock().ok().map(|st| st.confirm_on_close))
-                            .unwrap_or(true);
-                        if confirm {
-                            api.prevent_close();
-                            // Mark that exit-confirmation dialog is visible so
-                            // the Focused(false) handler does NOT hide the window.
-                            if let Some(state) = app_handle.try_state::<AppState>() {
-                                state.set_close_pending(true);
-                            }
-                            let _ = win_ev.emit("window:close-request", ());
-                        } else {
-                            app_handle.exit(0);
-                        }
-                    }
-                    tauri::WindowEvent::Focused(focused) => {
-                        if *focused {
-                            // Window regained focus — cancel any pending hide.
-                            hide_scheduled.store(false, Ordering::SeqCst);
-                        } else {
-                            // If the exit-confirmation dialog is showing, do NOT
-                            // hide — the user needs to interact with it first.
-                            let pending = app_handle
-                                .try_state::<AppState>()
-                                .map(|s| s.is_close_pending())
-                                .unwrap_or(false);
-                            if !pending {
-                                hide_scheduled.store(true, Ordering::SeqCst);
-                                let flag = hide_scheduled.clone();
-                                let w = win_ev.clone();
-                                std::thread::spawn(move || {
-                                    std::thread::sleep(std::time::Duration::from_millis(200));
-                                    if flag.load(Ordering::SeqCst) {
-                                        let _ = w.hide();
-                                    }
-                                });
-                            }
-                        }
-                    }
-                    tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
-                        // Debounce: save at most once per 500 ms
-                        let should_save = {
-                            let mut last = last_save.lock().unwrap_or_else(|e| e.into_inner());
-                            let now = std::time::Instant::now();
-                            let save = last
-                                .is_none_or(|t| now.duration_since(t).as_millis() >= 500);
-                            if save {
-                                *last = Some(now);
-                            }
-                            save
-                        };
-                        if should_save {
-                            if let Some(state) = app_handle.try_state::<AppState>() {
-                                if let Ok(mut guard) = state.settings.lock() {
-                                    if let Ok(pos) = win_ev.outer_position() {
-                                        guard.window_state.x = pos.x;
-                                        guard.window_state.y = pos.y;
-                                    }
-                                    if let Ok(size) = win_ev.outer_size() {
-                                        guard.window_state.width = size.width;
-                                        guard.window_state.height = size.height;
-                                    }
-                                    let path = settings::get_settings_path();
-                                    let _ = settings::save_settings_to_path(&guard, &path);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                });
-            }
+            setup_tray(app, &lang)?;
+            setup_hotkey(app, win.clone());
+            setup_window_events(win, app.handle().clone());
 
             Ok(())
         })
@@ -426,9 +429,83 @@ mod tests {
     }
 
     #[test]
+    fn test_tray_menu_labels_de() {
+        // "de" is explicitly supported — must return German labels, not English fallback
+        let labels = get_tray_menu_labels("de");
+        assert_eq!(labels.show, "Anzeigen");
+        assert_eq!(labels.new_snippet, "Neues Snippet");
+        assert_eq!(labels.settings, "Einstellungen");
+        assert_eq!(labels.quit, "Beenden");
+    }
+
+    #[test]
     fn test_tray_menu_labels_unknown_defaults_to_en() {
         let labels = get_tray_menu_labels("xx");
         assert_eq!(labels.show, "Show");
+    }
+
+    #[test]
+    fn test_generate_tray_icon_border_pixels_opaque() {
+        // Pixels on the document border (e.g. top edge y=1, x=2..13) must be fully opaque
+        let data = generate_tray_icon_rgba();
+        for x in 2usize..=13 {
+            // top border row
+            let i = (1 * 16 + x) * 4;
+            assert_eq!(data[i + 3], 255, "top border pixel ({x},1) should be opaque");
+            // bottom border row
+            let i = (14 * 16 + x) * 4;
+            assert_eq!(data[i + 3], 255, "bottom border pixel ({x},14) should be opaque");
+        }
+        for y in 2usize..=13 {
+            // left border column
+            let i = (y * 16 + 2) * 4;
+            assert_eq!(data[i + 3], 255, "left border pixel (2,{y}) should be opaque");
+            // right border column
+            let i = (y * 16 + 13) * 4;
+            assert_eq!(data[i + 3], 255, "right border pixel (13,{y}) should be opaque");
+        }
+    }
+
+    #[test]
+    fn test_generate_tray_icon_border_pixels_color() {
+        // Border pixels should be light grey (220, 220, 220)
+        let data = generate_tray_icon_rgba();
+        let i = (1 * 16 + 2) * 4; // top-left corner of border, (2,1)
+        assert_eq!(data[i], 220, "R should be 220");
+        assert_eq!(data[i + 1], 220, "G should be 220");
+        assert_eq!(data[i + 2], 220, "B should be 220");
+    }
+
+    #[test]
+    fn test_generate_tray_icon_text_line_pixels() {
+        // "Text" line pixels (y=4,6,8, x=4..11) should be medium grey (170, 170, 170) and opaque
+        let data = generate_tray_icon_rgba();
+        for y in [4usize, 6, 8] {
+            for x in 4usize..=11 {
+                let i = (y * 16 + x) * 4;
+                assert_eq!(data[i], 170, "R at ({x},{y}) should be 170");
+                assert_eq!(data[i + 1], 170, "G at ({x},{y}) should be 170");
+                assert_eq!(data[i + 2], 170, "B at ({x},{y}) should be 170");
+                assert_eq!(data[i + 3], 255, "A at ({x},{y}) should be 255");
+            }
+        }
+        // Shorter line at y=10, x=4..8
+        for x in 4usize..=8 {
+            let i = (10 * 16 + x) * 4;
+            assert_eq!(data[i], 170, "R at ({x},10) should be 170");
+            assert_eq!(data[i + 3], 255, "A at ({x},10) should be 255");
+        }
+    }
+
+    #[test]
+    fn test_generate_tray_icon_corner_transparent() {
+        // Corners of the 16x16 grid (outside the document border) should be fully transparent
+        let data = generate_tray_icon_rgba();
+        // Top-left absolute corner (0,0)
+        assert_eq!(data[3], 0, "pixel (0,0) should be transparent");
+        // Top-right absolute corner (15,0)
+        let i = (0 * 16 + 15) * 4;
+        assert_eq!(data[i + 3], 0, "pixel (15,0) should be transparent");
     }
 
     // === AppState pending notification ===

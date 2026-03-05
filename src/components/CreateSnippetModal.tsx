@@ -6,7 +6,9 @@ import React, {
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
+import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { createSnippet } from '../hooks/useIpc';
+import { ipcErrorToString } from '../utils/errors';
 
 export interface CreateSnippetModalProps {
   isOpen: boolean;
@@ -50,13 +52,6 @@ export function CreateSnippetModal({
     }
   }, [isOpen]);
 
-  // Focus title on open
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => titleRef.current?.focus(), 10);
-    }
-  }, [isOpen]);
-
   const validate = useCallback((): FormErrors => {
     const errs: FormErrors = {};
     if (title.length < 3 || title.length > 50) errs.title = t('titleValidation');
@@ -89,7 +84,7 @@ export function CreateSnippetModal({
       onSuccess();
       onClose();
     } catch (err: unknown) {
-      const msg = typeof err === 'string' ? err : String(err);
+      const msg = ipcErrorToString(err);
       const titleErr = msg.includes('Title already exists')
         ? t('titleDuplicate')
         : msg;
@@ -98,19 +93,7 @@ export function CreateSnippetModal({
     }
   }, [validate, title, content, password, onSuccess, onClose, t]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    if (!isOpen) return;
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') { onClose(); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void handleSubmit();
-      }
-    }
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose, handleSubmit]);
+  useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });
 
   if (!isOpen) return null;
 

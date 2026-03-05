@@ -16,6 +16,19 @@ export interface KeyboardHandlers {
 }
 
 /**
+ * Represents a single keyboard shortcut with optional modifiers.
+ */
+interface Shortcut {
+  ctrl?: boolean;
+  shift?: boolean;
+  key?: string;
+  code?: string;
+  requiresSelection?: boolean;
+  needsInputCheck?: boolean;
+  handler: () => void;
+}
+
+/**
  * Registers global keyboard shortcuts for the main window.
  *
  * All letter/symbol shortcuts use `event.code` (physical key position) rather than
@@ -44,92 +57,138 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
       const key = e.key;   // layout-dependent; used only for special keys
       const code = e.code; // layout-independent physical key; used for letters/symbols
 
-      // Ctrl+Shift+T → toggle theme
-      if (ctrl && shift && code === 'KeyT') {
-        e.preventDefault();
-        toggleTheme();
-        return;
-      }
+      // Shortcuts matrix: each shortcut has optional modifiers and a handler
+      const shortcuts: Shortcut[] = [
+        // Ctrl+Shift+T → toggle theme
+        {
+          ctrl: true,
+          shift: true,
+          code: 'KeyT',
+          handler: () => toggleTheme(),
+        },
 
-      // Ctrl+Shift+Space → announce
-      if (ctrl && shift && key === ' ') {
-        e.preventDefault();
-        handlers.onAnnounce();
-        return;
-      }
+        // Ctrl+Shift+Space → announce (screen reader)
+        {
+          ctrl: true,
+          shift: true,
+          key: ' ',
+          handler: () => handlers.onAnnounce(),
+        },
 
-      // Ctrl+N → create
-      if (ctrl && !shift && code === 'KeyN') {
-        e.preventDefault();
-        handlers.onOpenCreate();
-        return;
-      }
+        // Ctrl+N → create (no Shift)
+        {
+          ctrl: true,
+          shift: false,
+          code: 'KeyN',
+          handler: () => handlers.onOpenCreate(),
+        },
 
-      // Insert → create
-      if (!ctrl && !shift && key === 'Insert') {
-        e.preventDefault();
-        handlers.onOpenCreate();
-        return;
-      }
+        // Insert → create (no Ctrl, no Shift)
+        {
+          ctrl: false,
+          shift: false,
+          key: 'Insert',
+          handler: () => handlers.onOpenCreate(),
+        },
 
-      // Ctrl+E → edit
-      if (ctrl && !shift && code === 'KeyE') {
-        e.preventDefault();
-        if (handlers.activeIndex >= 0) handlers.onOpenEdit();
-        return;
-      }
+        // Ctrl+E → edit (only if item selected, no Shift)
+        {
+          ctrl: true,
+          shift: false,
+          code: 'KeyE',
+          requiresSelection: true,
+          handler: () => handlers.onOpenEdit(),
+        },
 
-      // Delete → delete
-      if (!ctrl && !shift && key === 'Delete') {
-        if (handlers.activeIndex >= 0) {
+        // Delete → delete (only if item selected, no Ctrl, no Shift)
+        {
+          ctrl: false,
+          shift: false,
+          key: 'Delete',
+          requiresSelection: true,
+          handler: () => handlers.onOpenDelete(),
+        },
+
+        // Ctrl+D → delete (only if item selected, no Shift)
+        {
+          ctrl: true,
+          shift: false,
+          code: 'KeyD',
+          requiresSelection: true,
+          handler: () => handlers.onOpenDelete(),
+        },
+
+        // Ctrl+, (Comma) → open settings (no Shift)
+        {
+          ctrl: true,
+          shift: false,
+          code: 'Comma',
+          handler: () => handlers.onOpenSettings(),
+        },
+
+        // Ctrl+F → focus search (no Shift)
+        {
+          ctrl: true,
+          shift: false,
+          code: 'KeyF',
+          handler: () => handlers.onFocusSearch(),
+        },
+
+        // / (Slash) → focus search (only when not in input/textarea, no Ctrl, no Shift)
+        {
+          ctrl: false,
+          shift: false,
+          code: 'Slash',
+          needsInputCheck: true,
+          handler: () => handlers.onFocusSearch(),
+        },
+
+        // Home → select first item (only when not in input/textarea, no Ctrl, no Shift)
+        {
+          ctrl: false,
+          shift: false,
+          key: 'Home',
+          needsInputCheck: true,
+          handler: () => handlers.onSelectFirst?.(),
+        },
+
+        // End → select last item (only when not in input/textarea, no Ctrl, no Shift)
+        {
+          ctrl: false,
+          shift: false,
+          key: 'End',
+          needsInputCheck: true,
+          handler: () => handlers.onSelectLast?.(),
+        },
+      ];
+
+      // Try to match and execute the first matching shortcut
+      for (const shortcut of shortcuts) {
+        // Check if modifiers match
+        const ctrlMatches = shortcut.ctrl === undefined || shortcut.ctrl === ctrl;
+        const shiftMatches = shortcut.shift === undefined || shortcut.shift === shift;
+        const keyMatches = shortcut.key === undefined || shortcut.key === key;
+        const codeMatches = shortcut.code === undefined || shortcut.code === code;
+
+        if (ctrlMatches && shiftMatches && keyMatches && codeMatches) {
+          // Check if selection is required
+          if (shortcut.requiresSelection && handlers.activeIndex < 0) {
+            continue;
+          }
+
+          // Check if we need to avoid input/textarea
+          if (shortcut.needsInputCheck) {
+            const tag = ((e.target as HTMLElement)?.tagName ?? '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea') {
+              continue;
+            }
+          }
+
+          // All conditions met, execute the handler
           e.preventDefault();
-          handlers.onOpenDelete();
+          shortcut.handler();
+          return;
         }
-        return;
-      }
-
-      // Ctrl+D → delete
-      if (ctrl && !shift && code === 'KeyD') {
-        if (handlers.activeIndex >= 0) {
-          e.preventDefault();
-          handlers.onOpenDelete();
-        }
-        return;
-      }
-
-      // Ctrl+, → settings
-      if (ctrl && !shift && code === 'Comma') {
-        e.preventDefault();
-        handlers.onOpenSettings();
-        return;
-      }
-
-      // Ctrl+F → focus search
-      if (ctrl && !shift && code === 'KeyF') {
-        e.preventDefault();
-        handlers.onFocusSearch();
-        return;
-      }
-
-      // / → focus search (only when not in an input)
-      if (code === 'Slash' && !ctrl && !shift) {
-        const tag = ((e.target as HTMLElement)?.tagName ?? '').toLowerCase();
-        if (tag !== 'input' && tag !== 'textarea') {
-          e.preventDefault();
-          handlers.onFocusSearch();
-        }
-        return;
-      }
-
-      // Home / End → jump to first / last snippet (only when not in an input)
-      if (!ctrl && !shift && (key === 'Home' || key === 'End')) {
-        const tag = ((e.target as HTMLElement)?.tagName ?? '').toLowerCase();
-        if (tag !== 'input' && tag !== 'textarea') {
-          e.preventDefault();
-          if (key === 'Home') handlers.onSelectFirst && handlers.onSelectFirst();
-          if (key === 'End') handlers.onSelectLast && handlers.onSelectLast();
-        }
-        return;
       }
     }
 

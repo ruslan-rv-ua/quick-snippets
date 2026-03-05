@@ -1,16 +1,22 @@
 # CHANGELOG
 
-## v0.1.1 - 2026-03-02
+## [Unreleased]
 
-**Fixed**
-- Keyboard shortcuts (Ctrl+N, Ctrl+E, Ctrl+F, Ctrl+,, Ctrl+Shift+T, /) now work
-  regardless of the active OS keyboard layout (e.g. Ukrainian). Root cause: switched
-  from `event.key` (layout-dependent) to `event.code` (physical key position) for all
-  letter and symbol shortcuts.
-- `Ctrl+Enter` in the Exit Confirmation dialog now always quits the app, even when the
-  Cancel button is focused (previously bare Enter was blocked by the Cancel focus guard).
-- `Ctrl+Enter` in the Delete Confirmation dialog now confirms deletion, consistent with
-  all other modal dialogs.
+---
+
+## v0.1.2 - 2026-03-05
+
+### Security
+- Comprehensive hardening: eliminated plaintext heap leaks with Zeroizing buffers for clipboard operations
+- Refactored key derivation to use reference-based output parameters, preventing uncertain copy-on-return of sensitive data
+- Added explicit content length validation (max 65,536 bytes) for all snippet content with readable error messages
+- Removed unnecessary dialog permissions from capabilities configuration
+- Implemented Content Security Policy (CSP) in both Tauri configuration and HTML meta tags to prevent XSS attacks
+- Added comprehensive security documentation: Security.md with responsible disclosure process and Security Model section in README
+
+---
+
+## v0.1.1 - 2026-03-02
 
 **Added**
 - `Ctrl+D` as an alternative shortcut for deleting the selected snippet (in addition to
@@ -21,6 +27,16 @@
 - `README.uk.md` — Ukrainian version of the readme.
 - `README.de.md` — German version of the readme.
 - Language links in `README.md`.
+
+**Fixed**
+- Keyboard shortcuts (Ctrl+N, Ctrl+E, Ctrl+F, Ctrl+,, Ctrl+Shift+T, /) now work
+  regardless of the active OS keyboard layout (e.g. Ukrainian). Root cause: switched
+  from `event.key` (layout-dependent) to `event.code` (physical key position) for all
+  letter and symbol shortcuts.
+- `Ctrl+Enter` in the Exit Confirmation dialog now always quits the app, even when the
+  Cancel button is focused (previously bare Enter was blocked by the Cancel focus guard).
+- `Ctrl+Enter` in the Delete Confirmation dialog now confirms deletion, consistent with
+  all other modal dialogs.
 
 ---
 

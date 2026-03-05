@@ -1,4 +1,94 @@
-// AES-256-GCM encryption
+//! AES-256-GCM encryption module for QuickSnippets
+//!
+//! # Security Model
+//!
+//! This module implements envelope encryption with AES-256-GCM for protecting sensitive snippet content.
+//!
+//! ## Encryption Scheme
+//!
+//! - **Cipher**: AES-256 (256-bit key) in Galois/Counter Mode (GCM)
+//! - **Key derivation**: PBKDF2-HMAC-SHA256 with 100,000 iterations
+//! - **Salt**: 16 random bytes (unique per snippet password)
+//! - **Nonce (IV)**: 12 random bytes (unique per encryption operation)
+//! - **MAC tag**: 128-bit GCM authentication tag
+//!
+//! ## Wire Format
+//!
+//! The encrypted blob is structured as:
+//! ```ignore
+//! [salt (16 bytes)] || [nonce (12 bytes)] || [ciphertext + GCM tag]
+//! ```
+//! This entire blob is base64-encoded before storage.
+//!
+//! Each encryption of the same plaintext with the same password produces different ciphertext
+//! due to random salt and nonce.
+//!
+//! ## Key Derivation
+//!
+//! Passwords are converted to encryption keys using PBKDF2-HMAC-SHA256:
+//! ```ignore
+//! key = PBKDF2-HMAC-SHA256(password, salt, iterations=100_000, output_length=32)
+//! ```
+//! This slows down brute-force attacks; a single password attempt takes ~100ms on modern hardware.
+//!
+//! ## Memory Safety
+//!
+//! - Derived keys are zeroized (overwritten with zeros) after use
+//! - Session keys are never cached
+//! - The caller is responsible for zeroizing decrypted plaintext
+//!
+//! ## Known Limitations and Threat Model
+//!
+//! ### Not Protected Against:
+//!
+//! 1. **Timing attacks on password verification**
+//!    - The decryption operation does not use constant-time password comparison
+//!    - An attacker with precise timing measurements could infer password properties
+//!    - **Mitigation**: Use strong, random passwords (12+ characters with mixed case, numbers, symbols)
+//!
+//! 2. **Brute-force attacks at UI level**
+//!    - There is no rate limiting on password attempts
+//!    - An attacker with device access could attempt thousands of passwords per second
+//!    - **Mitigation**: Physical security of your device; enable OS-level lock screen
+//!
+//! 3. **Memory attacks during decryption**
+//!    - If an attacker gains read access to process memory while decryption is in progress,
+//!      they could observe the plaintext
+//!    - **Mitigation**: Decryption happens within the Tauri process (isolated from browser);
+//!      plaintext is copied to clipboard and immediately zeroized
+//!
+//! 4. **Compromised password**
+//!    - If an attacker learns your password, they can decrypt all past and future
+//!      snippets encrypted with that password
+//!    - **Mitigation**: Do not reuse snippet passwords; treat them as secrets
+//!
+//! ### Strong Against:
+//!
+//! - Disk-at-rest attacks (encrypted snippets are unreadable without password)
+//! - Network eavesdropping (no network communication)
+//! - Telemetry collection (no data is transmitted)
+//!
+//! ## Standards and Compliance
+//!
+//! - **NIST SP 800-38D**: GCM mode specification
+//! - **NIST SP 800-132**: PBKDF2 specification and iteration count recommendations
+//! - **RustCrypto**: All cryptographic primitives sourced from the RustCrypto ecosystem
+//!
+//! ## Usage Example
+//!
+//! ```ignore
+//! let plaintext = b"my secret snippet";
+//! let password = "my-secure-password";
+//!
+//! // Encrypt
+//! let encrypted = encrypt(plaintext, password)?;
+//! // encrypted is a Vec<u8> containing base64-encoded [salt || nonce || ciphertext + tag]
+//!
+//! // Decrypt (caller is responsible for zeroizing plaintext)
+//! let mut decrypted = decrypt(&encrypted, password)?;
+//! // ... use decrypted ...
+//! decrypted.zeroize(); // important!
+//! ```
 
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
@@ -36,14 +126,66 @@ impl std::fmt::Display for CryptoError {
 impl std::error::Error for CryptoError {}
 
 /// Derive a 32-byte AES-256 key from password + salt using PBKDF2-HMAC-SHA256.
-fn derive_key(password: &str, salt: &[u8]) -> [u8; KEY_LEN] {
-    let mut key = [0u8; KEY_LEN];
-    pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, PBKDF2_ITERATIONS, &mut key);
-    key
+///
+/// # Algorithm
+///
+/// ```text
+/// key = PBKDF2-HMAC-SHA256(password, salt, iterations=100_000, length=32)
+/// ```
+///
+/// The iteration count (100,000) makes each key derivation take approximately 100ms
+/// on modern hardware, significantly slowing down password guessing attacks.
+///
+/// # Parameters
+///
+/// - `password`: The user-provided password (any string)
+/// - `salt`: 16-byte random value (unique per password)
+/// - `out`: 32-byte mutable buffer where the derived key is written
+///
+/// # Note
+///
+/// The key is written directly to `out` to avoid intermediate copies.
+/// The caller should zeroize `out` after use via [`Zeroize`].
+fn derive_key(password: &str, salt: &[u8], out: &mut [u8; KEY_LEN]) {
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, PBKDF2_ITERATIONS, out);
 }
 
-/// Encrypt plaintext with a password.
-/// Returns base64-encoded blob: `salt[16] || nonce[12] || ciphertext || GCM-tag[16]`.
+/// Encrypt plaintext with a password using AES-256-GCM.
+///
+/// # Return Format
+///
+/// Returns a base64-encoded blob with the structure:
+/// ```text
+/// base64([salt (16 bytes) || nonce (12 bytes) || ciphertext || GCM-tag (16 bytes)])
+/// ```
+///
+/// # Randomness
+///
+/// Each call to `encrypt` generates fresh random salt and nonce, so encrypting the same
+/// plaintext with the same password produces different ciphertexts each time.
+///
+/// # How It Works
+///
+/// 1. Generate 16-byte random salt
+/// 2. Generate 12-byte random nonce
+/// 3. Derive 32-byte AES key from password + salt using PBKDF2-HMAC-SHA256 (100,000 iterations)
+/// 4. Encrypt plaintext using AES-256-GCM (produces ciphertext + 16-byte authentication tag)
+/// 5. Zeroize the key from memory
+/// 6. Assemble: salt || nonce || ciphertext+tag
+/// 7. Base64-encode the blob and return as UTF-8 bytes
+///
+/// # Errors
+///
+/// - `CryptoError::EncryptionFailed`: AES cipher initialization or encryption failed (extremely rare)
+///
+/// # Example
+///
+/// ```ignore
+/// let plaintext = b"my secret snippet";
+/// let password = "my-secure-password";
+/// let encrypted = encrypt(plaintext, password)?;
+/// // encrypted is typically 90-200 bytes (base64) for small snippets
+/// ```
 pub fn encrypt(plaintext: &[u8], password: &str) -> Result<Vec<u8>, CryptoError> {
     // Generate random salt and nonce
     let mut salt = [0u8; SALT_LEN];
@@ -52,7 +194,8 @@ pub fn encrypt(plaintext: &[u8], password: &str) -> Result<Vec<u8>, CryptoError>
     OsRng.fill_bytes(&mut nonce_bytes);
 
     // Derive key
-    let mut key = derive_key(password, &salt);
+    let mut key = [0u8; KEY_LEN];
+    derive_key(password, &salt, &mut key);
 
     // Encrypt
     let cipher = Aes256Gcm::new_from_slice(&key)
@@ -76,8 +219,57 @@ pub fn encrypt(plaintext: &[u8], password: &str) -> Result<Vec<u8>, CryptoError>
     Ok(encoded.into_bytes())
 }
 
-/// Decrypt a base64-encoded blob produced by `encrypt`.
-/// Returns the original plaintext.
+/// Decrypt a base64-encoded blob produced by [`encrypt`].
+///
+/// # Input Format
+///
+/// The input must be a base64-encoded blob with structure:
+/// ```text
+/// base64([salt (16 bytes) || nonce (12 bytes) || ciphertext || GCM-tag (16 bytes)])
+/// ```
+///
+/// # Return Value
+///
+/// Returns the original plaintext as a `Vec<u8>`.
+/// **Important**: The caller must zeroize this vector after use via [`Zeroize`] to prevent
+/// sensitive data from remaining on the heap.
+///
+/// # How It Works
+///
+/// 1. Base64-decode the input
+/// 2. Validate minimum length (48 bytes minimum: 16 salt + 12 nonce + 16 tag)
+/// 3. Extract salt, nonce, and ciphertext+tag from the blob
+/// 4. Derive the AES key from password + salt using PBKDF2-HMAC-SHA256
+/// 5. Decrypt ciphertext using AES-256-GCM (verifies authentication tag)
+/// 6. Zeroize the key from memory
+/// 7. Return plaintext
+///
+/// # Errors
+///
+/// - `CryptoError::InvalidData`: Base64 decoding failed, or blob is too short
+/// - `CryptoError::WrongPassword`: Authentication tag verification failed (wrong password
+///   or corrupted ciphertext). Note: This check is **not constant-time**, so an attacker
+///   with precise timing measurements could infer password properties.
+/// - `CryptoError::EncryptionFailed`: AES cipher initialization failed (extremely rare)
+///
+/// # Security Notes
+///
+/// - This function does **not** use constant-time comparison for password verification,
+///   making it potentially vulnerable to timing attacks. For production use, consider
+///   constant-time HMAC comparison if timing precision matters in your threat model.
+/// - The returned plaintext is decrypted into a `Vec<u8>` on the heap. It is essential
+///   that the caller zeroizes this vector to prevent sensitive data from persisting
+///   in memory after use.
+///
+/// # Example
+///
+/// ```ignore
+/// let encrypted_blob = b"base64_encoded_data_here";
+/// let password = "my-secure-password";
+/// let mut plaintext = decrypt(encrypted_blob, password)?;
+/// // Use plaintext...
+/// plaintext.zeroize(); // Important!
+/// ```
 pub fn decrypt(ciphertext_b64: &[u8], password: &str) -> Result<Vec<u8>, CryptoError> {
     // Decode base64
     let blob = BASE64
@@ -95,7 +287,8 @@ pub fn decrypt(ciphertext_b64: &[u8], password: &str) -> Result<Vec<u8>, CryptoE
     let ciphertext = &blob[SALT_LEN + NONCE_LEN..];
 
     // Derive key
-    let mut key = derive_key(password, salt);
+    let mut key = [0u8; KEY_LEN];
+    derive_key(password, salt, &mut key);
 
     // Decrypt
     let cipher = Aes256Gcm::new_from_slice(&key)
@@ -118,7 +311,60 @@ pub fn decrypt(ciphertext_b64: &[u8], password: &str) -> Result<Vec<u8>, CryptoE
 mod tests {
     use super::*;
 
-    // --- Basic roundtrip ---
+    // --- derive_key tests ---
+
+    #[test]
+    fn test_derive_key_produces_32_byte_key() {
+        let password = "test_password";
+        let salt = b"1234567890123456"; // 16 bytes
+        let mut key = [0u8; KEY_LEN];
+        
+        derive_key(password, salt, &mut key);
+        
+        // Key should be filled with non-zero bytes (extremely unlikely all zeros)
+        assert!(!key.iter().all(|&b| b == 0), "Key should not be all zeros");
+    }
+
+    #[test]
+    fn test_derive_key_same_password_salt_produces_same_key() {
+        let password = "password";
+        let salt = b"same_salt_value!";
+        let mut key1 = [0u8; KEY_LEN];
+        let mut key2 = [0u8; KEY_LEN];
+        
+        derive_key(password, salt, &mut key1);
+        derive_key(password, salt, &mut key2);
+        
+        assert_eq!(key1, key2, "Same password + salt should produce same key");
+    }
+
+    #[test]
+    fn test_derive_key_different_password_produces_different_key() {
+        let salt = b"same_salt_value!";
+        let mut key1 = [0u8; KEY_LEN];
+        let mut key2 = [0u8; KEY_LEN];
+        
+        derive_key("password1", salt, &mut key1);
+        derive_key("password2", salt, &mut key2);
+        
+        assert_ne!(key1, key2, "Different passwords should produce different keys");
+    }
+
+    #[test]
+    fn test_derive_key_different_salt_produces_different_key() {
+        let password = "same_password";
+        let salt1 = b"salt_value_one!!";
+        let salt2 = b"salt_value_two!!";
+        let mut key1 = [0u8; KEY_LEN];
+        let mut key2 = [0u8; KEY_LEN];
+        
+        derive_key(password, salt1, &mut key1);
+        derive_key(password, salt2, &mut key2);
+        
+        assert_ne!(key1, key2, "Different salts should produce different keys");
+    }
+
+
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {

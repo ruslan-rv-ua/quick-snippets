@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
-import React from 'react';
+import React, { act } from 'react';
 import { SettingsModal } from '../SettingsModal';
 import { LanguageProvider } from '../../contexts/LanguageContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
@@ -36,9 +36,13 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof SettingsModa
 describe('SettingsModal', () => {
   beforeEach(() => { mockInvoke.mockReset(); });
 
-  it('shows "..." loading state with aria-busy="true"', () => {
+  it('shows "..." loading state with aria-busy="true"', async () => {
     let resolveSetting!: (v: Settings) => void;
-    mockInvoke.mockReturnValue(new Promise<Settings>((r) => { resolveSetting = r; }));
+    let settingPromise: Promise<Settings> | null = null;
+    mockInvoke.mockImplementation(() => {
+      settingPromise = new Promise<Settings>((r) => { resolveSetting = r; });
+      return settingPromise;
+    });
     render(
       <ThemeProvider>
         <LanguageProvider>
@@ -47,7 +51,10 @@ describe('SettingsModal', () => {
       </ThemeProvider>,
     );
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
-    resolveSetting(defaultSettings);
+    await act(async () => {
+      resolveSetting(defaultSettings);
+      if (settingPromise) await settingPromise;
+    });
   });
 
   it('loads settings from get_settings IPC on open', async () => {
@@ -131,10 +138,8 @@ describe('SettingsModal', () => {
   });
 
   it('Save button disabled during save operation (double-click protection)', async () => {
-    let resolveGet!: (v: Settings) => void;
-    mockInvoke
-      .mockReturnValueOnce(new Promise<Settings>((r) => { resolveGet = r; }));
-    // make save hang
+    mockInvoke.mockResolvedValueOnce(defaultSettings);
+    // make save hang 
     mockInvoke.mockReturnValue(new Promise<void>(() => { /* never resolves */ }));
 
     render(
@@ -144,12 +149,13 @@ describe('SettingsModal', () => {
         </LanguageProvider>
       </ThemeProvider>,
     );
-    resolveGet(defaultSettings);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /save|зберегти/i })).not.toBeDisabled();
     });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    });
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /save|зберегти/i })).toBeDisabled();
     });

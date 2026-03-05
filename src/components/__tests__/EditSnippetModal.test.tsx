@@ -85,7 +85,7 @@ describe('EditSnippetModal', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
       expect(document.activeElement).toBe(content);
-      const err = screen.getByText(/вміст|content/i).closest('span');
+      const err = screen.getByRole('alert');
       expect(err).toHaveAttribute('aria-live', 'assertive');
     });
   });

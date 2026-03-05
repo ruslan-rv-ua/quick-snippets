@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="logo-readme.png" alt="QuickSnippets logo" />
+	<img src="logo-vector.svg" alt="QuickSnippets logo" />
 	<h1>QuickSnippets</h1>
 	<p><strong>A portable Windows launcher for your text snippets — always one keystroke away.</strong></p>
 	<p>
@@ -9,8 +9,8 @@
 	<p>
 		🌐 <strong>Read this document in:</strong>
 		<a href="README.md">English</a> ·
-		<a href="README.uk.md">Українська</a> ·
-		<a href="README.de.md">Deutsch</a>
+		<a href="README_UK.md">Українська</a> ·
+		<a href="README_DE.md">Deutsch</a>
 	</p>
 </div>
 
@@ -39,30 +39,6 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Three languages** — English, Ukrainian, and German; language auto-detected from your system
 - **Single-instance** — launching the app again simply brings the existing window to focus
 - **Auto-hide on blur** — the window disappears when you switch away, just like a launcher
-
----
-
-## Accessibility
-
-QuickSnippets is built accessibility-first. Every feature is designed to work without a mouse and to be announced correctly by assistive technologies.
-
-- All interactive elements carry descriptive ARIA labels and roles
-- The snippet list is a proper `listbox` with `aria-activedescendant`; screen readers announce the selected snippet and its position (e.g. "Greeting, 1 of 12")
-- Focus is trapped inside modal dialogs and returned to the originating element on close
-- Live regions announce copy confirmations and error messages without moving focus
-- The WebView2 accessibility tree is force-initialized at startup, so screen readers work correctly even when the app starts minimized to the tray
-- `Ctrl+Shift+Space` reads the currently selected snippet aloud via a polite live region
-- High contrast and system theme changes are respected
-- Form inputs disable browser autocomplete to prevent assistive-technology confusion
-
----
-
-## Security
-
-- **Local-only encryption.** Encrypted snippets are stored as AES-256-GCM ciphertext in a local SQLite database. The decrypted content is never sent to the frontend process.
-- **Strong key derivation.** Encryption keys are derived from your password using PBKDF2-HMAC-SHA256 with 100,000 iterations, a unique random salt, and a unique random nonce per encryption.
-- **Clipboard operations in Rust.** When you activate an encrypted snippet, the Rust backend decrypts it and writes directly to the clipboard. The plaintext never crosses the IPC boundary.
-- **No network access.** The application makes no outbound connections.
 
 ---
 
@@ -96,7 +72,7 @@ Your snippets database (`snippets.db`) and settings (`settings.json`) are saved 
 
 On first launch the snippet list is empty. Press **Ctrl+N** (or **Insert**) to create your first snippet.
 
-Give it a short, memorable title — that's what you search by. Paste or type the content. Optionally check the **Encrypted** box to protect it with a password. Press **Ctrl+Enter** or click **Save**.
+Give it a short, memorable title — that's what you search by. Paste or type the content. Optionally protect it with a password. Press **Ctrl+Enter** or click **Save**.
 
 ### Finding and copying a snippet
 
@@ -111,6 +87,45 @@ The QuickSnippets window hides automatically when you switch away.
 ### System tray
 
 The application icon lives in the system tray. Right-click it for quick access to **Show**, **New Snippet**, **Settings**, and **Quit**.
+
+---
+
+## Security Model
+
+Your privacy is paramount. QuickSnippets is designed to keep your snippets on your device, encrypted if you choose.
+
+### How Your Data Is Protected
+
+- **AES-256-GCM encryption** — sensitive snippets can be password-protected with military-grade encryption
+- **PBKDF2 key derivation** — passwords are stretched with 100,000 iterations to resist brute-force attacks
+- **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
+- **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the application folder; no cloud, no telemetry, no sync
+- **No registry** — QuickSnippets does not touch Windows registry or AppData directories
+- **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
+
+### What Is Encrypted
+
+- **Snippet content** — if you choose to protect a snippet with a password, its content is encrypted
+
+### What Is NOT Encrypted
+
+- **Snippet title** — used for searching; stored as plaintext so you can find your snippets
+- **Metadata** — creation and modification timestamps are not encrypted
+- **Settings** — window geometry, theme preference, language are stored in plaintext
+
+### Memory Safety
+
+- Session keys are held in memory only during decryption
+- Plaintext is immediately cleared (zeroized) after use
+- No unencrypted data is written to disk
+
+### Important Limitations
+
+- **Timing attacks**: Password verification is not constant-time; use strong passwords
+- **Brute-force at UI**: There is no rate limiting on password attempts; only physical security protects against local attacks
+- **Device security**: If someone gains access to your device while QuickSnippets is running, they can potentially decrypt snippets by watching memory or clipboard
+
+For complete details on the security model, threat assessment, and responsible disclosure process, see [SECURITY.md](SECURITY.md).
 
 ---
 
@@ -162,14 +177,6 @@ Open Settings with **Ctrl+,** or via the tray menu.
 | Start in tray | Hide the window on launch; only the tray icon is visible |
 | Launch on startup | Start QuickSnippets automatically when Windows starts |
 | Confirm on close | Show a confirmation dialog before quitting |
-
----
-
-## For Developers
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the full developer guide: prerequisites, build commands, testing, the release process, and troubleshooting.
-
-The project uses **Tauri v2** (Rust backend) + **React 19 / TypeScript / Vite** (frontend) and follows a TDD approach.
 
 ---
 

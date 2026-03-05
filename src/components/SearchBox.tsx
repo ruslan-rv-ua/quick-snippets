@@ -1,5 +1,6 @@
-import React, { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useRef, forwardRef, useImperativeHandle } from 'react';
 import { useLanguage } from '../hooks/useLanguage';
+import { useSearchBoxKeyboard } from '../hooks/useSearchBoxKeyboard';
 import type { SearchResult } from '../types';
 
 export interface SearchBoxProps {
@@ -38,67 +39,15 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
       ? `snippet-${snippets[activeIndex].id}`
       : '';
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      switch (e.key) {
-        case 'ArrowDown': {
-          e.preventDefault();
-          if (snippets.length === 0) return;
-          if (activeIndex < 0) {
-            onActiveIndexChange(0);
-          } else {
-            onActiveIndexChange(Math.min(activeIndex + 1, snippets.length - 1));
-          }
-          break;
-        }
-        case 'ArrowUp': {
-          e.preventDefault();
-          if (snippets.length === 0) return;
-          if (activeIndex < 0) {
-            onActiveIndexChange(0);
-          } else {
-            onActiveIndexChange(Math.max(activeIndex - 1, 0));
-          }
-          break;
-        }
-        case 'Home': {
-          e.preventDefault();
-          if (snippets.length === 0) return;
-          onActiveIndexChange(0);
-          break;
-        }
-        case 'End': {
-          e.preventDefault();
-          if (snippets.length === 0) return;
-          onActiveIndexChange(snippets.length - 1);
-          break;
-        }
-        case 'Enter': {
-          if (activeIndex >= 0 && snippets[activeIndex]) {
-            e.preventDefault();
-            onActivate(snippets[activeIndex]);
-          }
-          break;
-        }
-        case 'Escape': {
-          if (value !== '') {
-            // Use stopImmediatePropagation so the native DOM listener on the
-            // React-root container fires before any sibling listeners (e.g.
-            // test helpers attached after render).
-            e.nativeEvent.stopImmediatePropagation();
-            onChange('');
-          }
-          // if empty — let it bubble to parent
-          break;
-        }
-        case 'Tab': {
-          e.preventDefault();
-          break;
-        }
-      }
-    },
-    [activeIndex, snippets, value, onChange, onActiveIndexChange, onActivate],
-  );
+  const { handleKeyDown } = useSearchBoxKeyboard({
+    activeIndex,
+    snippets,
+    value,
+    onNavigate: onActiveIndexChange,
+    onSelect: onActivate,
+    onEscape: () => {}, // not used in current logic, but kept for interface completeness
+    onSetValue: onChange,
+  });
 
   return (
     <div className="search-box">

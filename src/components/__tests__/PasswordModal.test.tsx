@@ -1,7 +1,7 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
-import React from 'react';
+import React, { act } from 'react';
 import { PasswordModal } from '../PasswordModal';
 import { LanguageProvider } from '../../contexts/LanguageContext';
 
@@ -77,7 +77,11 @@ describe('PasswordModal', () => {
 
   it('disables field and buttons during decryption', async () => {
     let resolveInvoke!: () => void;
-    mockInvoke.mockReturnValue(new Promise<void>((r) => { resolveInvoke = r; }));
+    let invokePromise: Promise<void> | null = null;
+    mockInvoke.mockImplementation(() => {
+      invokePromise = new Promise<void>((r) => { resolveInvoke = r; });
+      return invokePromise;
+    });
     renderModal();
     fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'mypass' } });
     fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
@@ -85,19 +89,29 @@ describe('PasswordModal', () => {
       const pwdField = screen.getByLabelText(/^(password|пароль)$/i);
       expect(pwdField).toBeDisabled();
     });
-    resolveInvoke();
+    await act(async () => {
+      resolveInvoke();
+      if (invokePromise) await invokePromise;
+    });
   });
 
   it('shows "Decrypting..." text during decryption', async () => {
     let resolveInvoke!: () => void;
-    mockInvoke.mockReturnValue(new Promise<void>((r) => { resolveInvoke = r; }));
+    let invokePromise: Promise<void> | null = null;
+    mockInvoke.mockImplementation(() => {
+      invokePromise = new Promise<void>((r) => { resolveInvoke = r; });
+      return invokePromise;
+    });
     renderModal();
     fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'mypass' } });
     fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
     await waitFor(() => {
       expect(screen.getByText(/decrypting|розшифрування/i)).toBeInTheDocument();
     });
-    resolveInvoke();
+    await act(async () => {
+      resolveInvoke();
+      if (invokePromise) await invokePromise;
+    });
   });
 
   it('Escape closes and clears password', () => {

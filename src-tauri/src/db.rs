@@ -540,4 +540,144 @@ mod tests {
         delete_snippet(&conn, id).unwrap();
         assert!(get_snippet_by_id(&conn, id).is_err());
     }
+
+    // --- open_and_init_db ---
+
+    /// Opening a non-existent path creates the DB file on disk.
+    #[test]
+    fn test_open_and_init_db_creates_db_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+
+        assert!(!db_path.exists(), "precondition: file must not exist yet");
+        let _conn = open_and_init_db(&db_path).unwrap();
+        assert!(db_path.is_file(), "open_and_init_db must create the db file");
+    }
+
+    /// The snippets table contains all six expected columns.
+    #[test]
+    fn test_open_and_init_db_schema_has_correct_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        let conn = open_and_init_db(&db_path).unwrap();
+
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(snippets)")
+            .unwrap();
+
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for expected in &["id", "title", "content", "is_encrypted", "created_at", "updated_at"] {
+            assert!(
+                columns.iter().any(|c| c == expected),
+                "column '{}' not found in snippets table; found: {:?}",
+                expected,
+                columns
+            );
+        }
+    }
+
+    /// The unique index on `title` is created by open_and_init_db.
+    #[test]
+    fn test_open_and_init_db_creates_unique_title_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        let conn = open_and_init_db(&db_path).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type='index' AND name='idx_snippets_title'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "unique index on title must exist");
+    }
+
+    /// The resulting connection is fully usable (INSERT + SELECT round-trip).
+    #[test]
+    fn test_open_and_init_db_connection_is_functional() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        let conn = open_and_init_db(&db_path).unwrap();
+
+        let id = create_snippet(&conn, "Functional test", b"data".to_vec(), false)
+            .expect("insert should succeed");
+        let row = get_snippet_by_id(&conn, id).unwrap();
+        assert_eq!(row.title, "Functional test");
+        assert_eq!(row.content, b"data");
+    }
+
+    /// Calling open_and_init_db on an already-initialised file succeeds
+    /// (idempotent) and preserves existing data.
+    #[test]
+    fn test_open_and_init_db_idempotent_on_existing_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+
+        // First open — create and insert one snippet
+        {
+            let conn = open_and_init_db(&db_path).unwrap();
+            create_snippet(&conn, "Persist me", b"content".to_vec(), false).unwrap();
+        }
+
+        // Second open — must succeed and data must still be there
+        let conn2 = open_and_init_db(&db_path).unwrap();
+        let list = list_snippets_for_search(&conn2);
+        assert_eq!(list.len(), 1, "existing snippet must survive re-open");
+        assert_eq!(list[0].1, "Persist me");
+    }
+
+    /// The journal_mode is DELETE when opening a real file (not in-memory).
+    #[test]
+    fn test_open_and_init_db_journal_mode_is_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        let conn = open_and_init_db(&db_path).unwrap();
+
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode, "delete", "journal_mode must be DELETE on a real file");
+    }
+
+    // --- handle_db_corruption ---
+
+    /// When given Ok(conn), handle_db_corruption must pass the connection
+    /// through unchanged. This is the only path that can be tested without an
+    /// rfd dialog mock.
+    ///
+    /// NOTE: The Err(_) branch invokes `rfd::MessageDialog::new().show()` which
+    /// opens a native OS dialog — it cannot be exercised in an automated test
+    /// environment without a headless dialog mock (rfd provides none as of
+    /// 0.14). That branch is therefore covered only by manual / integration
+    /// testing.
+    #[test]
+    fn test_handle_db_corruption_ok_passes_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+
+        let conn = Connection::open(&db_path).unwrap();
+        init_db(&conn).unwrap();
+
+        // Wrap in Ok and pass through the corruption handler
+        let result = handle_db_corruption(Ok(conn), &db_path);
+        assert!(result.is_ok(), "Ok(conn) must be returned unchanged");
+
+        // The returned connection must still be functional
+        let conn_out = result.unwrap();
+        let count: i64 = conn_out
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='snippets'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "returned connection must have the snippets schema");
+    }
 }

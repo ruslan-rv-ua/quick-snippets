@@ -2,6 +2,10 @@
 
 use crate::{crypto, db, search};
 use rusqlite::Connection;
+use zeroize::Zeroizing;
+
+// Constants for validation
+const MAX_CONTENT_LENGTH: usize = 65536;
 
 // ---------------------------------------------------------------------------
 // AppState — defined at module level so it is accessible in tests
@@ -84,6 +88,16 @@ pub fn search_snippets_inner(
     Ok(search::search(query, &rows))
 }
 
+/// Maps a rusqlite error to a user-facing string.
+/// Unique constraint violations are reported as a friendly message.
+fn map_rusqlite_err(e: rusqlite::Error) -> String {
+    if e.to_string().contains("UNIQUE constraint failed") {
+        "Title already exists".to_string()
+    } else {
+        e.to_string()
+    }
+}
+
 pub fn get_snippet_by_id_inner(conn: &Connection, id: i64) -> Result<SnippetView, String> {
     let row = db::get_snippet_by_id(conn, id).map_err(|e| e.to_string())?;
     let content = if row.is_encrypted {
@@ -114,36 +128,34 @@ pub fn create_snippet_inner(
         return Err("Title too long (max 50 chars)".to_string());
     }
 
-    let map_err = |e: rusqlite::Error| -> String {
-        if e.to_string().contains("UNIQUE constraint failed") {
-            "Title already exists".to_string()
-        } else {
-            e.to_string()
-        }
-    };
+    let content_bytes = content.as_bytes();
+    if content_bytes.len() > MAX_CONTENT_LENGTH {
+        return Err(format!("Content too long (max {} bytes)", MAX_CONTENT_LENGTH));
+    }
 
     if password.is_empty() {
-        let blob = content.as_bytes().to_vec();
-        db::create_snippet(conn, title, blob, false).map_err(map_err)
+        let blob = content_bytes.to_vec();
+        db::create_snippet(conn, title, blob, false).map_err(map_rusqlite_err)
     } else {
-        let blob = crypto::encrypt(content.as_bytes(), password).map_err(|e| e.to_string())?;
-        db::create_snippet(conn, title, blob, true).map_err(map_err)
+        let blob = crypto::encrypt(content_bytes, password).map_err(|e| e.to_string())?;
+        db::create_snippet(conn, title, blob, true).map_err(map_rusqlite_err)
     }
 }
 
-/// Returns the plaintext bytes for clipboard use.
+/// Returns the plaintext bytes for clipboard use, wrapped in Zeroizing for secure memory erasure.
 /// SECURITY: this function is not exposed to the frontend — only used internally.
 pub fn activate_snippet_get_content(
     conn: &Connection,
     id: i64,
     password: &str,
-) -> Result<Vec<u8>, String> {
+) -> Result<Zeroizing<Vec<u8>>, String> {
     let row = db::get_snippet_by_id(conn, id).map_err(|e| e.to_string())?;
-    if row.is_encrypted {
-        crypto::decrypt(&row.content, password).map_err(|e| e.to_string())
+    let plaintext = if row.is_encrypted {
+        crypto::decrypt(&row.content, password).map_err(|e| e.to_string())?
     } else {
-        Ok(row.content)
-    }
+        row.content
+    };
+    Ok(Zeroizing::new(plaintext))
 }
 
 pub fn update_snippet_inner(
@@ -152,14 +164,13 @@ pub fn update_snippet_inner(
     title: &str,
     content: &str,
 ) -> Result<(), String> {
-    let blob = content.as_bytes().to_vec();
-    db::update_snippet(conn, id, title, blob).map_err(|e| {
-        if e.to_string().contains("UNIQUE constraint failed") {
-            "Title already exists".to_string()
-        } else {
-            e.to_string()
-        }
-    })
+    let content_bytes = content.as_bytes();
+    if content_bytes.len() > MAX_CONTENT_LENGTH {
+        return Err(format!("Content too long (max {} bytes)", MAX_CONTENT_LENGTH));
+    }
+
+    let blob = content_bytes.to_vec();
+    db::update_snippet(conn, id, title, blob).map_err(map_rusqlite_err)
 }
 
 pub fn delete_snippet_inner(conn: &Connection, id: i64) -> Result<(), String> {
@@ -224,19 +235,19 @@ pub mod tauri_commands {
             activate_snippet_get_content(&conn, id, &password)?
         };
         // SECURITY: only clipboard call here — plaintext never enters IPC response.
-        // Zeroize the local String after writing to clipboard so decrypted
-        // content does not linger on the heap.
-        let mut text = match String::from_utf8(plaintext) {
-            Ok(s) => s,
+        // plaintext is already Zeroizing<Vec<u8>>, so it will be securely erased on drop.
+        // Create a new Zeroizing<String> for clipboard write to ensure proper cleanup.
+        let text: Zeroizing<String> = match String::from_utf8(plaintext.to_vec()) {
+            Ok(s) => Zeroizing::new(s),
             Err(e) => {
                 let mut bytes = e.into_bytes();
                 bytes.zeroize();
                 return Err("Invalid UTF-8 content".to_string());
             }
         };
-        let result = app.clipboard().write_text(text.clone()).map_err(|e| e.to_string());
-        text.zeroize();
+        let result = app.clipboard().write_text(text.as_str()).map_err(|e| e.to_string());
         result?;
+        // Both plaintext and text are Zeroizing; automatically zeroed on drop at end of scope
         Ok(()) // IPC response is Ok(()) — no content
     }
 
@@ -263,6 +274,42 @@ pub mod tauri_commands {
         Ok(s.clone())
     }
 
+    /// Enable or disable OS autostart depending on `autostart` flag.
+    fn apply_autostart(autostart: bool, app: &AppHandle) {
+        use tauri_plugin_autostart::ManagerExt;
+        let autolaunch = app.autolaunch();
+        if autostart {
+            let _ = autolaunch.enable();
+        } else {
+            let _ = autolaunch.disable();
+        }
+    }
+
+    /// Rebuild the tray context menu with labels matching `lang`.
+    fn rebuild_tray_menu(app: &AppHandle, lang: &str) -> Result<(), String> {
+        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+        let labels = crate::get_tray_menu_labels(lang);
+        if let Some(tray) = app.tray_by_id("main") {
+            let show = MenuItem::with_id(app, "show", labels.show, true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let new_snippet =
+                MenuItem::with_id(app, "new_snippet", labels.new_snippet, true, None::<&str>)
+                    .map_err(|e| e.to_string())?;
+            let settings_item =
+                MenuItem::with_id(app, "settings_item", labels.settings, true, None::<&str>)
+                    .map_err(|e| e.to_string())?;
+            let sep = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
+            let quit = MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            if let Ok(menu) =
+                Menu::with_items(app, &[&show, &new_snippet, &settings_item, &sep, &quit])
+            {
+                let _ = tray.set_menu(Some(menu));
+            }
+        }
+        Ok(())
+    }
+
     #[tauri::command]
     pub fn save_settings(
         settings: Settings,
@@ -278,13 +325,10 @@ pub mod tauri_commands {
                 height: size.height,
             };
         }
-        use tauri_plugin_autostart::ManagerExt;
-        let autolaunch = window.app_handle().autolaunch();
-        if new_settings.autostart {
-            let _ = autolaunch.enable();
-        } else {
-            let _ = autolaunch.disable();
-        }
+
+        let app = window.app_handle();
+        apply_autostart(new_settings.autostart, app);
+
         let path = crate::settings::get_settings_path();
         crate::settings::save_settings_to_path(&new_settings, &path)
             .map_err(|e| e.to_string())?;
@@ -292,44 +336,12 @@ pub mod tauri_commands {
         *s = new_settings.clone();
         drop(s);
 
-        // ── Rebuild tray menu with the (possibly new) language ────────────
-        {
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-
-            let app = window.app_handle();
-            let effective_lang = if new_settings.language.is_empty() {
-                crate::settings::detect_language()
-            } else {
-                new_settings.language.clone()
-            };
-            let labels = crate::get_tray_menu_labels(&effective_lang);
-
-            if let Some(tray) = app.tray_by_id("main") {
-                let show = MenuItem::with_id(app, "show", labels.show, true, None::<&str>)
-                    .map_err(|e| e.to_string())?;
-                let new_snippet =
-                    MenuItem::with_id(app, "new_snippet", labels.new_snippet, true, None::<&str>)
-                        .map_err(|e| e.to_string())?;
-                let settings_item = MenuItem::with_id(
-                    app,
-                    "settings_item",
-                    labels.settings,
-                    true,
-                    None::<&str>,
-                )
-                .map_err(|e| e.to_string())?;
-                let sep =
-                    PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
-                let quit =
-                    MenuItem::with_id(app, "quit", labels.quit, true, None::<&str>)
-                        .map_err(|e| e.to_string())?;
-                if let Ok(menu) =
-                    Menu::with_items(app, &[&show, &new_snippet, &settings_item, &sep, &quit])
-                {
-                    let _ = tray.set_menu(Some(menu));
-                }
-            }
-        }
+        let effective_lang = if new_settings.language.is_empty() {
+            crate::settings::detect_language()
+        } else {
+            new_settings.language.clone()
+        };
+        rebuild_tray_menu(app, &effective_lang)?;
 
         Ok(())
     }
@@ -473,7 +485,7 @@ mod tests {
         let id =
             db::create_snippet(&conn, "test snip", b"clipboard text".to_vec(), false).unwrap();
         let content = activate_snippet_get_content(&conn, id, "").unwrap();
-        assert_eq!(content, b"clipboard text");
+        assert_eq!(*content, b"clipboard text");
     }
 
     #[test]
@@ -482,7 +494,7 @@ mod tests {
         let encrypted = crypto::encrypt(b"secret data", "mypass").unwrap();
         let id = db::create_snippet(&conn, "encrypted", encrypted, true).unwrap();
         let content = activate_snippet_get_content(&conn, id, "mypass").unwrap();
-        assert_eq!(content, b"secret data");
+        assert_eq!(*content, b"secret data");
     }
 
     #[test]
@@ -499,6 +511,20 @@ mod tests {
         let conn = setup();
         let result = activate_snippet_get_content(&conn, 99999, "");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_activate_snippet_get_content_returns_zeroizing() {
+        // SECURITY: Verify that activate_snippet_get_content returns Zeroizing<Vec<u8>>
+        // so that plaintext is securely erased from memory when out of scope.
+        let conn = setup();
+        let id = db::create_snippet(&conn, "test snip", b"secret text".to_vec(), false).unwrap();
+        let zeroizing_content = activate_snippet_get_content(&conn, id, "").unwrap();
+        // Verify content is correct
+        assert_eq!(*zeroizing_content, b"secret text");
+        // Verify we can convert to Vec<u8> safely
+        assert_eq!(zeroizing_content.to_vec(), b"secret text");
+        // The zeroizing_content will be securely erased when this scope ends
     }
 
     // === update_snippet ===
@@ -522,6 +548,44 @@ mod tests {
         update_snippet_inner(&conn, id, "new title", "ignored content").unwrap();
         let updated_blob = db::get_snippet_by_id(&conn, id).unwrap().content;
         assert_eq!(orig_blob, updated_blob); // blob unchanged!
+    }
+
+    // === content length validation ===
+
+    #[test]
+    fn test_create_snippet_content_too_long() {
+        let conn = setup();
+        let oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
+        let result = create_snippet_inner(&conn, "title", &oversized, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Content too long"));
+    }
+
+    #[test]
+    fn test_create_snippet_content_max_length_ok() {
+        let conn = setup();
+        let max_content = "x".repeat(MAX_CONTENT_LENGTH);
+        let result = create_snippet_inner(&conn, "title", &max_content, "");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_update_snippet_content_too_long() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "title", b"old content".to_vec(), false).unwrap();
+        let oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
+        let result = update_snippet_inner(&conn, id, "title", &oversized);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Content too long"));
+    }
+
+    #[test]
+    fn test_update_snippet_content_max_length_ok() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "title", b"old content".to_vec(), false).unwrap();
+        let max_content = "x".repeat(MAX_CONTENT_LENGTH);
+        let result = update_snippet_inner(&conn, id, "title", &max_content);
+        assert!(result.is_ok());
     }
 
     // === delete_snippet ===
@@ -556,7 +620,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, id);
         let content = activate_snippet_get_content(&conn, id, "").unwrap();
-        assert_eq!(String::from_utf8(content).unwrap(), "hello world");
+        assert_eq!(String::from_utf8(content.to_vec()).unwrap(), "hello world");
         delete_snippet_inner(&conn, id).unwrap();
         let results = search_snippets_inner(&conn, "").unwrap();
         assert_eq!(results.len(), 0);
