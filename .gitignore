@@ -23,6 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Code coverage
+coverage/
+
 # Temporary Rust/Cargo output files
 src-tauri/*.txt
 # QuickSnippets generated/local files
