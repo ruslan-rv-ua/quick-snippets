@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { useSearchLogic } from '../useSearchLogic';
 import * as useIpc from '../useIpc';
 
@@ -49,20 +49,26 @@ describe('useSearchLogic', () => {
     ];
     vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
 
-    const { result } = renderHook(() => useSearchLogic());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
 
-    act(() => {
-      result.current.setQuery('test');
-    });
+      act(() => {
+        result.current.setQuery('test');
+      });
 
-    // Wait for debounce
-    await waitFor(() => {
-      expect(useIpc.searchSnippets).toHaveBeenCalled();
-    });
+      // Advance timers by debounce delay (100ms)
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        // Let microtasks (promise callbacks) run
+        await vi.runAllTimersAsync();
+      });
 
-    await waitFor(() => {
+      expect(useIpc.searchSnippets).toHaveBeenCalledWith('test');
       expect(result.current.snippets).toEqual(mockResults);
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sets activeIndex to 0 when results are found', async () => {
@@ -71,29 +77,45 @@ describe('useSearchLogic', () => {
     ];
     vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
 
-    const { result } = renderHook(() => useSearchLogic());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
 
-    act(() => {
-      result.current.setQuery('test');
-    });
+      act(() => {
+        result.current.setQuery('test');
+      });
 
-    await waitFor(() => {
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
       expect(result.current.activeIndex).toBe(0);
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sets activeIndex to -1 when no results found', async () => {
     vi.mocked(useIpc.searchSnippets).mockResolvedValue([]);
 
-    const { result } = renderHook(() => useSearchLogic());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
 
-    act(() => {
-      result.current.setQuery('nonexistent');
-    });
+      act(() => {
+        result.current.setQuery('nonexistent');
+      });
 
-    await waitFor(() => {
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
       expect(result.current.activeIndex).toBe(-1);
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('resets state when reset is called', async () => {
@@ -102,24 +124,32 @@ describe('useSearchLogic', () => {
     ];
     vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
 
-    const { result } = renderHook(() => useSearchLogic());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
 
-    act(() => {
-      result.current.setQuery('test');
-      result.current.setActiveIndex(0);
-    });
+      act(() => {
+        result.current.setQuery('test');
+        result.current.setActiveIndex(0);
+      });
 
-    await waitFor(() => {
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
       expect(result.current.snippets).toEqual(mockResults);
-    });
 
-    act(() => {
-      result.current.reset();
-    });
+      act(() => {
+        result.current.reset();
+      });
 
-    expect(result.current.query).toBe('');
-    expect(result.current.snippets).toEqual([]);
-    expect(result.current.activeIndex).toBe(-1);
+      expect(result.current.query).toBe('');
+      expect(result.current.snippets).toEqual([]);
+      expect(result.current.activeIndex).toBe(-1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('increments refreshTick on setRefreshTick', () => {
@@ -140,42 +170,63 @@ describe('useSearchLogic', () => {
     ];
     vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
 
-    const { result } = renderHook(() => useSearchLogic());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
 
-    act(() => {
-      result.current.setQuery('test');
-    });
+      act(() => {
+        result.current.setQuery('test');
+      });
 
-    await waitFor(() => {
-      expect(useIpc.searchSnippets).toHaveBeenCalled();
-    });
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
 
-    vi.clearAllMocks();
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+      expect(useIpc.searchSnippets).toHaveBeenCalledWith('test');
 
-    act(() => {
-      result.current.setRefreshTick((prev) => prev + 1);
-    });
+      vi.clearAllMocks();
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
 
-    await waitFor(() => {
-      expect(useIpc.searchSnippets).toHaveBeenCalled();
-    });
+      act(() => {
+        result.current.setRefreshTick((prev) => prev + 1);
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(useIpc.searchSnippets).toHaveBeenCalledWith('test');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('handles searchSnippets errors gracefully', async () => {
     vi.mocked(useIpc.searchSnippets).mockRejectedValue(new Error('Search failed'));
 
-    const { result } = renderHook(() => useSearchLogic());
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
 
-    act(() => {
-      result.current.setQuery('test');
-    });
+      act(() => {
+        result.current.setQuery('test');
+      });
 
-    await waitFor(() => {
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
+      // searchSnippets should have been called, but state remains unchanged on error
       expect(useIpc.searchSnippets).toHaveBeenCalled();
-    });
-
-    // State should remain unchanged on error
-    expect(result.current.query).toBe('test');
+      expect(result.current.query).toBe('test');
+      // snippets should remain empty array and activeIndex should be -1 (error case)
+      expect(result.current.snippets).toEqual([]);
+      expect(result.current.activeIndex).toBe(-1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

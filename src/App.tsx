@@ -29,8 +29,30 @@ import { ToastContainer } from './components/ToastContainer';
 import type { SearchResult } from './types';
 import './styles/theme.css';
 
-// ── Inner app (inside providers) ─────────────────────────────────────────
-
+/**
+ * Main application component (inside theme/language providers).
+ *
+ * ## State Management
+ *
+ * - Snippets list & search: useSnippets() hook
+ * - Modal dialogs: useModalState() hook
+ * - Window events (blur/show): useWindowEvents() hook
+ * - Keyboard shortcuts: useKeyboard() hook
+ *
+ * ## Key Behaviors
+ *
+ * - Search is debounced (100ms) to reduce Rust backend load
+ * - Blur (window loses focus) → hide + partial reset (clear password modal, keep other modals)
+ * - Exit dialog confirmation → blur does NOT hide (so user can click Cancel)
+ * - Search input auto-focus when modals close
+ *
+ * ## Future Improvements
+ *
+ * Consider splitting into sub-hooks to reduce component complexity:
+ * - useSearchLogic() — search debouncing, IPC calls
+ * - useAppModals() — modal state + all handlers
+ * - useWindowHiding() — hide/reset logic
+ */
 function AppInner(): React.ReactElement {
   const { t } = useLanguage();
   const { toasts, addToast, removeToast } = useToast();
