@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="logo-readme.png" alt="QuickSnippets logo" />
+	<img src="logo-vector.svg" alt="QuickSnippets logo" />
 	<h1>QuickSnippets</h1>
 	<p><strong>A portable Windows launcher for your text snippets — always one keystroke away.</strong></p>
 	<p>
