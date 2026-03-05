@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+---
+
+## v0.1.2 - 2026-03-05
+
 ### Security
 - Comprehensive hardening: eliminated plaintext heap leaks with Zeroizing buffers for clipboard operations
 - Refactored key derivation to use reference-based output parameters, preventing uncertain copy-on-return of sensitive data
