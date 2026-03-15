@@ -108,8 +108,20 @@ pub mod win {
 
     /// Send text by posting WM_CHAR messages directly to the focused window.
     /// Bypasses all keyboard hooks (NVDA, JAWS, keyloggers, etc.).
-    fn send_text_via_messages(hwnd: isize, text: &str) -> Result<(), String> {
-        let char_delay = Duration::from_millis(INTER_CHAR_DELAY_MS);
+    ///
+    /// `char_delay_ms = 0` means no delay: PostMessage places messages into the
+    /// target window's FIFO queue (capacity ~10 000). A non-zero value adds a
+    /// sleep between characters for apps whose message loops can't keep up.
+    fn send_text_via_messages(
+        hwnd: isize,
+        text: &str,
+        char_delay_ms: u64,
+    ) -> Result<(), String> {
+        let delay = if char_delay_ms > 0 {
+            Some(Duration::from_millis(char_delay_ms))
+        } else {
+            None
+        };
 
         let mut chars = text.chars().peekable();
         while let Some(ch) = chars.next() {
@@ -133,7 +145,9 @@ pub mod win {
                     }
                 }
             }
-            thread::sleep(char_delay);
+            if let Some(d) = delay {
+                thread::sleep(d);
+            }
         }
         Ok(())
     }
@@ -211,9 +225,11 @@ pub mod win {
     }
 
     /// Fallback: send text via SendInput with KEYEVENTF_UNICODE.
-    fn send_text_via_sendinput(text: &str) -> Result<(), String> {
+    /// Enforces a minimum 50ms inter-character delay for screen reader compatibility.
+    fn send_text_via_sendinput(text: &str, char_delay_ms: u64) -> Result<(), String> {
         let press_delay = Duration::from_millis(KEY_PRESS_DELAY_MS);
-        let char_delay = Duration::from_millis(INTER_CHAR_DELAY_MS);
+        let char_delay =
+            Duration::from_millis(std::cmp::max(char_delay_ms, INTER_CHAR_DELAY_MS));
 
         let mut chars = text.chars().peekable();
         while let Some(ch) = chars.next() {
@@ -256,16 +272,16 @@ pub mod win {
     ///
     /// Fallback: if the focused window cannot be determined, uses `SendInput`
     /// with `KEYEVENTF_UNICODE` (layout-independent but hook-visible).
-    pub fn send_unicode_text(text: &str) -> Result<(), String> {
+    pub fn send_unicode_text(text: &str, char_delay_ms: u64) -> Result<(), String> {
         // Primary: PostMessage (bypasses screen reader hooks)
         match get_focused_window() {
             Ok(target) if target != 0 => {
-                return send_text_via_messages(target, text);
+                return send_text_via_messages(target, text, char_delay_ms);
             }
             _ => {}
         }
         // Fallback: SendInput
-        send_text_via_sendinput(text)
+        send_text_via_sendinput(text, char_delay_ms)
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -463,13 +479,13 @@ mod tests {
     #[test]
     fn test_mixed_control_and_unicode() {
         let seq = build_input_sequence("Hi\tworld\n");
-        assert_eq!(seq.len(), 10); // H, i, TAB, w, o, r, l, d, ENTER
+        assert_eq!(seq.len(), 9); // H, i, TAB, w, o, r, l, d, ENTER
         assert_eq!(seq[0].kind, KeyEventKind::Unicode); // 'H'
         assert_eq!(seq[1].kind, KeyEventKind::Unicode); // 'i'
         assert_eq!(seq[2].kind, KeyEventKind::VirtualKey); // TAB
         assert_eq!(seq[2].code, VK_TAB);
         assert_eq!(seq[3].kind, KeyEventKind::Unicode); // 'w'
-        assert_eq!(seq[9].kind, KeyEventKind::VirtualKey); // ENTER
-        assert_eq!(seq[9].code, VK_RETURN);
+        assert_eq!(seq[8].kind, KeyEventKind::VirtualKey); // ENTER
+        assert_eq!(seq[8].code, VK_RETURN);
     }
 }

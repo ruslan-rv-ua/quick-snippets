@@ -56,6 +56,7 @@ export interface TranslationMap {
   startInTrayLabel: string;
   autostartLabel: string;
   confirmOnCloseLabel: string;
+  autotypeDelayLabel: string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
@@ -137,6 +138,7 @@ const en: TranslationMap = {
   startInTrayLabel: 'Start in system tray',
   autostartLabel: 'Start with Windows',
   confirmOnCloseLabel: 'Confirm before closing',
+  autotypeDelayLabel: 'Autotype delay (ms)',
   darkTheme: 'Dark',
   lightTheme: 'Light',
   autoLanguage: 'Auto (system)',
@@ -217,6 +219,7 @@ const uk: TranslationMap = {
   startInTrayLabel: 'Запускати у треї',
   autostartLabel: 'Запускати з Windows',
   confirmOnCloseLabel: 'Підтверджувати закриття',
+  autotypeDelayLabel: 'Затримка автодруку (мс)',
   darkTheme: 'Темна',
   lightTheme: 'Світла',
   autoLanguage: 'Авто (системна)',
@@ -301,6 +304,7 @@ const de: TranslationMap = {
   startInTrayLabel: 'Im Infobereich starten',
   autostartLabel: 'Mit Windows starten',
   confirmOnCloseLabel: 'Vor dem Schließen bestätigen',
+  autotypeDelayLabel: 'Autotipp-Verzögerung (ms)',
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
   autoLanguage: 'Automatisch (System)',

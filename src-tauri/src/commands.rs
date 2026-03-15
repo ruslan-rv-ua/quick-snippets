@@ -387,8 +387,15 @@ pub mod tauri_commands {
         let _ = window.hide();
         std::thread::sleep(std::time::Duration::from_millis(FOCUS_DELAY_MS));
 
-        // Type the text via SendInput with KEYEVENTF_UNICODE.
-        let result = crate::autotype::win::send_unicode_text(&text);
+        // Read user-configured inter-character delay.
+        let delay_ms = state
+            .settings
+            .lock()
+            .map(|s| s.autotype_delay_ms)
+            .unwrap_or(0);
+
+        // Type the text via PostMessage (primary) or SendInput (fallback).
+        let result = crate::autotype::win::send_unicode_text(&text, delay_ms);
 
         // Zeroize text before returning — drop will also zeroize, but be explicit.
         text.zeroize();
