@@ -1,5 +1,13 @@
-// Auto-type: simulate keyboard input via Win32 SendInput with KEYEVENTF_UNICODE.
-// Control characters (\n, \r, \t) are sent as virtual key presses (VK_RETURN, VK_TAB).
+// Auto-type: simulate keyboard input by posting WM_CHAR messages directly to
+// the focused window. This bypasses keyboard hooks (including screen reader
+// hooks like NVDA's WH_KEYBOARD_LL) that can intercept and consume
+// KEYEVENTF_UNICODE events sent via SendInput.
+//
+// Fallback: if the focused window cannot be determined, we fall back to
+// SendInput with KEYEVENTF_UNICODE (layout-independent, but subject to
+// screen reader interference).
+//
+// Control characters (\n, \r, \t) are sent as virtual key presses.
 // This module is Windows-only.
 
 #[cfg(target_os = "windows")]
@@ -9,17 +17,20 @@ pub mod win {
     use std::thread;
     use std::time::Duration;
 
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+        GetFocus, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
         KEYEVENTF_UNICODE, VK_RETURN, VK_TAB,
     };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, WM_CHAR, WM_KEYDOWN,
+        WM_KEYUP,
+    };
 
-    /// Delay between keydown and keyup for a single key press.
-    /// Gives NVDA's WH_KEYBOARD_LL hook time to process each event.
+    /// Delay between keydown and keyup for a single key press (SendInput fallback).
     const KEY_PRESS_DELAY_MS: u64 = 5;
 
     /// Delay between characters for screen reader (NVDA/JAWS) compatibility.
-    /// 50ms is sufficient for NVDA with "speak typed characters" enabled.
     const INTER_CHAR_DELAY_MS: u64 = 50;
 
     /// Type of key event — used in test output to distinguish Unicode vs VK events.
@@ -32,9 +43,105 @@ pub mod win {
         VirtualKey,
     }
 
-    // ── INPUT builders ───────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // PostMessage approach — primary (bypasses keyboard hooks entirely)
+    // ════════════════════════════════════════════════════════════════════════
 
-    /// Build a single INPUT struct for a KEYEVENTF_UNICODE event.
+    /// Get the focused window handle in the foreground application.
+    /// Returns the innermost focused control, or the foreground window itself.
+    fn get_focused_window() -> Result<isize, String> {
+        unsafe {
+            let foreground = GetForegroundWindow();
+            if foreground == 0 {
+                return Err("No foreground window found".to_string());
+            }
+
+            let target_thread =
+                GetWindowThreadProcessId(foreground, std::ptr::null_mut());
+            let our_thread = GetCurrentThreadId();
+
+            if target_thread == 0 {
+                return Ok(foreground);
+            }
+
+            // Attach to the target thread so GetFocus() returns its focused window.
+            let attached =
+                AttachThreadInput(our_thread, target_thread, 1); // TRUE = attach
+            let focus = if attached != 0 { GetFocus() } else { 0 };
+            if attached != 0 {
+                AttachThreadInput(our_thread, target_thread, 0); // detach
+            }
+
+            Ok(if focus != 0 { focus } else { foreground })
+        }
+    }
+
+    /// Post a WM_CHAR message for one UTF-16 code unit.
+    fn post_wm_char(hwnd: isize, code_unit: u16) -> Result<(), String> {
+        let ret = unsafe { PostMessageW(hwnd, WM_CHAR, code_unit as usize, 1) };
+        if ret == 0 {
+            let err = io::Error::last_os_error();
+            return Err(format!("PostMessageW(WM_CHAR) failed: {}", err));
+        }
+        Ok(())
+    }
+
+    /// Post WM_KEYDOWN + WM_KEYUP for a virtual key (Enter, Tab).
+    fn post_vk_key(hwnd: isize, vk: u16, scan_code: u32) -> Result<(), String> {
+        // lParam layout: bits 0-15 = repeat count, bits 16-23 = scan code
+        let down_lparam: isize = 1 | ((scan_code as isize) << 16);
+        // keyup: bit 30 = previous key state (1), bit 31 = transition (1)
+        let up_lparam: isize = down_lparam | (1 << 30) | (1 << 31);
+
+        let ret = unsafe { PostMessageW(hwnd, WM_KEYDOWN, vk as usize, down_lparam) };
+        if ret == 0 {
+            let err = io::Error::last_os_error();
+            return Err(format!("PostMessageW(WM_KEYDOWN) failed: {}", err));
+        }
+        let ret = unsafe { PostMessageW(hwnd, WM_KEYUP, vk as usize, up_lparam) };
+        if ret == 0 {
+            let err = io::Error::last_os_error();
+            return Err(format!("PostMessageW(WM_KEYUP) failed: {}", err));
+        }
+        Ok(())
+    }
+
+    /// Send text by posting WM_CHAR messages directly to the focused window.
+    /// Bypasses all keyboard hooks (NVDA, JAWS, keyloggers, etc.).
+    fn send_text_via_messages(hwnd: isize, text: &str) -> Result<(), String> {
+        let char_delay = Duration::from_millis(INTER_CHAR_DELAY_MS);
+
+        let mut chars = text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\r' => {
+                    if chars.peek() == Some(&'\n') {
+                        chars.next();
+                    }
+                    post_vk_key(hwnd, VK_RETURN, 0x1C)?; // scan code 0x1C = Enter
+                }
+                '\n' => {
+                    post_vk_key(hwnd, VK_RETURN, 0x1C)?;
+                }
+                '\t' => {
+                    post_vk_key(hwnd, VK_TAB, 0x0F)?; // scan code 0x0F = Tab
+                }
+                other => {
+                    let mut buf = [0u16; 2];
+                    for &code_unit in other.encode_utf16(&mut buf).iter() {
+                        post_wm_char(hwnd, code_unit)?;
+                    }
+                }
+            }
+            thread::sleep(char_delay);
+        }
+        Ok(())
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // SendInput approach — fallback (layout-independent but hook-visible)
+    // ════════════════════════════════════════════════════════════════════════
+
     fn make_unicode_input(code_unit: u16, flags: u32) -> INPUT {
         INPUT {
             r#type: INPUT_KEYBOARD,
@@ -50,7 +157,6 @@ pub mod win {
         }
     }
 
-    /// Build a single INPUT struct for a virtual key event (VK_RETURN, VK_TAB, etc.).
     fn make_vk_input(vk: u16, flags: u32) -> INPUT {
         INPUT {
             r#type: INPUT_KEYBOARD,
@@ -66,11 +172,9 @@ pub mod win {
         }
     }
 
-    // ── Single-event sender ──────────────────────────────────────────────
-
-    /// Send a single INPUT event via SendInput. Returns Err on UIPI/failure.
     fn send_single_input(input: &INPUT) -> Result<(), String> {
-        let sent = unsafe { SendInput(1, input as *const INPUT, size_of::<INPUT>() as i32) };
+        let sent =
+            unsafe { SendInput(1, input as *const INPUT, size_of::<INPUT>() as i32) };
         if sent == 0 {
             let last_err = io::Error::last_os_error();
             eprintln!("SendInput returned 0. GetLastError: {}", last_err);
@@ -84,10 +188,7 @@ pub mod win {
         Ok(())
     }
 
-    // ── Key press helpers (keydown → delay → keyup) ──────────────────────
-
-    /// Send a virtual key press (keydown → delay → keyup).
-    fn send_vk_key(vk: u16, press_delay: Duration) -> Result<(), String> {
+    fn send_vk_key_input(vk: u16, press_delay: Duration) -> Result<(), String> {
         let down = make_vk_input(vk, 0);
         let up = make_vk_input(vk, KEYEVENTF_KEYUP);
         send_single_input(&down)?;
@@ -96,29 +197,21 @@ pub mod win {
         Ok(())
     }
 
-    /// Send a KEYEVENTF_UNICODE key press for one UTF-16 code unit (keydown → delay → keyup).
-    fn send_unicode_key(code_unit: u16, press_delay: Duration) -> Result<(), String> {
+    fn send_unicode_key_input(
+        code_unit: u16,
+        press_delay: Duration,
+    ) -> Result<(), String> {
         let down = make_unicode_input(code_unit, KEYEVENTF_UNICODE);
-        let up = make_unicode_input(code_unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+        let up =
+            make_unicode_input(code_unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
         send_single_input(&down)?;
         thread::sleep(press_delay);
         send_single_input(&up)?;
         Ok(())
     }
 
-    // ── Public API ───────────────────────────────────────────────────────
-
-    /// Send a Unicode string by simulating keyboard input.
-    ///
-    /// - Control characters (`\r`, `\n`, `\r\n`, `\t`) → virtual key presses
-    ///   (VK_RETURN, VK_TAB) because KEYEVENTF_UNICODE with raw LF/CR is not
-    ///   interpreted as Enter by Windows text controls.
-    /// - All other characters → KEYEVENTF_UNICODE per UTF-16 code unit.
-    /// - Surrogate pairs (emoji) are handled via `char::encode_utf16()`.
-    /// - Keydown and keyup are sent as **separate** SendInput calls with a
-    ///   small delay between them, to avoid character drops when NVDA's
-    ///   WH_KEYBOARD_LL hook is active.
-    pub fn send_unicode_text(text: &str) -> Result<(), String> {
+    /// Fallback: send text via SendInput with KEYEVENTF_UNICODE.
+    fn send_text_via_sendinput(text: &str) -> Result<(), String> {
         let press_delay = Duration::from_millis(KEY_PRESS_DELAY_MS);
         let char_delay = Duration::from_millis(INTER_CHAR_DELAY_MS);
 
@@ -126,22 +219,21 @@ pub mod win {
         while let Some(ch) = chars.next() {
             match ch {
                 '\r' => {
-                    // \r\n → single Enter; standalone \r → Enter
                     if chars.peek() == Some(&'\n') {
-                        chars.next(); // consume the \n
+                        chars.next();
                     }
-                    send_vk_key(VK_RETURN, press_delay)?;
+                    send_vk_key_input(VK_RETURN, press_delay)?;
                 }
                 '\n' => {
-                    send_vk_key(VK_RETURN, press_delay)?;
+                    send_vk_key_input(VK_RETURN, press_delay)?;
                 }
                 '\t' => {
-                    send_vk_key(VK_TAB, press_delay)?;
+                    send_vk_key_input(VK_TAB, press_delay)?;
                 }
                 other => {
                     let mut buf = [0u16; 2];
                     for code_unit in other.encode_utf16(&mut buf).iter() {
-                        send_unicode_key(*code_unit, press_delay)?;
+                        send_unicode_key_input(*code_unit, press_delay)?;
                     }
                 }
             }
@@ -150,7 +242,35 @@ pub mod win {
         Ok(())
     }
 
-    // ── Test helpers ─────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // Public API
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Send a Unicode string by simulating keyboard input.
+    ///
+    /// Primary method: posts `WM_CHAR` messages directly to the focused window,
+    /// bypassing keyboard hooks. This avoids interference from screen readers
+    /// (NVDA, JAWS) whose `WH_KEYBOARD_LL` hooks can consume `SendInput`
+    /// events — e.g., NVDA in browse mode intercepts letters like `e`, `t`, `h`
+    /// as single-letter navigation keys.
+    ///
+    /// Fallback: if the focused window cannot be determined, uses `SendInput`
+    /// with `KEYEVENTF_UNICODE` (layout-independent but hook-visible).
+    pub fn send_unicode_text(text: &str) -> Result<(), String> {
+        // Primary: PostMessage (bypasses screen reader hooks)
+        match get_focused_window() {
+            Ok(target) if target != 0 => {
+                return send_text_via_messages(target, text);
+            }
+            _ => {}
+        }
+        // Fallback: SendInput
+        send_text_via_sendinput(text)
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Test helpers
+    // ════════════════════════════════════════════════════════════════════════
 
     /// Describes a single key event produced by `build_input_sequence`.
     #[cfg(test)]
