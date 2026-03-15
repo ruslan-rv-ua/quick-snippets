@@ -16,6 +16,7 @@ export interface UseWindowHidingParams {
   setShowCreate: (show: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setShowExit: (show: boolean) => void;
+  setAutotypeMode?: (mode: boolean) => void;
 }
 
 export interface UseWindowHidingReturn {
@@ -43,6 +44,7 @@ export function useWindowHiding(params: UseWindowHidingParams): UseWindowHidingR
     setShowCreate,
     setShowSettings,
     setShowExit,
+    setAutotypeMode,
   } = params;
 
   // ── Full reset + hide window ──────────────────────────────────────────
@@ -57,8 +59,9 @@ export function useWindowHiding(params: UseWindowHidingParams): UseWindowHidingR
     setQuery('');
     setActiveIndex(-1);
     setShowPassword(false);
+    setAutotypeMode?.(false); // RC-1: reset autotype mode on blur
     // Other modals stay open
-  }, [setQuery, setActiveIndex, setShowPassword]);
+  }, [setQuery, setActiveIndex, setShowPassword, setAutotypeMode]);
 
   // ── Focus search box when no modal is open ────────────────────────────
   const focusSearch = useCallback(() => {

@@ -10,6 +10,7 @@ export interface SearchBoxProps {
   activeIndex: number;
   onActiveIndexChange: (index: number) => void;
   onActivate: (snippet: SearchResult) => void;
+  onAutotype?: (snippet: SearchResult) => void;
 }
 
 export interface SearchBoxHandle {
@@ -24,6 +25,7 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     activeIndex,
     onActiveIndexChange,
     onActivate,
+    onAutotype,
   },
   ref,
 ) {
@@ -45,6 +47,7 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     value,
     onNavigate: onActiveIndexChange,
     onSelect: onActivate,
+    onAutotype,
     onEscape: () => {}, // not used in current logic, but kept for interface completeness
     onSetValue: onChange,
   });

@@ -1,3 +1,4 @@
+pub mod autotype;
 pub mod commands;
 pub mod crypto;
 pub mod db;
@@ -330,6 +331,7 @@ pub fn run() {
             commands::tauri_commands::get_settings,
             commands::tauri_commands::save_settings,
             commands::tauri_commands::get_pending_notification,
+            commands::tauri_commands::autotype_snippet,
             commands::tauri_commands::quit_app,
             commands::tauri_commands::cancel_close,
         ])

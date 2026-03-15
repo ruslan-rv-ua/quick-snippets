@@ -117,6 +117,22 @@ describe('SearchBox', () => {
     expect(onActivate).not.toHaveBeenCalled();
   });
 
+  it('Shift+Enter calls onAutotype with active snippet', () => {
+    const onAutotype = vi.fn();
+    const onActivate = vi.fn();
+    renderSearchBox({ snippets: mockSnippets, activeIndex: 1, onActivate, onAutotype });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
+    expect(onAutotype).toHaveBeenCalledWith(mockSnippets[1]);
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it('Shift+Enter with no active snippet does nothing', () => {
+    const onAutotype = vi.fn();
+    renderSearchBox({ snippets: mockSnippets, activeIndex: -1, onAutotype });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
+    expect(onAutotype).not.toHaveBeenCalled();
+  });
+
   it('Escape on non-empty query clears query and stops propagation', () => {
     const onChange = vi.fn();
     const parentHandler = vi.fn();
