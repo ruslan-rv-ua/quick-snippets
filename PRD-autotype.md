@@ -50,18 +50,23 @@
   - обчислення: `cp -= 0x10000; high = 0xD800 + (cp >> 10); low = 0xDC00 + (cp & 0x3FF)`
 - Реалізація мусить ітерувати по `str::encode_utf16()` (не по `chars()`), щоб сурогатні пари утворювались автоматично
 
-#### Сумісність з NVDA screen reader
+#### Сумісність зі screen readers
 
-- Auto-type **мусить** коректно працювати як при запущеному NVDA, так і без нього
-- NVDA реєструє низькорівневий хук `WH_KEYBOARD_LL` (`SetWindowsHookEx`), що додає latency до pipeline клавіатурних подій. Якщо символи надсилаються без затримки, події можуть надходити у цільовий застосунок не по порядку або губитись
+- Auto-type **мусить** коректно працювати як при запущеному screen reader, так і без нього
+- Screen readers (NVDA, JAWS) реєструють низькорівневий хук `WH_KEYBOARD_LL` (`SetWindowsHookEx`), що додає latency до pipeline клавіатурних подій. Якщо символи надсилаються без затримки, події можуть надходити у цільовий застосунок не по порядку або губитись
+- **Важливо:** при наявності `WH_KEYBOARD_LL` хука гарантія атомарності SendInput (що події з інших джерел не вклиняться) **не діє**. Тому `SendInput` мусить викликатися посимвольно з затримками, а не одним великим батчем
 - **Фіксована затримка між символами є обов'язковою**: `INTER_CHAR_DELAY_MS = 25ms` (keydown → keyup → delay → наступний символ)
-- Значення 25ms є мінімумом, достатнім для NVDA; достатньо для всіх сучасних застосунків
-- NVDA при активній опції "speak typed characters" буде оголошувати кожен символ, що надрукований через SendInput — це очікувана поведінка NVDA, не баг autotype; для паролів це UX-ризик (вголос зачитується пароль), але не технічна некоректність
+- Значення 25ms є мінімумом, достатнім для NVDA/JAWS; достатньо для всіх сучасних застосунків
+- **Примітка про `std::thread::sleep` на Windows:** гранулярність системного таймера — ~15.6ms (1/64с). `sleep(25ms)` фактично може спати 25–31ms. Для типових сніпетів (10–50 символів) це не створює помітної різниці
+- NVDA при активній опції "speak typed characters" буде оголошувати кожен символ, що надрукований через SendInput — це очікувана поведінка NVDA, не баг autotype; для паролів це UX-ризик (вголос зачитується пароль), але не технічна некоректність. Для зменшення ризику NVDA-користувачі можуть встановити add-on **"Speak Passwords"** або **"Report Passwords"**, що дають контроль над озвучуванням символів у полях паролів
+- **JAWS** (комерційний screen reader) використовує аналогічний механізм keyboard hooks. Затримка 25ms має бути достатньою. Тестування з JAWS рекомендоване, але не блокує реліз
+- **Narrator** (вбудований у Windows) — менш агресивний, нижчий ризик несумісності
 
 #### UIPI (User Interface Privilege Isolation)
 
-- `SendInput` є subject to UIPI: якщо цільовий застосунок запущений із вищим рівнем привілеїв (elevated/UAC), ніж quick-snippets — SendInput повернеться з `0` (0 подій надіслано) без помилки
-- У цьому випадку `autotype_snippet` мусить повернути `Err("Auto-type failed: target window has higher privilege (run as administrator)")` з відповідним Toast
+- `SendInput` є subject to UIPI: якщо цільовий застосунок запущений із вищим рівнем привілеїв (elevated/UAC), ніж quick-snippets — SendInput повернеться з `0` (0 подій надіслано)
+- **Важливо:** Microsoft документація стверджує: *"Neither GetLastError nor the return value will indicate the failure was caused by UIPI blocking."* Тому детекція базується на `SendInput() == 0` (жоден event не надіслано), а `GetLastError()` логується як додаткова діагностика
+- У цьому випадку `autotype_snippet` мусить повернути `Err("Auto-type failed: no events were sent. This may happen if the target app runs with higher privileges (run as administrator).")` з відповідним Toast
 
 ### Не входить у цю ітерацію
 
@@ -95,7 +100,7 @@ const INTER_CHAR_DELAY_MS: u64 = 25;
 - Ітерація через `text.encode_utf16()` — дає UTF-16 code units, сурогатні пари для emoji формуються автоматично
 - Для кожного UTF-16 code unit: 2 INPUT-структури (`INPUT_KEYBOARD`, `KEYEVENTF_UNICODE`, `wVk=0`, `wScan=code_unit`) — keydown + keyup
 - `SendInput` викликається посимвольно (або малими батчами) з затримкою `INTER_CHAR_DELAY_MS` між символами
-- Якщо `SendInput` повертає 0 (жоден event не надіслано) — перевірити `GetLastError()`: якщо `ERROR_ACCESS_DENIED` → UIPI, повернути відповідну помилку
+- Якщо `SendInput` повертає 0 (жоден event не надіслано) — повернути помилку. `GetLastError()` записати в лог як додаткову діагностику, але **не покладатися на нього для визначення причини**: Microsoft документація застерігає що ні return value, ні `GetLastError` не гарантовано вказують на UIPI як причину блокування. Повідомлення для користувача має бути загальним: "Auto-type failed: no events were sent. This may happen if the target app runs with higher privileges."
 - **Заборонено**: scan codes, virtual keys (залежать від розкладки)
 
 Команда огорнута в `#[cfg(target_os = "windows")]` — на не-Windows не компілюється.
@@ -292,15 +297,26 @@ NVDA з увімкненою опцією "speak typed characters" вголос 
 
 **Мітигація у цій ітерації:** Toast після auto-type містить попередження для користувачів NVDA (додати ключ `autotypeNvdaWarning`). Повне вирішення — за межами ітерації.
 
+**Рекомендація для користувачів:** NVDA add-ons **"Speak Passwords"** та **"Report Passwords"** дають контроль над озвучуванням символів у полях паролів. Варто згадати у документації застосунку.
+
 **Не-мітигація:** Вимкнення "speak typed characters" програмно неможливе без втручання у NVDA — не реалізується.
 
-### NVDA — UIPI (elevated цільовий застосунок)
+### UIPI (elevated цільовий застосунок)
 
-Якщо цільовий застосунок запущений від імені адміністратора (UAC elevation), а quick-snippets — ні, `SendInput` повернеться з результатом 0, тобто жоден символ не буде надрукований. Реалізація мусить це детектувати (перевірити `GetLastError()` == `ERROR_ACCESS_DENIED`) і повернути зрозуміле повідомлення про помилку.
+Якщо цільовий застосунок запущений від імені адміністратора (UAC elevation), а quick-snippets — ні, `SendInput` повернеться з результатом 0, тобто жоден символ не буде надрукований. Microsoft документація застерігає що ні `GetLastError`, ні return value не гарантовано вказують UIPI як причину. Детекція базується на `SendInput() == 0`; `GetLastError()` логується як додаткова діагностика.
 
 ### Emoji та старі застосунки
 
 Сурогатні пари надсилаються через два `KEYEVENTF_UNICODE` events. Сучасні застосунки (стандартні Win32 Edit/RichEdit, Chromium, .NET) їх коректно обробляють. Старі або нестандартні застосунки можуть не розуміти сурогатні пари — emoji виявляться двома окремими символами або ігноруватимуться. Це обмеження застосунку-отримувача, не баг autotype; задокументувати.
+
+### Відомі обмеження окремих застосунків
+
+Деякі застосунки мають задокументовані проблеми з `KEYEVENTF_UNICODE`/`VK_PACKET` через SendInput:
+
+- **Windows Terminal** — задокументований баг ([microsoft/terminal#12977](https://github.com/microsoft/terminal/issues/12977)): відправка Unicode-символів через `KEYEVENTF_UNICODE` може виводити неправильні символи. Це обмеження Windows Terminal, не autotype
+- **Старі Win32 застосунки** — можуть не розуміти сурогатні пари (emoji відображаються як два окремих символи)
+
+Ці обмеження не є багами autotype і не потребують мітигації.
 
 ### Антивірусне ПО (Windows)
 
@@ -344,6 +360,6 @@ NVDA з увімкненою опцією "speak typed characters" вголос 
 | `autotype` | `Auto-type` | `Автодрук` | `Automatisch tippen` |
 | `autotypeSuccess` | `Typed` | `Надруковано` | `Eingegeben` |
 | `autotypeError` | `Auto-type failed` | `Помилка автодруку` | `Automatisches Tippen fehlgeschlagen` |
-| `autotypeErrorUipi` | `Auto-type failed: target app requires elevation` | `Помилка автодруку: цільовий застосунок вимагає прав адміністратора` | `Automatisches Tippen fehlgeschlagen: Zielprogramm erfordert erhöhte Rechte` |
+| `autotypeErrorNoEvents` | `Auto-type failed: no events were sent. Target app may require elevation` | `Помилка автодруку: жодна подія не надіслана. Цільовий застосунок може вимагати прав адміністратора` | `Automatisches Tippen fehlgeschlagen: Keine Ereignisse gesendet. Zielprogramm erfordert möglicherweise erhöhte Rechte` |
 
 
