@@ -1,12 +1,5 @@
 # PRD — Auto-type сніпету
-
-**Статус:** Draft  
-**Платформа:** Windows  
-**Пріоритет:** Medium  
-
----
-
-## 1. Проблема і мета
+## Проблема і мета
 
 ### Проблема
 
@@ -21,7 +14,7 @@
 
 ---
 
-## 2. Вимоги
+## Вимоги
 
 ### Функціональні
 
@@ -50,51 +43,78 @@
 
 ## 3. Рішення
 
-### Бібліотека: `enigo`
+### Rust backend — `autotype_snippet`
 
-**Обраний варіант:** `enigo` (crates.io).
+Нова команда `autotype_snippet(id, password)` у `src-tauri/src/commands.rs`:
 
-**Чому не альтернативи:**
-- `rdev` — немає зручного text-typing API, потребує побуквеного введення з ручними затримками, автор сам рекомендує `enigo` як альтернативу; менш активна підтримка
-- `rdevin` — форк `rdev` з мінімальною підтримкою, нішевий
+1. Отримує plaintext через існуючу `activate_snippet_get_content()` (повторне використання)
+2. Ховає вікно: `window.hide()`
+3. Пауза `FOCUS_DELAY_MS = 150ms` — очікує повернення фокусу в цільовий застосунок
+4. Симулює введення тексту через **Win32 `SendInput` API** (`windows-sys`)
+5. Повертає `Ok(())` — plaintext ніколи не потрапляє в IPC-відповідь
 
-**Переваги `enigo`:**
-- нативна Windows підтримка через `SendInput` Win32 API
-- `enigo.text("...")` — одним викликом для довільного Unicode-тексту
-- MIT ліцензія
-- активно підтримується
+```rust
+const FOCUS_DELAY_MS: u64 = 150;
+```
+
+Команда огорнута в `#[cfg(target_os = "windows")]` — на не-Windows не компілюється.
+`windows-sys` додається як conditional dependency в `Cargo.toml`:
 
 ```toml
-# src-tauri/Cargo.toml
-enigo = "0.3"
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 ```
 
-### Механізм роботи
+Команда реєструється в `.invoke_handler()` у `src-tauri/src/lib.rs`.
 
-```
-Shift+Enter
-  ↓
-handleAutotype(snippet)
-  ↓
-[зашифровано?] → PasswordModal (action='autotype') → пароль введено
-  ↓
-IPC: autotype_snippet(id, password)
-  ↓
-Rust: отримати plaintext (activate_snippet_get_content)
-  ↓
-Rust: window.hide()
-  ↓
-Rust: thread::sleep(150ms)   ← фокус повертається до попереднього вікна
-  ↓
-Rust: enigo.text(&plaintext)
-  ↓
-Rust: plaintext зероїзується (drop Zeroizing)
-  ↓
-Ok(()) → hideWindow() + toast "Typed"
+---
+
+### Frontend — `autotypeMode` стан
+
+У `App.tsx` (AppInner):
+
+```ts
+const [autotypeMode, setAutotypeMode] = useState(false);
 ```
 
-**Чому 150ms затримка:**  
-На Windows після `window.hide()` ОС асинхронно передає фокус назад. Якщо `enigo` почне вводити раніше — текст потрапить у поле пошуку QuickSnippets. 150ms — стандартна практика (KeePass auto-type використовує аналогічний підхід).
+`setAutotypeMode` передається в `useWindowHiding` як параметр (поруч із існуючими `setShowPassword` тощо) — щоб `partialReset`, `hideWindow`, `closeAll` могли скидати його.
+
+---
+
+### Frontend — `Shift+Enter` обробка
+
+`SearchBox.tsx` і `SnippetList.tsx` отримують новий опціональний callback:
+
+```ts
+onAutotype?: (snippet: SearchResult) => void
+```
+
+При `Shift+Enter` — викликається `onAutotype`, при звичайному `Enter` — `onActivate` (без змін).
+
+В `App.tsx` додається `handleAutotype`:
+
+```ts
+const handleAutotype = useCallback((snippet: SearchResult) => {
+  if (snippet.is_encrypted) {
+    setAutotypeMode(true);
+    setPasswordSnippet(snippet);
+    setShowPassword(true);
+  } else {
+    autotypeSnippet(snippet.id, '')
+      .then(() => { addToast(t('autotypeSuccess'), 'success'); hideWindow(); })
+      .catch((err: unknown) => addToast(String(err), 'error'));
+  }
+}, [...]);
+```
+
+---
+
+### Frontend — `PasswordModal` зміна
+
+Додається проп `action: 'copy' | 'autotype'` (default: `'copy'`).
+
+- Кнопка підтвердження: `t(action)` замість хардкоду `t('copy')`
+- Всередині `handleSubmit`: якщо `action === 'autotype'` → `autotypeSnippet(id, pwd)`, інакше → `activateSnippet(id, pwd)`
 
 ---
 
@@ -119,7 +139,7 @@ Ok(()) → hideWindow() + toast "Typed"
 
 ---
 
-### RC-2 🔴 `window.hide()` у Rust тригерить `onBlur` у frontend під час виконання IPC
+### RC-2 🟡 `window.hide()` у Rust тригерить `onBlur` у frontend під час виконання IPC
 
 **Сценарій (незашифрований сніпет):**
 
@@ -140,7 +160,7 @@ Frontend:  Promise resolved → hideWindow() викликається вдруг
 
 ---
 
-### RC-3 🟡 `autotypeMode` не скидається при відхиленні пароля
+### RC-3 🔴 `autotypeMode` не скидається при відхиленні пароля
 
 **Сценарій:**
 
@@ -195,7 +215,7 @@ Frontend:  Promise resolved → hideWindow() викликається вдруг
 ```
 t=0ms:   window.hide() — явний виклик у команді
          Focused(false) → hide_scheduled=true → debounce thread стартує
-t=150ms: sleep закінчується, enigo.text(...) — target app вже має фокус
+t=150ms: sleep закінчується, SendInput(...) — target app вже має фокус
 t=200ms: debounce thread: w.hide() — вікно вже сховано, idempotent ✅
 ```
 
@@ -203,174 +223,30 @@ t=200ms: debounce thread: w.hide() — вікно вже сховано, idempot
 
 ---
 
-## 4. Зміни по файлах
-
-### Backend (Rust)
-
-**`src-tauri/Cargo.toml`**
-- Додати залежність `enigo = "0.3"`
-
-**`src-tauri/src/commands.rs`**
-- Додати команду `autotype_snippet(id, password, window: Window, state: State<AppState>)` у модулі `tauri_commands`
-- На відміну від `activate_snippet` (використовує `AppHandle` для clipboard), тут потрібен саме `Window` — для виклику `window.hide()`. `Window` вже імпортований у `tauri_commands`: `use tauri::{AppHandle, Manager, State, Window}`
-- Логіка: отримати plaintext в окремому блоці `{ let conn = ...; ... }` → **conn lock звільняється до sleep** → `window.hide()` → `sleep(150ms)` → `enigo.text()` → plaintext дропається
-
-> ⚠️ **Критично.** `conn` Mutex **не можна тримати під час `sleep(150ms)` і `enigo.text()`** — інакше база даних заблокована на весь час введення. Існуючий `activate_snippet` показує правильний патерн: блок `{ let conn = state.conn.lock()...; activate_snippet_get_content(...)?  }` звільняє lock до виходу з блоку.
-
-**`src-tauri/src/lib.rs`** — `invoke_handler!`
-- Додати `commands::tauri_commands::autotype_snippet` до макросу `tauri::generate_handler![...]` поруч з `activate_snippet`
-- Це єдине місце реєстрації команд — не `main.rs`
-
-> ⚠️ Команда не з'явиться у frontend IPC поки не додана сюди — типова помилка при додаванні нових команд.
-
-**Тестованість `autotype_snippet`:** на відміну від inner-функцій, сам `tauri_command` `autotype_snippet` вимагає Tauri runtime (`Window`) та OS (`enigo`) — unit-тестувати його безпосередньо неможливо. Тестується тільки `activate_snippet_get_content` (вже існує). Для самого `autotype_snippet` — integration або manual тести.
-
-### Frontend (TypeScript/React)
-
-**`src/hooks/useIpc.ts`**
-- Додати функцію `autotypeSnippet(id: number, password: string): Promise<void>`
-
-**`src/hooks/useSearchBoxKeyboard.ts`**
-
-> ⚠️ **Критично.** Поточний обробник `Enter` не перевіряє `shiftKey`:
-> ```ts
-> case 'Enter': {
->   if (activeIndex >= 0 && snippets[activeIndex]) {
->     e.preventDefault();
->     onSelect(snippets[activeIndex]); // ← спрацює і на Shift+Enter!
->   }
-> }
-> ```
-> Без виправлення `Shift+Enter` одночасно тригерить і копіювання, і auto-type.
-
-- Додати необов'язковий параметр `onAutotype?: (snippet: SearchResult) => void`
-- В обробнику `Enter` — перевіряти `e.shiftKey`: якщо `true` → `onAutotype?.()`, якщо `false` → `onSelect()`
-- Інтерфейс `UseSearchBoxKeyboardParams` — розширити новим полем
-
-**`src/hooks/useWindowHiding.ts`**
-
-> ⚠️ **Race condition RC-1.** `partialReset` викликається при кожному `onBlur`. Якщо `autotypeMode = true` і вікно втратило фокус — `autotypeMode` залишиться `true` після закриття `PasswordModal`.
-
-- Додати `setAutotypeMode` до параметрів `UseWindowHidingParams`
-- В `partialReset`: додати `setAutotypeMode(false)`
-- В `hideWindow`: `closeAll()` вже скидає модальні вікна — переконатися що `autotypeMode` також скидається через `closeAll` або явно
-
-**`src/hooks/useModalState.ts`**
-- Додати `autotypeMode: boolean` та `setAutotypeMode`
-- Включити `autotypeMode` в `anyModalOpen`-незалежний стан (це не модальне вікно, а прапор контексту)
-
-**`src/hooks/useAppModals.ts`**
-- Повертати `autotypeMode` і `setAutotypeMode`
-- Прокидати ці значення з `useModalState`
-
-**`src/components/PasswordModal.tsx`**
-
-> ⚠️ **Критично.** Зараз `PasswordModal` хардкодить `activateSnippet`:
-> ```ts
-> await activateSnippet(snippetId, password); // завжди clipboard
-> ```
-> Потрібно зробити дію конфігурованою.
-
-- Додати проп `action: 'copy' | 'autotype'` (або `onSubmit: (password: string) => Promise<void>`)
-- Рекомендований варіант — `onSubmit`: більш гнучкий, не прив'язує модальне вікно до конкретних IPC-команд
-- Кнопку підтвердження (`{t('copy')}`) відображати залежно від `action`: `t('copy')` або `t('autotype')`
-
-**`src/components/SearchBox.tsx`**
-- Додати проп `onAutotype?: (snippet: SearchResult) => void`
-- Передати у `useSearchBoxKeyboard` як `onAutotype`
-
-**`src/components/SnippetList.tsx`**
-- Додати проп `onAutotype?: (snippet: SearchResult) => void`
-- Передати у кожен `SnippetItem` (або обробляти на рівні списку)
-
-**`src/App.tsx`**
-- Додати `handleAutotype` поруч з `handleActivate`:
-  - незашифрований → `autotypeSnippet(id, '')` → toast + `hideWindow()`
-  - зашифрований → `setAutotypeMode(true)` + `setPasswordSnippet(snippet)` + `setShowPassword(true)`
-- `PasswordModal` отримує `action={autotypeMode ? 'autotype' : 'copy'}` або відповідний `onSubmit`
-- `onClose` PasswordModal — **мусить** скидати `setAutotypeMode(false)` (мітигація RC-3): при Cancel, Escape або помилці пароля `autotypeMode` скидається до `false`
-- Після закриття `PasswordModal` — скинути `autotypeMode(false)`
-- Прокинути `onAutotype={handleAutotype}` у `SearchBox` і `SnippetList`
-
-**`src/i18n/translations.ts`**
-
-> ⚠️ **Критично.** Тест `'en, uk and de have identical keys'` впаде, якщо додати ключі тільки в одній мові.
-
-Додати нові ключі одночасно в **en, uk і de**:
-- `autotype` — label кнопки в `PasswordModal` та підказка в UI (напр. `"Auto-type"` / `"Автонабір"` / `"Autoeingabe"`)
-- `autotypeSuccess` — toast після успішного auto-type (напр. `"Typed"` / `"Введено"` / `"Eingegeben"`)
-
-Оновити `TranslationMap` інтерфейс — додати ці ключі як обов'язкові рядки.
-
-### Оновлений повний перелік файлів для зміни
-
-| Файл | Що змінюємо |
-|---|---|
-| `Cargo.toml` | + `enigo = "0.3"` |
-| `src-tauri/src/commands.rs` | + команда `autotype_snippet` (у `tauri_commands`) |
-| `src-tauri/src/lib.rs` | + реєстрація в `invoke_handler!` |
-| `src/hooks/useIpc.ts` | + `autotypeSnippet()` |
-| `src/hooks/useSearchBoxKeyboard.ts` | + `onAutotype`, `Shift+Enter` → `onAutotype` |
-| `src/hooks/useModalState.ts` | + `autotypeMode: boolean`, `setAutotypeMode` |
-| `src/hooks/useAppModals.ts` | передає `autotypeMode`, `setAutotypeMode` |
-| `src/hooks/useWindowHiding.ts` | `partialReset` скидає `autotypeMode` (RC-1) |
-| `src/components/PasswordModal.tsx` | + проп `action`, умовна кнопка |
-| `src/components/SearchBox.tsx` | + проп `onAutotype` |
-| `src/components/SnippetList.tsx` | + проп `onAutotype` |
-| `src/App.tsx` | + `handleAutotype`, `autotypeMode` скидається скрізь (RC-3) |
-| `src/i18n/translations.ts` | + `autotype`, `autotypeSuccess` в en/uk/de |
-| `src/i18n/__tests__/translations.test.ts` | + нові ключі в `requiredKeys` |
-| `README.md` | + `Shift+Enter` у таблиці shortcuts |
-| `README_UK.md` | + `Shift+Enter` у таблиці shortcuts (uk) |
-| `README_DE.md` | + `Shift+Enter` у таблиці shortcuts (de) |
-
-## 5. Тести
+## Тести
 
 Кожна змінена одиниця покривається тестами за TDD-циклом проекту (Red → Green → Refactor).
 
-### Rust (`commands.rs`)
+**Rust (`commands.rs`):**
+- `test_autotype_snippet_inner_unencrypted` — `activate_snippet_get_content` повертає правильний контент (Win32 SendInput відокремлюється в окрему функцію для мокування)
+- `test_autotype_snippet_wrong_password` — помилка при невірному паролі для зашифрованого сніпету
 
-`autotype_snippet` як `#[tauri::command]` потребує Tauri runtime (`Window`) і OS (`enigo`) — unit-тестувати напряму неможливо. Тестується лише inner-шар:
+**Frontend (Vitest):**
+- `autotypeMode` скидається в `partialReset` — RC-1
+- `autotypeMode` скидається при `onClose` PasswordModal — RC-3
+- `handleAutotype` відкриває `PasswordModal` з `action='autotype'` для зашифрованих сніпетів
+- `handleAutotype` викликає `autotypeSnippet` IPC для незашифрованих сніпетів
 
-- `test_autotype_get_content_unencrypted_ok` — `activate_snippet_get_content` повертає коректний plaintext
-- `test_autotype_get_content_encrypted_correct_password` — розшифровує успішно
-- `test_autotype_get_content_encrypted_wrong_password` — повертає `Err`
-- `test_autotype_get_content_nonexistent` — повертає `Err`
-- **Інваріант безпеки:** вже покритий `test_get_snippet_encrypted_excludes_content` — переконатися що новий код не порушує його
 
-### Frontend (Vitest)
-
-**`useSearchBoxKeyboard.test.ts`**
-- `Enter` без Shift → викликає `onSelect`
-- `Shift+Enter` → викликає `onAutotype`
-- `Shift+Enter` без `onAutotype` → нічого не відбувається (не падає)
-
-**`PasswordModal.test.tsx`**
-- при `action='autotype'` кнопка показує `t('autotype')`, а не `t('copy')`
-- при `action='autotype'` `handleSubmit` викликає `autotype_snippet` IPC, а не `activate_snippet`
-- `onClose` скидає `autotypeMode` — перевірити що після Cancel наступний виклик через `Enter` використовує `activate_snippet`
-
-**`useWindowHiding.test.ts`** (або `App.test.tsx`)
-- blur при відкритому `PasswordModal` з `autotypeMode=true` → `autotypeMode` стає `false`
-
-**`translations.test.ts`**
-- нові ключі автоматично перевіряються існуючим тестом після додавання в `requiredKeys`
-
----
-
-## 6. Ризики і нюанси
+## Ризики і нюанси
 
 ### Антивірусне ПО (Windows)
 
-`SendInput` Win32 API використовується `enigo` для симуляції клавіатури. Деякі антивіруси або EDR-системи можуть позначати цей виклик як підозрілий або блокувати. Це відомий нюанс всіх auto-type інструментів (KeePass, AutoHotkey). **Мітигація:** підписання бінарника (code signing) — вже є в release pipeline.
+`SendInput` Win32 API використовується для симуляції клавіатури. Деякі антивіруси або EDR-системи можуть позначати цей виклик як підозрілий або блокувати. Це відомий нюанс всіх auto-type інструментів (KeePass, AutoHotkey). **Мітигація:** підписання бінарника (code signing) — вже є в release pipeline.
 
 ### Затримка фокусу
 
 150ms — евристика. У теорії на дуже повільних або перевантажених системах фокус може ще не повернутися. Якщо виявиться проблемою — зробити значення конфігурованим у Settings у наступній ітерації.
-
-### Unicode та розкладки клавіатури
-
-`enigo.text()` вводить текст через Unicode, а не через симуляцію фізичних клавіш — це правильний підхід і він не залежить від активної розкладки. Тим не менш деякі застосунки (особливо старі або ігрові) можуть не обробляти Unicode-ін'єкцію коректно. Це обмеження документується, не вирішується.
 
 ### Зашифрований сніпет + `autotypeMode` — повний список точок скидання
 
@@ -388,29 +264,23 @@ t=200ms: debounce thread: w.hide() — вікно вже сховано, idempot
 
 ---
 
-## 7. UI / UX деталі
+## UI / UX деталі
 
 - Підказка в інтерфейсі: `Shift+Enter` — auto-type (аналогічно до існуючих підказок `Enter` — copy)
 - `PasswordModal` при `action='autotype'`: кнопка підтвердження — `t('autotype')` замість `t('copy')`; заголовок і поле пароля — без змін
 - Toast після auto-type — `t('autotypeSuccess')`, тип `'success'`, тривалість стандартна (2000ms)
-
-### README — таблиці скорочень клавіатури
-
-Усі три README мають таблицю "shortcuts" — рядок `Enter` потребує оновлення і додається новий рядок `Shift+Enter`:
-
-| Файл | Рядок що міняється |
-|---|---|
-| `README.md` | `\| Enter \| Copy selected snippet to clipboard \|` → додати `\| Shift+Enter \| Auto-type selected snippet \|` |
-| `README_UK.md` | `\| Enter \| Копіювати вибраний сніпет у буфер обміну \|` → додати `\| Shift+Enter \| Автонабір вибраного сніпету \|` |
-| `README_DE.md` | `\| Enter \| Ausgewählten Schnipsel in die Zwischenablage kopieren \|` → додати `\| Umschalt+Enter \| Ausgewählten Schnipsel automatisch eingeben \|` |
+- Toast при помилці — `t('autotypeError')`, тип `'error'`
 
 ---
 
-## 8. Не зачіпаємо
+## i18n
 
-- `activate_snippet` і весь існуючий clipboard-флоу — без змін
-- `SnippetItem.tsx` — не потребує змін; клік мишею завжди викликає `onActivate` (копіювання). Auto-type через мишу **не підтримується** в цій ітерації — тільки клавіатура (`Shift+Enter`)
-- `capabilities/default.json` — нових Tauri-дозволів не потрібно (`enigo` працює на рівні ОС напряму)
-- `settings.rs`, `db.rs`, `crypto.rs`, `search.rs` — без змін
-- `main.rs` — реєстрація команд у `lib.rs`, не тут
-- `CHANGELOG.md` — оновлюється при релізі версії
+Нові ключі в `src/i18n/translations.ts` та `TranslationMap`:
+
+| Ключ | en | uk | de |
+|---|---|---|---|
+| `autotype` | `Auto-type` | `Автодрук` | `Automatisch tippen` |
+| `autotypeSuccess` | `Typed` | `Надруковано` | `Eingegeben` |
+| `autotypeError` | `Auto-type failed` | `Помилка автодруку` | `Automatisches Tippen fehlgeschlagen` |
+
+
