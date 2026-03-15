@@ -32,12 +32,43 @@
 - Plaintext зероїзується після використання (`Zeroizing<Vec<u8>>`)
 - Підтримка Unicode-тексту
 
+### ⚠️ КРИТИЧНО: Коректність для будь-яких символів та розкладок
+
+> **Ці вимоги є обов'язковими і не підлягають компромісу.**
+
+#### Незалежність від поточної розкладки клавіатури
+
+- Auto-type **мусить** коректно надрукувати будь-який символ незалежно від того, яка розкладка клавіатури зараз активна у системі (UA, EN, RU, DE або інша)
+- Реалізація **мусить** використовувати `KEYEVENTF_UNICODE` (з `wVk = 0`, `wScan = utf16_code_unit`) — це єдиний механізм Win32, що обходить шар перекладу розкладки і доставляє символ безпосередньо як `WM_CHAR`
+- Використання scan-кодів або virtual keys (`KEYEVENTF_SCANCODE`, `VK_*`) **заборонено** — вони проходять через розкладку і дадуть неправильні символи при не-EN розкладці
+
+#### Підтримка всього Unicode-простору (включно з emoji)
+
+- BMP-символи (U+0000–U+FFFF): ASCII, кирилиця, більшість пунктуації, CJK — один `KEYEVENTF_UNICODE` keydown + keyup на символ
+- Символи поза BMP (U+10000+): emoji та інші supplementary characters — мають кодуватися як сурогатна пара UTF-16, тобто **два keydown/keyup** (4 INPUT-структури) на символ:
+  - high surrogate (U+D800–U+DBFF) + low surrogate (U+DC00–U+DFFF)
+  - обчислення: `cp -= 0x10000; high = 0xD800 + (cp >> 10); low = 0xDC00 + (cp & 0x3FF)`
+- Реалізація мусить ітерувати по `str::encode_utf16()` (не по `chars()`), щоб сурогатні пари утворювались автоматично
+
+#### Сумісність з NVDA screen reader
+
+- Auto-type **мусить** коректно працювати як при запущеному NVDA, так і без нього
+- NVDA реєструє низькорівневий хук `WH_KEYBOARD_LL` (`SetWindowsHookEx`), що додає latency до pipeline клавіатурних подій. Якщо символи надсилаються без затримки, події можуть надходити у цільовий застосунок не по порядку або губитись
+- **Фіксована затримка між символами є обов'язковою**: `INTER_CHAR_DELAY_MS = 25ms` (keydown → keyup → delay → наступний символ)
+- Значення 25ms є мінімумом, достатнім для NVDA; достатньо для всіх сучасних застосунків
+- NVDA при активній опції "speak typed characters" буде оголошувати кожен символ, що надрукований через SendInput — це очікувана поведінка NVDA, не баг autotype; для паролів це UX-ризик (вголос зачитується пароль), але не технічна некоректність
+
+#### UIPI (User Interface Privilege Isolation)
+
+- `SendInput` є subject to UIPI: якщо цільовий застосунок запущений із вищим рівнем привілеїв (elevated/UAC), ніж quick-snippets — SendInput повернеться з `0` (0 подій надіслано) без помилки
+- У цьому випадку `autotype_snippet` мусить повернути `Err("Auto-type failed: target window has higher privilege (run as administrator)")` з відповідним Toast
+
 ### Не входить у цю ітерацію
 
 - Linux, macOS
-- Затримка між символами (для сумісності зі старими програмами)
-- Конфігурування затримки через UI
+- Конфігурування затримки між символами через UI (затримка фіксована `INTER_CHAR_DELAY_MS = 25ms`)
 - Auto-type через гарячу клавішу ззовні вікна застосунку
+- Вимкнення NVDA "speak typed characters" програмно (це налаштування NVDA, не застосунку)
 
 ---
 
@@ -50,12 +81,22 @@
 1. Отримує plaintext через існуючу `activate_snippet_get_content()` (повторне використання)
 2. Ховає вікно: `window.hide()`
 3. Пауза `FOCUS_DELAY_MS = 150ms` — очікує повернення фокусу в цільовий застосунок
-4. Симулює введення тексту через **Win32 `SendInput` API** (`windows-sys`)
-5. Повертає `Ok(())` — plaintext ніколи не потрапляє в IPC-відповідь
+4. Симулює введення тексту через **Win32 `SendInput` API** (`windows-sys`) з `KEYEVENTF_UNICODE`
+5. Між символами — затримка `INTER_CHAR_DELAY_MS = 25ms` (обов'язково для NVDA)
+6. Повертає `Ok(())` — plaintext ніколи не потрапляє в IPC-відповідь; при UIPI-блокуванні — `Err(...)`
 
 ```rust
 const FOCUS_DELAY_MS: u64 = 150;
+const INTER_CHAR_DELAY_MS: u64 = 25;
 ```
+
+**Ключові деталі реалізації `send_unicode_text(text: &str)`:**
+
+- Ітерація через `text.encode_utf16()` — дає UTF-16 code units, сурогатні пари для emoji формуються автоматично
+- Для кожного UTF-16 code unit: 2 INPUT-структури (`INPUT_KEYBOARD`, `KEYEVENTF_UNICODE`, `wVk=0`, `wScan=code_unit`) — keydown + keyup
+- `SendInput` викликається посимвольно (або малими батчами) з затримкою `INTER_CHAR_DELAY_MS` між символами
+- Якщо `SendInput` повертає 0 (жоден event не надіслано) — перевірити `GetLastError()`: якщо `ERROR_ACCESS_DENIED` → UIPI, повернути відповідну помилку
+- **Заборонено**: scan codes, virtual keys (залежать від розкладки)
 
 Команда огорнута в `#[cfg(target_os = "windows")]` — на не-Windows не компілюється.
 `windows-sys` додається як conditional dependency в `Cargo.toml`:
@@ -230,6 +271,11 @@ t=200ms: debounce thread: w.hide() — вікно вже сховано, idempot
 **Rust (`commands.rs`):**
 - `test_autotype_snippet_inner_unencrypted` — `activate_snippet_get_content` повертає правильний контент (Win32 SendInput відокремлюється в окрему функцію для мокування)
 - `test_autotype_snippet_wrong_password` — помилка при невірному паролі для зашифрованого сніпету
+- `test_unicode_to_utf16_inputs_ascii` — ASCII-рядок кодується в правильні INPUT-структури з `KEYEVENTF_UNICODE`
+- `test_unicode_to_utf16_inputs_cyrillic` — кирилиця (U+0400–U+04FF, BMP) → один code unit на символ
+- `test_unicode_to_utf16_inputs_emoji` — emoji (наприклад 😀 U+1F600) → два code units (сурогатна пара): high=0xD83D, low=0xDE00
+- `test_unicode_to_utf16_inputs_mixed` — рядок з ASCII + кирилиці + emoji разом
+- `test_send_unicode_detects_uipi_error` — якщо `SendInput` повертає 0 → `Err` з текстом про UIPI
 
 **Frontend (Vitest):**
 - `autotypeMode` скидається в `partialReset` — RC-1
@@ -239,6 +285,22 @@ t=200ms: debounce thread: w.hide() — вікно вже сховано, idempot
 
 
 ## Ризики і нюанси
+
+### NVDA Screen Reader — UX-ризик для зашифрованих сніпетів
+
+NVDA з увімкненою опцією "speak typed characters" вголос оголошує кожен символ, надрукований через SendInput. Для незашифрованих сніпетів це прийнятна поведінка. Для зашифрованих сніпетів (паролі) — NVDA вимовляє пароль вголос, що є UX-ризиком в публічних місцях.
+
+**Мітигація у цій ітерації:** Toast після auto-type містить попередження для користувачів NVDA (додати ключ `autotypeNvdaWarning`). Повне вирішення — за межами ітерації.
+
+**Не-мітигація:** Вимкнення "speak typed characters" програмно неможливе без втручання у NVDA — не реалізується.
+
+### NVDA — UIPI (elevated цільовий застосунок)
+
+Якщо цільовий застосунок запущений від імені адміністратора (UAC elevation), а quick-snippets — ні, `SendInput` повернеться з результатом 0, тобто жоден символ не буде надрукований. Реалізація мусить це детектувати (перевірити `GetLastError()` == `ERROR_ACCESS_DENIED`) і повернути зрозуміле повідомлення про помилку.
+
+### Emoji та старі застосунки
+
+Сурогатні пари надсилаються через два `KEYEVENTF_UNICODE` events. Сучасні застосунки (стандартні Win32 Edit/RichEdit, Chromium, .NET) їх коректно обробляють. Старі або нестандартні застосунки можуть не розуміти сурогатні пари — emoji виявляться двома окремими символами або ігноруватимуться. Це обмеження застосунку-отримувача, не баг autotype; задокументувати.
 
 ### Антивірусне ПО (Windows)
 
@@ -282,5 +344,6 @@ t=200ms: debounce thread: w.hide() — вікно вже сховано, idempot
 | `autotype` | `Auto-type` | `Автодрук` | `Automatisch tippen` |
 | `autotypeSuccess` | `Typed` | `Надруковано` | `Eingegeben` |
 | `autotypeError` | `Auto-type failed` | `Помилка автодруку` | `Automatisches Tippen fehlgeschlagen` |
+| `autotypeErrorUipi` | `Auto-type failed: target app requires elevation` | `Помилка автодруку: цільовий застосунок вимагає прав адміністратора` | `Automatisches Tippen fehlgeschlagen: Zielprogramm erfordert erhöhte Rechte` |
 
 
