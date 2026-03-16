@@ -3,5 +3,8 @@
     "allow": [
       "WebSearch"
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
   }
 }
