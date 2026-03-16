@@ -136,4 +136,21 @@ describe('PasswordModal', () => {
       expect(mockInvoke).toHaveBeenCalledWith('activate_snippet', { id: 5, password: 'correct' });
     });
   });
+
+  // ── Autotype action ─────────────────────────────────────────────────
+
+  it('shows "Auto-type" button when action is autotype', () => {
+    renderModal({ action: 'autotype' });
+    expect(screen.getByRole('button', { name: /auto-type|автодрук|automatisch tippen/i })).toBeInTheDocument();
+  });
+
+  it('calls autotype_snippet IPC when action is autotype', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    renderModal({ action: 'autotype' });
+    fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'mypass' } });
+    fireEvent.click(screen.getByRole('button', { name: /auto-type|автодрук|automatisch tippen/i }));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('autotype_snippet', { id: 5, password: 'mypass' });
+    });
+  });
 });

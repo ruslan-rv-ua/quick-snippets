@@ -178,6 +178,26 @@ export function SettingsModal({
               </label>
             </div>
 
+            {/* Autotype delay */}
+            <div className="form-field">
+              <label htmlFor="settings-autotype-delay">
+                {t('autotypeDelayLabel')}
+              </label>
+              <input
+                id="settings-autotype-delay"
+                type="number"
+                min={0}
+                max={1000}
+                step={1}
+                value={settings?.autotype_delay_ms ?? 1}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(1000, Math.floor(Number(e.target.value) || 0)));
+                  setSettings((s) => s ? { ...s, autotype_delay_ms: v } : s);
+                }}
+                style={{ width: '5em' }}
+              />
+            </div>
+
             <p className="settings-hint">
               {t('restartHint')}
             </p>

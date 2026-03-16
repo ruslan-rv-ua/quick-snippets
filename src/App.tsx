@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 
 import { useAppModals } from './hooks/useAppModals';
 import { useWindowHiding } from './hooks/useWindowHiding';
@@ -11,6 +11,7 @@ import { useToast } from './hooks/useToast';
 import { useKeyboard } from './hooks/useKeyboard';
 import {
   activateSnippet,
+  autotypeSnippet,
   getPendingNotification,
   cancelClose,
 } from './hooks/useIpc';
@@ -67,6 +68,7 @@ function AppInner(): React.ReactElement {
   } = useSearchLogic();
 
   const searchRef = useRef<SearchBoxHandle>(null);
+  const [autotypeMode, setAutotypeMode] = useState(false);
 
   // ── Pending notification on startup ──────────────────────────────────
   useEffect(() => {
@@ -112,6 +114,7 @@ function AppInner(): React.ReactElement {
     setShowCreate,
     setShowSettings,
     setShowExit,
+    setAutotypeMode,
   });
 
   // ── Snippet activation ────────────────────────────────────────────────
@@ -130,6 +133,25 @@ function AppInner(): React.ReactElement {
       }
     },
     [t, addToast, hideWindow],
+  );
+
+  // ── Snippet auto-type ──────────────────────────────────────────────────
+  const handleAutotype = useCallback(
+    (snippet: SearchResult) => {
+      if (snippet.is_encrypted) {
+        setAutotypeMode(true);
+        setPasswordSnippet(snippet);
+        setShowPassword(true);
+      } else {
+        autotypeSnippet(snippet.id, '')
+          .then(() => {
+            addToast(t('autotypeSuccess'), 'success');
+            hideWindow();
+          })
+          .catch((err: unknown) => addToast(String(err), 'error'));
+      }
+    },
+    [t, addToast, hideWindow, setPasswordSnippet, setShowPassword],
   );
 
   // Reload snippets list after CRUD
@@ -173,6 +195,7 @@ function AppInner(): React.ReactElement {
         activeIndex={activeIndex}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
+        onAutotype={handleAutotype}
       />
       <SnippetList
         snippets={snippets}
@@ -215,11 +238,15 @@ function AppInner(): React.ReactElement {
       {passwordSnippet && (
         <PasswordModal
           isOpen={showPassword}
-          onClose={() => setShowPassword(false)}
+          onClose={() => {
+            setShowPassword(false);
+            setAutotypeMode(false); // RC-3: reset autotype mode on modal close
+          }}
           snippetId={passwordSnippet.id}
           snippetTitle={passwordSnippet.title}
+          action={autotypeMode ? 'autotype' : 'copy'}
           onSuccess={() => {
-            addToast(t('copySuccess'), 'success');
+            addToast(t(autotypeMode ? 'autotypeSuccess' : 'copySuccess'), 'success');
             hideWindow();
           }}
         />

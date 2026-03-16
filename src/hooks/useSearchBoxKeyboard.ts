@@ -7,6 +7,7 @@ interface UseSearchBoxKeyboardParams {
   value: string;
   onNavigate: (index: number) => void;
   onSelect: (snippet: SearchResult) => void;
+  onAutotype?: (snippet: SearchResult) => void;
   onEscape: () => void;
   onSetValue: (value: string) => void;
 }
@@ -17,6 +18,7 @@ export const useSearchBoxKeyboard = ({
   value,
   onNavigate,
   onSelect,
+  onAutotype,
   onEscape,
   onSetValue,
 }: UseSearchBoxKeyboardParams) => {
@@ -58,7 +60,11 @@ export const useSearchBoxKeyboard = ({
         case 'Enter': {
           if (activeIndex >= 0 && snippets[activeIndex]) {
             e.preventDefault();
-            onSelect(snippets[activeIndex]);
+            if (e.shiftKey && onAutotype) {
+              onAutotype(snippets[activeIndex]);
+            } else {
+              onSelect(snippets[activeIndex]);
+            }
           }
           break;
         }
@@ -79,7 +85,7 @@ export const useSearchBoxKeyboard = ({
         }
       }
     },
-    [activeIndex, snippets, value, onNavigate, onSelect, onEscape, onSetValue],
+    [activeIndex, snippets, value, onNavigate, onSelect, onAutotype, onEscape, onSetValue],
   );
 
   return { handleKeyDown };

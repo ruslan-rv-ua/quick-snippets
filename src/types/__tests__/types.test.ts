@@ -21,6 +21,7 @@ describe('TypeScript types compile correctly', () => {
       confirm_on_close: true,
       language: '',
       window_state: { x: 100, y: 100, width: 680, height: 520 },
+      autotype_delay_ms: 0,
     };
     expect(settings.theme).toBe('dark');
   });

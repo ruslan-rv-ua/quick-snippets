@@ -355,6 +355,55 @@ pub mod tauri_commands {
             .and_then(|mut n| n.take())
     }
 
+    /// Delay before typing to let the target app regain focus after window.hide().
+    const FOCUS_DELAY_MS: u64 = 150;
+
+    #[cfg(target_os = "windows")]
+    #[tauri::command]
+    pub fn autotype_snippet(
+        id: i64,
+        password: String,
+        window: Window,
+        state: State<AppState>,
+    ) -> Result<(), String> {
+        use zeroize::Zeroize;
+
+        let plaintext = {
+            let conn = state.conn.lock().map_err(|e| e.to_string())?;
+            activate_snippet_get_content(&conn, id, &password)?
+        };
+
+        // Convert to String for typing; plaintext (Zeroizing<Vec<u8>>) drops after this block.
+        let mut text: Zeroizing<String> = match String::from_utf8(plaintext.to_vec()) {
+            Ok(s) => Zeroizing::new(s),
+            Err(e) => {
+                let mut bytes = e.into_bytes();
+                bytes.zeroize();
+                return Err("Invalid UTF-8 content".to_string());
+            }
+        };
+
+        // Hide window so the target app receives focus.
+        let _ = window.hide();
+        std::thread::sleep(std::time::Duration::from_millis(FOCUS_DELAY_MS));
+
+        // Read user-configured inter-character delay.
+        let delay_ms = state
+            .settings
+            .lock()
+            .map(|s| s.autotype_delay_ms)
+            .unwrap_or(0);
+
+        // Type the text via PostMessage (primary) or SendInput (fallback).
+        let result = crate::autotype::win::send_unicode_text(&text, delay_ms);
+
+        // Zeroize text before returning — drop will also zeroize, but be explicit.
+        text.zeroize();
+
+        result
+        // IPC response: Ok(()) or Err(...) — plaintext NEVER in the response.
+    }
+
     #[tauri::command]
     pub fn quit_app(app: AppHandle) {
         app.exit(0);

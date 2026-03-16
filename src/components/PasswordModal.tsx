@@ -7,7 +7,7 @@ import React, {
 import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
-import { activateSnippet } from '../hooks/useIpc';
+import { activateSnippet, autotypeSnippet } from '../hooks/useIpc';
 
 export interface PasswordModalProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ export interface PasswordModalProps {
   snippetId: number;
   snippetTitle: string;
   onSuccess: () => void;
+  action?: 'copy' | 'autotype';
 }
 
 export function PasswordModal({
@@ -23,6 +24,7 @@ export function PasswordModal({
   snippetId,
   snippetTitle,
   onSuccess,
+  action = 'copy',
 }: PasswordModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const pwdRef = useRef<HTMLInputElement>(null);
@@ -51,7 +53,8 @@ export function PasswordModal({
     setLoading(true);
     setErrorMsg('');
     try {
-      await activateSnippet(snippetId, password);
+      const ipcCall = action === 'autotype' ? autotypeSnippet : activateSnippet;
+      await ipcCall(snippetId, password);
       setLoading(false);
       onSuccess();
       onClose();
@@ -61,7 +64,7 @@ export function PasswordModal({
       setErrorMsg(t('wrongPassword'));
       setTimeout(() => pwdRef.current?.focus(), 10);
     }
-  }, [password, snippetId, onSuccess, onClose, t]);
+  }, [password, snippetId, onSuccess, onClose, t, action]);
 
   const handleEscape = useCallback(() => {
     setPassword('');
@@ -132,7 +135,7 @@ export function PasswordModal({
           disabled={loading}
           onClick={() => void handleSubmit()}
         >
-          {t('copy')}
+          {t(action)}
         </button>
       </div>
     </ModalOverlay>

@@ -36,6 +36,15 @@ export function activateSnippet(id: number, password: string): Promise<void> {
   return invoke<void>('activate_snippet', { id, password });
 }
 
+/**
+ * Auto-type a snippet into the active OS input field via SendInput.
+ * For encrypted snippets, `password` must be provided.
+ * IPC response is always `void` — plaintext is never returned.
+ */
+export function autotypeSnippet(id: number, password: string): Promise<void> {
+  return invoke<void>('autotype_snippet', { id, password });
+}
+
 export function updateSnippet(
   id: number,
   title: string,

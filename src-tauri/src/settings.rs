@@ -35,6 +35,8 @@ pub struct Settings {
     pub confirm_on_close: bool,
     pub language: String,
     pub window_state: WindowState,
+    /// Inter-character delay in milliseconds for autotype (0 = no delay).
+    pub autotype_delay_ms: u64,
 }
 
 impl Default for Settings {
@@ -46,6 +48,7 @@ impl Default for Settings {
             confirm_on_close: true,
             language: "".to_string(),
             window_state: WindowState::default(),
+            autotype_delay_ms: 1,
         }
     }
 }

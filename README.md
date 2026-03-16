@@ -39,6 +39,7 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Three languages** — English, Ukrainian, and German; language auto-detected from your system
 - **Single-instance** — launching the app again simply brings the existing window to focus
 - **Auto-hide on blur** — the window disappears when you switch away, just like a launcher
+- **Auto-type** — press `Shift+Enter` to type a snippet directly into the active window; no clipboard required
 
 ---
 
@@ -81,6 +82,8 @@ Give it a short, memorable title — that's what you search by. Paste or type th
 3. Use **Arrow Up / Down** to move through results.
 4. Press **Enter** to copy the selected snippet to the clipboard.
 5. Switch to your target application and paste (**Ctrl+V**).
+
+Alternatively, press **Shift+Enter** (instead of **Enter**) to auto-type the snippet directly into the previously active window — without using the clipboard. The window hides, focus returns to the target app, and the text is typed character by character.
 
 The QuickSnippets window hides automatically when you switch away.
 
@@ -147,6 +150,7 @@ For complete details on the security model, threat assessment, and responsible d
 | Arrow Up / Down | Move selection in the snippet list |
 | Home / End | Jump to first / last snippet |
 | Enter | Copy selected snippet to clipboard |
+| Shift+Enter | Auto-type selected snippet into the active application |
 | Ctrl+N or Insert | Create new snippet |
 | Ctrl+E | Edit selected snippet |
 | Delete or Ctrl+D | Delete selected snippet |
@@ -177,6 +181,7 @@ Open Settings with **Ctrl+,** or via the tray menu.
 | Start in tray | Hide the window on launch; only the tray icon is visible |
 | Launch on startup | Start QuickSnippets automatically when Windows starts |
 | Confirm on close | Show a confirmation dialog before quitting |
+| Autotype delay (ms) | Inter-character delay for auto-type (default: 1 ms). Set to `0` for maximum speed. Increase to 10–50 ms if characters are dropped or appear out of order in the target app. **Note:** Auto-type does not work into applications running with elevated privileges (Run as administrator). |
 
 ---
 

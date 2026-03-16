@@ -57,4 +57,6 @@ export interface Settings {
   /** BCP-47 language tag ("en" | "uk") or "" for auto-detect. */
   language: string;
   window_state: WindowState;
+  /** Inter-character delay in milliseconds for autotype (0 = no delay). */
+  autotype_delay_ms: number;
 }

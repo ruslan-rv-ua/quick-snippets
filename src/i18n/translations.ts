@@ -9,6 +9,7 @@ export interface TranslationMap {
 
   // ── Actions ──────────────────────────────────────────────────────────────
   copy: string;
+  autotype: string;
   save: string;
   cancel: string;
   delete: string;
@@ -16,6 +17,9 @@ export interface TranslationMap {
 
   // ── Feedback toasts ──────────────────────────────────────────────────────
   copySuccess: string;
+  autotypeSuccess: string;
+  autotypeError: string;
+  autotypeErrorNoEvents: string;
   saveSuccess: string;
   deleteSuccess: string;
 
@@ -52,6 +56,7 @@ export interface TranslationMap {
   startInTrayLabel: string;
   autostartLabel: string;
   confirmOnCloseLabel: string;
+  autotypeDelayLabel: string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
@@ -86,6 +91,7 @@ const en: TranslationMap = {
 
   // Actions
   copy: 'Copy',
+  autotype: 'Auto-type',
   save: 'Save',
   cancel: 'Cancel',
   delete: 'Delete',
@@ -93,6 +99,9 @@ const en: TranslationMap = {
 
   // Toasts
   copySuccess: 'Copied',
+  autotypeSuccess: 'Typed',
+  autotypeError: 'Auto-type failed',
+  autotypeErrorNoEvents: 'Auto-type failed: no events were sent. Target app may require elevation',
   saveSuccess: 'Saved',
   deleteSuccess: 'Deleted',
 
@@ -129,6 +138,7 @@ const en: TranslationMap = {
   startInTrayLabel: 'Start in system tray',
   autostartLabel: 'Start with Windows',
   confirmOnCloseLabel: 'Confirm before closing',
+  autotypeDelayLabel: 'Autotype delay (ms)',
   darkTheme: 'Dark',
   lightTheme: 'Light',
   autoLanguage: 'Auto (system)',
@@ -162,6 +172,7 @@ const uk: TranslationMap = {
 
   // Actions
   copy: 'Копіювати',
+  autotype: 'Автодрук',
   save: 'Зберегти',
   cancel: 'Скасувати',
   delete: 'Видалити',
@@ -169,6 +180,9 @@ const uk: TranslationMap = {
 
   // Toasts
   copySuccess: 'Скопійовано',
+  autotypeSuccess: 'Надруковано',
+  autotypeError: 'Помилка автодруку',
+  autotypeErrorNoEvents: 'Помилка автодруку: жодна подія не надіслана. Цільовий застосунок може вимагати прав адміністратора',
   saveSuccess: 'Збережено',
   deleteSuccess: 'Видалено',
 
@@ -205,6 +219,7 @@ const uk: TranslationMap = {
   startInTrayLabel: 'Запускати у треї',
   autostartLabel: 'Запускати з Windows',
   confirmOnCloseLabel: 'Підтверджувати закриття',
+  autotypeDelayLabel: 'Затримка автодруку (мс)',
   darkTheme: 'Темна',
   lightTheme: 'Світла',
   autoLanguage: 'Авто (системна)',
@@ -242,6 +257,7 @@ const de: TranslationMap = {
 
   // Actions
   copy: 'Kopieren',
+  autotype: 'Automatisch tippen',
   save: 'Speichern',
   cancel: 'Abbrechen',
   delete: 'Löschen',
@@ -249,6 +265,9 @@ const de: TranslationMap = {
 
   // Toasts
   copySuccess: 'Kopiert',
+  autotypeSuccess: 'Eingegeben',
+  autotypeError: 'Automatisches Tippen fehlgeschlagen',
+  autotypeErrorNoEvents: 'Automatisches Tippen fehlgeschlagen: Keine Ereignisse gesendet. Zielprogramm erfordert möglicherweise erhöhte Rechte',
   saveSuccess: 'Gespeichert',
   deleteSuccess: 'Gelöscht',
 
@@ -285,6 +304,7 @@ const de: TranslationMap = {
   startInTrayLabel: 'Im Infobereich starten',
   autostartLabel: 'Mit Windows starten',
   confirmOnCloseLabel: 'Vor dem Schließen bestätigen',
+  autotypeDelayLabel: 'Autotipp-Verzögerung (ms)',
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
   autoLanguage: 'Automatisch (System)',

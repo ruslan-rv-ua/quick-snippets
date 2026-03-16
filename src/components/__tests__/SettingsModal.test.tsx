@@ -16,6 +16,7 @@ const defaultSettings: Settings = {
   confirm_on_close: true,
   language: 'en',
   window_state: { x: 0, y: 0, width: 480, height: 600 },
+  autotype_delay_ms: 0,
 };
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof SettingsModal>> = {}) {

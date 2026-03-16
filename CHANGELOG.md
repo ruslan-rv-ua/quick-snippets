@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+- **Auto-type**: press `Shift+Enter` on any selected snippet to type its content directly into the previously active window — no clipboard involved. Works for both plain and encrypted snippets.
+- **Autotype delay** setting (0–1000 ms, default: 1 ms) — configurable inter-character delay for auto-type. Increase to 10–50 ms if characters are dropped or appear out of order in the target application.
+- Screen reader compatibility for auto-type: primary method uses `PostMessage(WM_CHAR)`, bypassing `WH_KEYBOARD_LL` hooks used by NVDA and JAWS. The `SendInput` fallback enforces a minimum 50 ms inter-character delay.
+- Tabs (`\t`) and all newline variants (`\n`, `\r`, `\r\n`) in auto-typed text are sent as real `VK_TAB` / `VK_RETURN` key events.
+- Emoji and non-BMP characters are auto-typed correctly via UTF-16 surrogate pairs.
+
+### Known Limitations
+- Auto-type does not work into applications running with elevated privileges (UAC / Run as administrator) unless QuickSnippets is also elevated.
+
 ---
 
 ## v0.1.2 - 2026-03-05

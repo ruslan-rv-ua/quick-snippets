@@ -33,6 +33,7 @@ Vertrauliche Schnipsel können lokal mit AES-256-GCM verschlüsselt werden, soda
 - **Drei Sprachen** — Englisch, Ukrainisch und Deutsch; Sprache wird automatisch vom System erkannt
 - **Einzelinstanz** — erneutes Starten der App bringt einfach das bestehende Fenster in den Fokus
 - **Automatisches Ausblenden** — das Fenster verschwindet, wenn Sie zu einer anderen Anwendung wechseln, genau wie ein Launcher
+- **Automatisches Tippen** — drücken Sie `Umschalt+Enter`, um einen Schnipsel direkt in das aktive Fenster einzutippen, ohne die Zwischenablage zu verwenden
 
 ---
 
@@ -76,6 +77,8 @@ Geben Sie ihm einen kurzen, einprägsamen Titel — danach werden Sie suchen. F�
 4. Drücken Sie **Enter**, um den ausgewählten Schnipsel in die Zwischenablage zu kopieren.
 5. Wechseln Sie zu Ihrer Zielanwendung und fügen Sie ihn ein (**Strg+V**).
 
+Alternativ können Sie **Umschalt+Enter** (statt **Enter**) drücken, um den Schnipsel direkt in das zuvor aktive Fenster einzutippen — ohne Zwischenablage. Das Fenster wird ausgeblendet, der Fokus kehrt zur Zielanwendung zurück, und der Text wird Zeichen für Zeichen eingegeben.
+
 Das QuickSnippets-Fenster blendet sich automatisch aus, wenn Sie zu einer anderen Anwendung wechseln.
 
 ### System-Tray
@@ -101,6 +104,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Pfeil hoch / runter | Auswahl in der Schnipsel-Liste bewegen |
 | Pos1 / Ende | Zum ersten / letzten Schnipsel springen |
 | Enter | Ausgewählten Schnipsel in die Zwischenablage kopieren |
+| Umschalt+Enter | Ausgewählten Schnipsel automatisch in die aktive Anwendung tippen |
 | Strg+N oder Einfügen | Neuen Schnipsel erstellen |
 | Strg+E | Ausgewählten Schnipsel bearbeiten |
 | Entf oder Strg+D | Ausgewählten Schnipsel löschen |
@@ -131,6 +135,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Im Tray starten | Fenster beim Start ausblenden; nur das Tray-Icon ist sichtbar |
 | Beim Start ausführen | QuickSnippets automatisch beim Windows-Start starten |
 | Beim Schließen bestätigen | Bestätigungsdialog vor dem Beenden anzeigen |
+| Autotipp-Verzögerung (ms) | Zeichenverzögerung beim automatischen Tippen (Standard: 1 ms). Auf `0` setzen für maximale Geschwindigkeit. Erhöhen Sie den Wert auf 10–50 ms, wenn Zeichen fehlen oder in falscher Reihenfolge erscheinen. **Hinweis:** Automatisches Tippen funktioniert nicht in Anwendungen mit erhöhten Berechtigungen (Als Administrator ausführen). |
 
 ---
 
