@@ -169,6 +169,13 @@ describe('SettingsModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('displays app version in footer', async () => {
+    renderModal();
+    await waitFor(() => {
+      expect(screen.getByText(/QuickSnippets version \d+\.\d+\.\d+/)).toBeInTheDocument();
+    });
+  });
+
   it('calls save_settings IPC on save', async () => {
     mockInvoke.mockResolvedValue(defaultSettings);
     render(

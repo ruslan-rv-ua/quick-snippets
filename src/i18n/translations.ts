@@ -56,6 +56,7 @@ export interface TranslationMap {
   lightTheme: string;
   autoLanguage: string;
   restartHint: string;
+  appVersion: (version: string) => string;
 
   // ── Exit / close dialog ──────────────────────────────────────────────────
   exitConfirmTitle: string;
@@ -132,6 +133,7 @@ const en: TranslationMap = {
   lightTheme: 'Light',
   autoLanguage: 'Auto (system)',
   restartHint: 'Some settings take effect after restart',
+  appVersion: (v) => `QuickSnippets version ${v}`,
 
   // Exit dialog
   exitConfirmTitle: 'Quit QuickSnippets?',
@@ -207,6 +209,7 @@ const uk: TranslationMap = {
   lightTheme: 'Світла',
   autoLanguage: 'Авто (системна)',
   restartHint: 'Деякі налаштування застосуються після перезапуску',
+  appVersion: (v) => `QuickSnippets версія ${v}`,
 
   // Exit dialog
   exitConfirmTitle: 'Вийти з QuickSnippets?',
@@ -286,6 +289,7 @@ const de: TranslationMap = {
   lightTheme: 'Hell',
   autoLanguage: 'Automatisch (System)',
   restartHint: 'Einige Einstellungen treten nach einem Neustart in Kraft',
+  appVersion: (v) => `QuickSnippets Version ${v}`,
 
   // Exit dialog
   exitConfirmTitle: 'QuickSnippets beenden?',

@@ -552,6 +552,15 @@ input[type='checkbox'] {
   line-height: 1.5;
 }
 
+/* Settings — app version footer */
+.settings-version {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-top: var(--space-2);
+  user-select: text;
+}
+
 /* Delete confirm — snippet name preview */
 .delete-preview {
   font-size: 14px;
