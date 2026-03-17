@@ -109,16 +109,21 @@
 
 html {
   font-size: 14px;
+  background: var(--color-bg);
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
-  background: transparent;
+  background: var(--color-bg);
   color: var(--color-text);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  background: var(--color-bg);
 }
 
 /* ── Focus visible (WCAG 2.1 AA) ──────────────────────────────────────────── */
