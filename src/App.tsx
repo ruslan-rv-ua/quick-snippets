@@ -250,7 +250,7 @@ function AppInner(): React.ReactElement {
   });
 
   return (
-    <div role="application" className="app">
+    <div role="application" className="app" tabIndex={-1}>
       <SearchBox
         ref={searchRef}
         value={query}
