@@ -17,6 +17,8 @@ const defaultSettings: Settings = {
   language: 'en',
   window_state: { x: 0, y: 0, width: 480, height: 600 },
   autotype_delay_ms: 0,
+  sort_mode: 'modified',
+  sort_direction: 'desc',
 };
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof SettingsModal>> = {}) {

@@ -58,6 +58,8 @@ const makeSettings = (overrides: Partial<Settings> = {}): Settings => ({
   language: 'en',
   window_state: { x: 100, y: 200, width: 400, height: 600 },
   autotype_delay_ms: 0,
+  sort_mode: 'modified',
+  sort_direction: 'desc',
   ...overrides,
 });
 
