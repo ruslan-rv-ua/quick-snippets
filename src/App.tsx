@@ -14,6 +14,8 @@ import {
   autotypeSnippet,
   getPendingNotification,
   cancelClose,
+  getSettings,
+  saveSettings,
 } from './hooks/useIpc';
 
 import { SearchBox } from './components/SearchBox';
@@ -29,6 +31,27 @@ import { ToastContainer } from './components/ToastContainer';
 
 import type { SearchResult } from './types';
 import './styles/theme.css';
+
+function getSortLabelKey(mode: string, direction: string): string {
+  const map: Record<string, string> = {
+    'created_desc': 'sortCreatedDesc',
+    'created_asc': 'sortCreatedAsc',
+    'modified_desc': 'sortModifiedDesc',
+    'modified_asc': 'sortModifiedAsc',
+    'alphabetical_asc': 'sortAlphaAsc',
+    'alphabetical_desc': 'sortAlphaDesc',
+    'last_used_desc': 'sortLastUsedDesc',
+    'last_used_asc': 'sortLastUsedAsc',
+  };
+  return map[`${mode}_${direction}`] ?? 'sortModifiedDesc';
+}
+
+const DEFAULT_DIRECTIONS: Record<string, string> = {
+  created: 'desc',
+  modified: 'desc',
+  alphabetical: 'asc',
+  last_used: 'desc',
+};
 
 /**
  * Main application component (inside theme/language providers).
@@ -55,8 +78,12 @@ import './styles/theme.css';
  * - useWindowHiding() — hide/reset logic
  */
 function AppInner(): React.ReactElement {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const { toasts, addToast, removeToast } = useToast();
+
+  const [sortMode, setSortMode] = useState('modified');
+  const [sortDirection, setSortDirection] = useState('desc');
+
   const {
     query,
     setQuery,
@@ -65,7 +92,7 @@ function AppInner(): React.ReactElement {
     setActiveIndex,
     setRefreshTick,
     reset,
-  } = useSearchLogic();
+  } = useSearchLogic({ sortMode, sortDirection });
 
   const searchRef = useRef<SearchBoxHandle>(null);
   const [autotypeMode, setAutotypeMode] = useState(false);
@@ -78,6 +105,16 @@ function AppInner(): React.ReactElement {
       })
       .catch(() => void 0);
   }, [addToast]);
+
+  // ── Load sort settings on mount ────────────────────────────────────
+  useEffect(() => {
+    getSettings()
+      .then((s) => {
+        setSortMode(s.sort_mode || 'modified');
+        setSortDirection(s.sort_direction || 'desc');
+      })
+      .catch(() => void 0);
+  }, []);
 
   const {
     showCreate, setShowCreate,
@@ -171,6 +208,32 @@ function AppInner(): React.ReactElement {
     }
   }, [snippets, activeIndex, t, addToast]);
 
+  // ── Sort handler ─────────────────────────────────────────────────────
+  const handleSort = useCallback(
+    (mode: string) => {
+      let newDirection: string;
+      if (mode === sortMode) {
+        newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        newDirection = DEFAULT_DIRECTIONS[mode] ?? 'desc';
+      }
+      setSortMode(mode);
+      setSortDirection(newDirection);
+
+      // Persist to settings
+      getSettings()
+        .then((s) => saveSettings({ ...s, sort_mode: mode, sort_direction: newDirection }))
+        .catch(() => void 0);
+
+      // Toast with translated label
+      const labelKey = getSortLabelKey(mode, newDirection);
+      const label = tf[labelKey as keyof typeof tf] as string;
+      const toastMsg = tf.sortToast(label);
+      addToast(toastMsg, 'info', 2000);
+    },
+    [sortMode, sortDirection, tf, addToast],
+  );
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────
   useKeyboard({
     activeIndex,
@@ -183,6 +246,7 @@ function AppInner(): React.ReactElement {
     onAnnounce: handleAnnounce,
     onSelectFirst: () => setActiveIndex(snippets.length > 0 ? 0 : -1),
     onSelectLast: () => setActiveIndex(snippets.length > 0 ? snippets.length - 1 : -1),
+    onSort: handleSort,
   });
 
   return (
@@ -196,6 +260,8 @@ function AppInner(): React.ReactElement {
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
         onAutotype={handleAutotype}
+        sortLabel={query ? undefined : `\u2195 ${tf[getSortLabelKey(sortMode, sortDirection) as keyof typeof tf] as string}`}
+        sortAriaLabel={query ? undefined : `Sort: ${tf[getSortLabelKey(sortMode, sortDirection) as keyof typeof tf] as string}`}
       />
       <SnippetList
         snippets={snippets}
