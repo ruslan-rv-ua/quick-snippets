@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="logo-vector.svg" alt="QuickSnippets logo" />
+	<img src="logo-vector.svg" alt="QuickSnippets logo" width="120" />
 	<h1>QuickSnippets</h1>
 	<p><strong>Портативний Windows-лаунчер для ваших текстових сніпетів — завжди під рукою.</strong></p>
 	<p>
