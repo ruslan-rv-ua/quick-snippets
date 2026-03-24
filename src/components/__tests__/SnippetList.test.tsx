@@ -56,7 +56,30 @@ describe('SnippetList', () => {
 
   it('live region updates with result count after 200ms delay', async () => {
     vi.useFakeTimers();
-    renderList({ snippets: mockSnippets, query: 'a' });
+    // Initial render with empty query — no announcement (aria-activedescendant covers it)
+    const { rerender } = render(
+      <LanguageProvider>
+        <SnippetList
+          snippets={[]}
+          activeIndex={-1}
+          query=""
+          onActiveIndexChange={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+    // Simulate search: query changes from "" to "a"
+    rerender(
+      <LanguageProvider>
+        <SnippetList
+          snippets={mockSnippets}
+          activeIndex={-1}
+          query="a"
+          onActiveIndexChange={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
     expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('');
     act(() => { vi.advanceTimersByTime(200); });
     const liveText = document.querySelector('[aria-live="polite"]')?.textContent || '';
@@ -67,7 +90,21 @@ describe('SnippetList', () => {
 
   it('re-announces first title when snippets are replaced with same first title', () => {
     vi.useFakeTimers();
+    // Start with empty query
     const { rerender } = render(
+      <LanguageProvider>
+        <SnippetList
+          snippets={[]}
+          activeIndex={-1}
+          query=""
+          onActiveIndexChange={vi.fn()}
+          onActivate={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+
+    // First search: query changes from "" to "a"
+    rerender(
       <LanguageProvider>
         <SnippetList
           snippets={mockSnippets}
@@ -79,7 +116,6 @@ describe('SnippetList', () => {
       </LanguageProvider>,
     );
 
-    // initial announce after delay
     act(() => { vi.advanceTimersByTime(200); });
     const firstAnnounce = document.querySelector('[aria-live="polite"]')?.textContent || '';
     expect(firstAnnounce).toContain('Alpha');
