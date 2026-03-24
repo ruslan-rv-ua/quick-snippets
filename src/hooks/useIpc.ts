@@ -11,6 +11,16 @@ export function searchSnippets(query: string): Promise<SearchResult[]> {
   return invoke<SearchResult[]>('search_snippets', { query });
 }
 
+export function getSortedSnippets(
+  sortMode: string,
+  sortDirection: string,
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('get_sorted_snippets', {
+    sortMode,
+    sortDirection,
+  });
+}
+
 export function getSnippetById(id: number): Promise<SnippetView> {
   return invoke<SnippetView>('get_snippet_by_id', { id });
 }

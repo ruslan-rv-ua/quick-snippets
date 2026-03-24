@@ -5,13 +5,15 @@ import * as useIpc from '../useIpc';
 
 vi.mock('../useIpc', () => ({
   searchSnippets: vi.fn(),
+  getSortedSnippets: vi.fn(),
 }));
 
 describe('useSearchLogic', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default mock that returns empty array
+    // Default mocks that return empty array
     vi.mocked(useIpc.searchSnippets).mockResolvedValue([]);
+    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([]);
   });
 
   it('initializes with empty state', () => {
@@ -187,6 +189,7 @@ describe('useSearchLogic', () => {
 
       vi.clearAllMocks();
       vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([]);
 
       act(() => {
         result.current.setRefreshTick((prev) => prev + 1);
@@ -225,6 +228,67 @@ describe('useSearchLogic', () => {
       // snippets should remain empty array and activeIndex should be -1 (error case)
       expect(result.current.snippets).toEqual([]);
       expect(result.current.activeIndex).toBe(-1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('calls getSortedSnippets when query is empty', async () => {
+    const mockResults = [
+      { id: 1, title: 'Test', is_encrypted: false, score: 0, matched_positions: [] },
+    ];
+    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(mockResults);
+
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() =>
+        useSearchLogic({ sortMode: 'alphabetical', sortDirection: 'asc' }),
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(useIpc.getSortedSnippets).toHaveBeenCalledWith('alphabetical', 'asc');
+      expect(result.current.snippets).toEqual(mockResults);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('calls searchSnippets when query is non-empty', async () => {
+    const mockResults = [
+      { id: 1, title: 'Test', is_encrypted: false, score: 100, matched_positions: [0] },
+    ];
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() =>
+        useSearchLogic({ sortMode: 'alphabetical', sortDirection: 'asc' }),
+      );
+
+      // Initial render fetches sorted (empty query)
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+      vi.mocked(useIpc.getSortedSnippets).mockClear();
+      vi.mocked(useIpc.searchSnippets).mockClear();
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+
+      act(() => {
+        result.current.setQuery('test');
+      });
+
+      await act(async () => {
+        vi.advanceTimersByTime(100);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(useIpc.searchSnippets).toHaveBeenCalledWith('test');
+      expect(useIpc.getSortedSnippets).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
