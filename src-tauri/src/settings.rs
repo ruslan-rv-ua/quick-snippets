@@ -37,6 +37,8 @@ pub struct Settings {
     pub window_state: WindowState,
     /// Inter-character delay in milliseconds for autotype (0 = no delay).
     pub autotype_delay_ms: u64,
+    pub sort_mode: String,
+    pub sort_direction: String,
 }
 
 impl Default for Settings {
@@ -49,6 +51,8 @@ impl Default for Settings {
             language: "".to_string(),
             window_state: WindowState::default(),
             autotype_delay_ms: 1,
+            sort_mode: "modified".to_string(),
+            sort_direction: "desc".to_string(),
         }
     }
 }
@@ -475,5 +479,31 @@ mod tests {
     fn test_detect_language_returns_valid_code() {
         let lang = detect_language();
         assert!(lang == "en" || lang == "uk");
+    }
+
+    #[test]
+    fn test_default_settings_sort_fields() {
+        let s = Settings::default();
+        assert_eq!(s.sort_mode, "modified");
+        assert_eq!(s.sort_direction, "desc");
+    }
+
+    #[test]
+    fn test_settings_missing_sort_fields_uses_defaults() {
+        let json = r#"{"theme": "dark"}"#;
+        let s: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(s.sort_mode, "modified");
+        assert_eq!(s.sort_direction, "desc");
+    }
+
+    #[test]
+    fn test_settings_roundtrip_with_sort_fields() {
+        let mut s = Settings::default();
+        s.sort_mode = "alphabetical".to_string();
+        s.sort_direction = "asc".to_string();
+        let json = serde_json::to_string(&s).unwrap();
+        let loaded: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.sort_mode, "alphabetical");
+        assert_eq!(loaded.sort_direction, "asc");
     }
 }
