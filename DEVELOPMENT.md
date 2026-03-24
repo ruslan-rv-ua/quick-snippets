@@ -183,7 +183,7 @@ The push to `main` automatically triggers `.github/workflows/release.yml`.
 3. Builds the Rust binary with `cargo build --release` in `src-tauri/`
    - Uses direct `cargo` build — **not** `npm run tauri build` — to avoid
      triggering the Wix/NSIS bundler (we need only the raw `.exe`, not an installer)
-4. Packages `quick-snippets.exe` + `WebView2Loader.dll` into a ZIP:
+4. Packages `quick-snippets.exe` into a ZIP:
    `quick-snippets-windows-x64-v{version}.zip`
 5. Generates a SHA-256 checksum file
 6. Creates (or updates) a GitHub Release tagged `v{version}` with both files

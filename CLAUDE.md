@@ -88,7 +88,6 @@ The autotype module simulates keyboard input to type snippet content into the fo
 
 - GitHub Actions release triggered by version tags (`v*`).
 - Uses `npx tauri build --no-bundle` (not `npm run tauri build`) — skips Wix/NSIS installer generation for portability.
-- Requires manual WebView2Loader.dll copy because `--no-bundle` skips the bundler's automatic DLL placement.
 - Tags with `-alpha`, `-beta`, `-rc` suffixes are auto-marked as pre-release.
 - Non-prerelease triggers `repository_dispatch` to Scoop bucket repo for package manager updates.
 - Release profile: `strip = true`, `lto = true`, `codegen-units = 1`, `opt-level = "s"`.
