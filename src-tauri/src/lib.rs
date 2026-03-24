@@ -328,6 +328,7 @@ pub fn run() {
             commands::tauri_commands::activate_snippet,
             commands::tauri_commands::update_snippet,
             commands::tauri_commands::delete_snippet,
+            commands::tauri_commands::get_sorted_snippets,
             commands::tauri_commands::get_settings,
             commands::tauri_commands::save_settings,
             commands::tauri_commands::get_pending_notification,
