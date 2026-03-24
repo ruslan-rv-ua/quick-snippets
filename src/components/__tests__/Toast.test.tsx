@@ -77,7 +77,7 @@ describe('ToastContainer', () => {
 
   it('new toasts appear at bottom', () => {
     render(<ToastContainer toasts={[successToast, warningToast]} onRemove={vi.fn()} />);
-    const items = screen.getAllByRole('status');
+    const items = document.querySelectorAll('.toast');
     expect(items).toHaveLength(2);
   });
 });

@@ -11,7 +11,6 @@ export function Toast({ toast, onRemove }: ToastProps): React.ReactElement {
 
   return (
     <div
-      role="status"
       className={`toast toast-${toast.type}`}
       style={{ animationDelay: `${animDelay}ms` }}
       onClick={() => onRemove(toast.id)}

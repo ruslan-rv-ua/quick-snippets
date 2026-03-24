@@ -12,7 +12,6 @@ export interface SearchBoxProps {
   onActivate: (snippet: SearchResult) => void;
   onAutotype?: (snippet: SearchResult) => void;
   sortLabel?: string;
-  sortAriaLabel?: string;
 }
 
 export interface SearchBoxHandle {
@@ -29,7 +28,6 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     onActivate,
     onAutotype,
     sortLabel,
-    sortAriaLabel,
   },
   ref,
 ) {
@@ -91,9 +89,7 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
       {sortLabel && (
         <span
           className="sort-label"
-          role="status"
-          aria-live="polite"
-          aria-label={sortAriaLabel}
+          aria-hidden="true"
         >
           {sortLabel}
         </span>

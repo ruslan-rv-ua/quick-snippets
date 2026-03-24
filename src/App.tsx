@@ -261,7 +261,6 @@ function AppInner(): React.ReactElement {
         onActivate={handleActivate}
         onAutotype={handleAutotype}
         sortLabel={query ? undefined : `\u2195 ${tf[getSortLabelKey(sortMode, sortDirection) as keyof typeof tf] as string}`}
-        sortAriaLabel={query ? undefined : `${t('sortAriaPrefix')}: ${tf[getSortLabelKey(sortMode, sortDirection) as keyof typeof tf] as string}`}
       />
       <SnippetList
         snippets={snippets}

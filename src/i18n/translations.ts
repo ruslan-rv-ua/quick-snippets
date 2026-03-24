@@ -84,7 +84,6 @@ export interface TranslationMap {
   sortLastUsedDesc: string;
   sortLastUsedAsc: string;
   sortToast: (label: string) => string;
-  sortAriaPrefix: string;
 
   // ── Parametrized strings ─────────────────────────────────────────────────
   /** `n` — number of results, `query` — search query. */
@@ -178,7 +177,6 @@ const en: TranslationMap = {
   sortLastUsedDesc: 'Recent',
   sortLastUsedAsc: 'Least used',
   sortToast: (label) => `Sorted: ${label}`,
-  sortAriaPrefix: 'Sort',
 
   // Parametrized
   searchResults: (n, query) =>
@@ -271,7 +269,6 @@ const uk: TranslationMap = {
   sortLastUsedDesc: 'Нещодавні',
   sortLastUsedAsc: 'Найдавніші',
   sortToast: (label) => `Сортування: ${label}`,
-  sortAriaPrefix: 'Сортування',
 
   // Parametrized
   searchResults: (n, query) =>
@@ -368,7 +365,6 @@ const de: TranslationMap = {
   sortLastUsedDesc: 'Zuletzt',
   sortLastUsedAsc: 'Älteste Nutzung',
   sortToast: (label) => `Sortiert: ${label}`,
-  sortAriaPrefix: 'Sortierung',
 
   // Parametrized
   searchResults: (n, query) =>

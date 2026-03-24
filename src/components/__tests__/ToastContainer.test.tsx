@@ -22,7 +22,7 @@ describe('ToastContainer', () => {
 
   it('renders no toast items when toasts array is empty', () => {
     render(<ToastContainer toasts={[]} onRemove={vi.fn()} />);
-    expect(screen.queryAllByRole('status')).toHaveLength(0);
+    expect(document.querySelectorAll('.toast')).toHaveLength(0);
   });
 
   // ----- Accessibility attributes -----
@@ -47,10 +47,10 @@ describe('ToastContainer', () => {
     expect(screen.getByText('Hello, world!')).toBeInTheDocument();
   });
 
-  it('renders exactly one status element for a single toast', () => {
+  it('renders exactly one toast element for a single toast', () => {
     const toast = makeToast();
     render(<ToastContainer toasts={[toast]} onRemove={vi.fn()} />);
-    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(document.querySelectorAll('.toast')).toHaveLength(1);
   });
 
   // ----- Toast types -----
@@ -97,13 +97,13 @@ describe('ToastContainer', () => {
     expect(screen.getByText('Third')).toBeInTheDocument();
   });
 
-  it('renders the correct number of status elements for multiple toasts', () => {
+  it('renders the correct number of toast elements for multiple toasts', () => {
     const toasts: ToastType[] = [
       makeToast({ id: 1, message: 'A' }),
       makeToast({ id: 2, message: 'B' }),
     ];
     render(<ToastContainer toasts={toasts} onRemove={vi.fn()} />);
-    expect(screen.getAllByRole('status')).toHaveLength(2);
+    expect(document.querySelectorAll('.toast')).toHaveLength(2);
   });
 
   it('renders toasts with different types in the same container', () => {
