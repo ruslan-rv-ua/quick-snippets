@@ -74,6 +74,17 @@ export interface TranslationMap {
   corruptedDb: string;
   corruptedSettings: string;
 
+  // ── Sorting ─────────────────────────────────────────────────────────────
+  sortCreatedDesc: string;
+  sortCreatedAsc: string;
+  sortModifiedDesc: string;
+  sortModifiedAsc: string;
+  sortAlphaAsc: string;
+  sortAlphaDesc: string;
+  sortLastUsedDesc: string;
+  sortLastUsedAsc: string;
+  sortToast: (label: string) => string;
+
   // ── Parametrized strings ─────────────────────────────────────────────────
   /** `n` — number of results, `query` — search query. */
   searchResults: (n: number, query: string) => string;
@@ -156,6 +167,17 @@ const en: TranslationMap = {
   corruptedDb: 'Database appears corrupted — back it up before continuing',
   corruptedSettings: 'Settings file is invalid — defaults have been applied',
 
+  // Sorting
+  sortCreatedDesc: 'Newest',
+  sortCreatedAsc: 'Oldest',
+  sortModifiedDesc: 'Modified ↓',
+  sortModifiedAsc: 'Modified ↑',
+  sortAlphaAsc: 'A–Z',
+  sortAlphaDesc: 'Z–A',
+  sortLastUsedDesc: 'Recent',
+  sortLastUsedAsc: 'Least used',
+  sortToast: (label) => `Sorted: ${label}`,
+
   // Parametrized
   searchResults: (n, query) =>
     n === 1 ? `1 result for "${query}"` : `${n} results for "${query}"`,
@@ -236,6 +258,17 @@ const uk: TranslationMap = {
   decrypting: 'Розшифрування…',
   corruptedDb: 'База даних пошкоджена — зробіть резервну копію перед продовженням',
   corruptedSettings: 'Файл налаштувань некоректний — застосовано стандартні значення',
+
+  // Sorting
+  sortCreatedDesc: 'Найновіші',
+  sortCreatedAsc: 'Найстаріші',
+  sortModifiedDesc: 'Змінені ↓',
+  sortModifiedAsc: 'Змінені ↑',
+  sortAlphaAsc: 'А–Я',
+  sortAlphaDesc: 'Я–А',
+  sortLastUsedDesc: 'Нещодавні',
+  sortLastUsedAsc: 'Найдавніші',
+  sortToast: (label) => `Сортування: ${label}`,
 
   // Parametrized
   searchResults: (n, query) =>
@@ -321,6 +354,17 @@ const de: TranslationMap = {
   decrypting: 'Entschlüsseln…',
   corruptedDb: 'Datenbank scheint beschädigt — bitte sichern Sie sie, bevor Sie fortfahren',
   corruptedSettings: 'Einstellungsdatei ist ungültig — Standardwerte wurden angewendet',
+
+  // Sorting
+  sortCreatedDesc: 'Neueste',
+  sortCreatedAsc: 'Älteste',
+  sortModifiedDesc: 'Geändert ↓',
+  sortModifiedAsc: 'Geändert ↑',
+  sortAlphaAsc: 'A–Z',
+  sortAlphaDesc: 'Z–A',
+  sortLastUsedDesc: 'Zuletzt',
+  sortLastUsedAsc: 'Älteste Nutzung',
+  sortToast: (label) => `Sortiert: ${label}`,
 
   // Parametrized
   searchResults: (n, query) =>
