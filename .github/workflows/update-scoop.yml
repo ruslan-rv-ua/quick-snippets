@@ -1,0 +1,59 @@
+name: Update Scoop manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версія (без "v", наприклад: 1.2.3). Порожнє = остання'
+        required: false
+        type: string
+
+env:
+  APP_NAME: marka
+
+jobs:
+  update-scoop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get release info
+        id: info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APP_ID=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
+
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=$(gh release view --repo ${{ github.repository }} --json tagName -q '.tagName' | sed 's/^v//')
+          fi
+
+          ZIP_NAME="${APP_NAME}-${VERSION}-windows-x64.zip"
+          URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${ZIP_NAME}"
+
+          # Download .sha256 file from release
+          HASH=$(gh release download "v${VERSION}" --repo ${{ github.repository }} --pattern "${ZIP_NAME}.sha256" --output - | tr -d '[:space:]')
+
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "APP_ID=$APP_ID" >> $GITHUB_OUTPUT
+          echo "URL=$URL" >> $GITHUB_OUTPUT
+          echo "HASH=$HASH" >> $GITHUB_OUTPUT
+
+          echo "Version: $VERSION"
+          echo "URL: $URL"
+          echo "Hash: $HASH"
+
+      - name: Dispatch to Scoop bucket
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          repository: ruslan-rv-ua/scoop-bucket
+          event-type: update-${{ steps.info.outputs.APP_ID }}
+          client-payload: |
+            {
+              "app": "${{ steps.info.outputs.APP_ID }}",
+              "version": "${{ steps.info.outputs.VERSION }}",
+              "hash": "${{ steps.info.outputs.HASH }}",
+              "url": "${{ steps.info.outputs.URL }}"
+            }
