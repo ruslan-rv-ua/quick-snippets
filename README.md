@@ -40,6 +40,7 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Single-instance** — launching the app again simply brings the existing window to focus
 - **Auto-hide on blur** — the window disappears when you switch away, just like a launcher
 - **Auto-type** — press `Shift+Enter` to type a snippet directly into the active window; no clipboard required
+- **Snippet sorting** — sort by creation date, modification date, alphabetical order, or last used time; toggle with `Ctrl+Shift+1`–`Ctrl+Shift+4`; preference is saved across restarts
 
 ---
 
@@ -157,6 +158,10 @@ For complete details on the security model, threat assessment, and responsible d
 | Ctrl+F or / | Focus the search box |
 | Ctrl+, | Open Settings |
 | Ctrl+Shift+T | Toggle light / dark theme |
+| Ctrl+Shift+1 | Sort by creation date (press again to toggle direction) |
+| Ctrl+Shift+2 | Sort by modification date (press again to toggle direction) |
+| Ctrl+Shift+3 | Sort alphabetically (press again to toggle direction) |
+| Ctrl+Shift+4 | Sort by last used time (press again to toggle direction) |
 | Ctrl+Shift+Space | Announce selected snippet (screen reader) |
 | Escape | Close modal / clear search |
 | Alt+F4 | Quit the application |

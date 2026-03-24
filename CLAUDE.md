@@ -49,6 +49,7 @@ Key invariant: **plaintext for encrypted snippets never leaves the Rust backend*
 
 ```
 SearchBox → useSearchLogic (100ms debounce) → IPC searchSnippets → Rust fuzzy_match
+SearchBox (empty query) → useSearchLogic → IPC getSortedSnippets → Rust list_snippets_sorted
 SnippetItem click → activateSnippet IPC → Rust decrypts + copies to clipboard
 ```
 
@@ -59,10 +60,10 @@ App-level state lives in [src/App.tsx](src/App.tsx) via `useSnippets`, `useSearc
 | File | Responsibility |
 |------|---------------|
 | [src-tauri/src/commands.rs](src-tauri/src/commands.rs) | `AppState` definition + all `#[tauri::command]` IPC handlers |
-| [src-tauri/src/db.rs](src-tauri/src/db.rs) | SQLite CRUD (`snippets` table; `title` has UNIQUE constraint) |
+| [src-tauri/src/db.rs](src-tauri/src/db.rs) | SQLite CRUD (`snippets` table; `title` has UNIQUE constraint); `last_used_at` column with migration via `PRAGMA user_version` |
 | [src-tauri/src/crypto.rs](src-tauri/src/crypto.rs) | AES-256-GCM + PBKDF2 (100k iterations); keys are `zeroize`d |
 | [src-tauri/src/search.rs](src-tauri/src/search.rs) | Fuzzy match: sequential char search, multi-term AND logic |
-| [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file next to `.exe` (not AppData); includes `autotype_delay_ms` |
+| [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file next to `.exe` (not AppData); includes `autotype_delay_ms`, `sort_mode`, `sort_direction` |
 | [src-tauri/src/autotype.rs](src-tauri/src/autotype.rs) | Windows keyboard input simulation (PostMessage primary, SendInput fallback) |
 | [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events |
 | [src-tauri/src/main.rs](src-tauri/src/main.rs) | App entry, Ctrl+Alt+Space global hotkey |

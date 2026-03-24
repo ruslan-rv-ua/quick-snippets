@@ -34,6 +34,7 @@ Vertrauliche Schnipsel können lokal mit AES-256-GCM verschlüsselt werden, soda
 - **Einzelinstanz** — erneutes Starten der App bringt einfach das bestehende Fenster in den Fokus
 - **Automatisches Ausblenden** — das Fenster verschwindet, wenn Sie zu einer anderen Anwendung wechseln, genau wie ein Launcher
 - **Automatisches Tippen** — drücken Sie `Umschalt+Enter`, um einen Schnipsel direkt in das aktive Fenster einzutippen, ohne die Zwischenablage zu verwenden
+- **Schnipsel sortieren** — nach Erstellungsdatum, Änderungsdatum, alphabetisch oder nach letzter Verwendung sortieren; mit `Strg+Umschalt+1`–`Strg+Umschalt+4` umschalten; Einstellung wird zwischen Neustarts gespeichert
 
 ---
 
@@ -111,6 +112,10 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Strg+F oder / | Suchfeld fokussieren |
 | Strg+, | Einstellungen öffnen |
 | Strg+Umschalt+T | Helles / dunkles Design umschalten |
+| Strg+Umschalt+1 | Nach Erstellungsdatum sortieren (erneut drücken für Richtungswechsel) |
+| Strg+Umschalt+2 | Nach Änderungsdatum sortieren (erneut drücken für Richtungswechsel) |
+| Strg+Umschalt+3 | Alphabetisch sortieren (erneut drücken für Richtungswechsel) |
+| Strg+Umschalt+4 | Nach letzter Verwendung sortieren (erneut drücken für Richtungswechsel) |
 | Strg+Umschalt+Space | Ausgewählten Schnipsel ansagen (Screenreader) |
 | Esc | Modal schließen / Suche leeren |
 | Alt+F4 | Anwendung beenden |
