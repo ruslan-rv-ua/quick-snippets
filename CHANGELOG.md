@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- **Snippet sorting**: sort the snippet list by creation date, modification date, alphabetical order, or last used time. Switch modes with `Ctrl+Shift+1`–`Ctrl+Shift+4`; pressing the same shortcut again toggles ascending/descending order. The active sort mode is shown as a label next to the search field. Sort preference is saved and restored on app restart.
+- Snippets that have never been used appear at the bottom of the list when sorting by "last used", regardless of sort direction.
 - **Auto-type**: press `Shift+Enter` on any selected snippet to type its content directly into the previously active window — no clipboard involved. Works for both plain and encrypted snippets.
 - **Autotype delay** setting (0–1000 ms, default: 1 ms) — configurable inter-character delay for auto-type. Increase to 10–50 ms if characters are dropped or appear out of order in the target application.
 - Screen reader compatibility for auto-type: primary method uses `PostMessage(WM_CHAR)`, bypassing `WH_KEYBOARD_LL` hooks used by NVDA and JAWS. The `SendInput` fallback enforces a minimum 50 ms inter-character delay.
