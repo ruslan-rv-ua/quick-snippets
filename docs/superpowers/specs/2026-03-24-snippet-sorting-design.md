@@ -34,8 +34,10 @@ For fresh databases the `CREATE TABLE` statement must also include the `last_use
 Both `activate_snippet` and `autotype_snippet` in `commands.rs` must call a new `db::touch_last_used(conn, id)` function that runs:
 
 ```sql
-UPDATE snippets SET last_used_at = datetime('now') WHERE id = ?1
+UPDATE snippets SET last_used_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?1
 ```
+
+This uses the same timestamp format as `created_at` and `updated_at` (ISO-8601 with millisecond precision).
 
 This call happens after the content has been successfully retrieved (decrypted if needed), right before the clipboard write or autotype dispatch.
 
@@ -48,7 +50,7 @@ This call happens after the content has been successfully retrieved (decrypted i
 | Created | `Ctrl+Shift+1` | desc (newest first) | `created_at DESC` |
 | Modified | `Ctrl+Shift+2` | desc (newest first) | `updated_at DESC` |
 | Alphabetical | `Ctrl+Shift+3` | asc (A→Z) | `title ASC COLLATE NOCASE` |
-| Last used | `Ctrl+Shift+4` | desc (newest first) | `last_used_at DESC NULLS LAST` |
+| Last used | `Ctrl+Shift+4` | desc (newest first) | `last_used_at IS NULL, last_used_at DESC` |
 
 Pressing the same shortcut again toggles the direction (asc ↔ desc).
 
@@ -58,15 +60,23 @@ Modified / descending — matches current behavior (`ORDER BY updated_at DESC`).
 
 ### NULL handling
 
-When sorting by `last_used_at`, snippets with `NULL` (never used) always appear at the end of the list, regardless of sort direction.
+When sorting by `last_used_at`, snippets with `NULL` (never used) always appear at the end of the list, regardless of sort direction. This is achieved via `ORDER BY last_used_at IS NULL, last_used_at [ASC|DESC]` — SQLite does not support `NULLS LAST` syntax.
 
 ### Backend implementation
 
-Add a new IPC command `get_sorted_snippets(sort_mode, sort_direction)` that returns `Vec<SearchResult>` (reusing the existing type with `score: 0` and `matched_positions: []`). This keeps the frontend rendering path identical for both search and browse states.
+Add a new `db::list_snippets_sorted(conn, sort_mode, sort_direction)` function and a corresponding IPC command `get_sorted_snippets(sort_mode, sort_direction)`. Returns `Vec<SearchResult>` (reusing the existing type with `score: 0` and `matched_positions: []`). This keeps the frontend rendering path identical for both search and browse states.
 
-Alternatively, extend `list_snippets_for_search` to accept sort parameters. The command is only called when the search query is empty.
+The command validates `sort_mode` and `sort_direction` parameters; unrecognized values fall back to `"modified"` / `"desc"`.
 
 The frontend calls `searchSnippets(query)` when query is non-empty (existing behavior) and `get_sorted_snippets(mode, direction)` when query is empty (new behavior).
+
+### SnippetRow struct
+
+Add `last_used_at: Option<String>` to the `SnippetRow` struct in `db.rs`. This field is used internally for sorting and for the `touch_last_used` update. It is NOT exposed to the frontend via `SnippetView` or `SearchResult` — sorting is purely a backend concern.
+
+### App startup
+
+On launch, the initial snippet list fetch uses `sort_mode` and `sort_direction` from the persisted `settings.json`, ensuring the sort preference survives app restarts.
 
 ## Settings
 
@@ -89,7 +99,11 @@ Add matching fields to the `Settings` interface in `src/types/index.ts`.
 
 ### Keyboard shortcuts
 
-Register `Ctrl+Shift+1` through `Ctrl+Shift+4` in the existing keyboard handling (likely `useSearchBoxKeyboard` or a new `useSortKeyboard` hook). These shortcuts must use modifier keys to pass through screen reader browse mode.
+Register `Ctrl+Shift+1` through `Ctrl+Shift+4` as global `window`-level keyboard shortcuts. Use a new `useSortKeyboard` hook or extend the existing `useKeyboard` hook (which handles window-level events). Do NOT use `useSearchBoxKeyboard` — that hook only handles events scoped to the search input element.
+
+Shortcuts must match on `event.code` (`Digit1`–`Digit4`) rather than `event.key` to work correctly on non-Latin keyboard layouts (e.g., Ukrainian). This is consistent with the existing keyboard handling pattern.
+
+These shortcuts must use modifier keys to pass through screen reader browse mode.
 
 When a shortcut is pressed:
 1. If the current `sort_mode` matches the pressed key's mode → toggle `sort_direction`
@@ -115,7 +129,7 @@ A small text label displayed to the right of the search input inside the `.searc
 
 The label is hidden when a search query is active (list is sorted by score).
 
-The label has `role="status"` and `aria-live="polite"` so screen readers announce changes.
+The label has `role="status"` and `aria-live="polite"` so screen readers announce changes. The `↕` symbol is decorative — the label also carries an `aria-label` with a screen-reader-friendly description (e.g., "Sort: A to Z") that omits the symbol.
 
 ### Toast on sort change
 
