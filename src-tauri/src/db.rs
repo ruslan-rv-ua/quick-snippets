@@ -14,6 +14,7 @@ pub struct SnippetRow {
     pub is_encrypted: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub last_used_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             is_encrypted INTEGER NOT NULL DEFAULT 0,
             created_at   TEXT    NOT NULL,
             updated_at   TEXT    NOT NULL,
+            last_used_at TEXT,
             CHECK (length(title) >= 3 AND length(title) <= 50),
             CHECK (length(content) <= 65536)
         );
@@ -49,6 +51,14 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_snippets_title
             ON snippets (title);",
     )?;
+    // Schema migrations via user_version
+    let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 1 {
+        conn.execute_batch(
+            "ALTER TABLE snippets ADD COLUMN last_used_at TEXT;"
+        ).ok(); // .ok() because fresh DBs already have the column from CREATE TABLE
+        conn.execute_batch("PRAGMA user_version = 1;")?;
+    }
     Ok(())
 }
 
@@ -127,7 +137,7 @@ pub fn create_snippet(
 
 pub fn get_snippet_by_id(conn: &Connection, id: i64) -> Result<SnippetRow> {
     conn.query_row(
-        "SELECT id, title, content, is_encrypted, created_at, updated_at
+        "SELECT id, title, content, is_encrypted, created_at, updated_at, last_used_at
          FROM snippets WHERE id = ?1",
         params![id],
         |row| {
@@ -138,6 +148,7 @@ pub fn get_snippet_by_id(conn: &Connection, id: i64) -> Result<SnippetRow> {
                 is_encrypted: row.get::<_, i64>(3)? != 0,
                 created_at: row.get(4)?,
                 updated_at: row.get(5)?,
+                last_used_at: row.get(6)?,
             })
         },
     )
@@ -571,7 +582,7 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
-        for expected in &["id", "title", "content", "is_encrypted", "created_at", "updated_at"] {
+        for expected in &["id", "title", "content", "is_encrypted", "created_at", "updated_at", "last_used_at"] {
             assert!(
                 columns.iter().any(|c| c == expected),
                 "column '{}' not found in snippets table; found: {:?}",
@@ -579,6 +590,22 @@ mod tests {
                 columns
             );
         }
+    }
+
+    #[test]
+    fn test_schema_has_last_used_at_column() {
+        let conn = setup_test_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(snippets)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            columns.contains(&"last_used_at".to_string()),
+            "last_used_at column not found; found: {:?}",
+            columns
+        );
     }
 
     /// The unique index on `title` is created by open_and_init_db.
