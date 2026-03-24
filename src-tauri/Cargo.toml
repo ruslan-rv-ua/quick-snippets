@@ -44,4 +44,12 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "s"
+panic = "abort"
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16
+strip = false
 
