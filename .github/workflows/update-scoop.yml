@@ -9,7 +9,7 @@ on:
         type: string
 
 env:
-  APP_NAME: marka
+  APP_NAME: quick-snippets
 
 jobs:
   update-scoop:
