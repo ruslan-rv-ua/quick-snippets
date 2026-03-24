@@ -91,8 +91,6 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
       {sortLabel && (
         <span
           className="sort-label"
-          role="status"
-          aria-live="polite"
           aria-label={sortAriaLabel}
         >
           {sortLabel}
