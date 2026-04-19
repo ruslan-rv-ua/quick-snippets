@@ -29,6 +29,7 @@
 - Локальна збірка + пакування:
   ```powershell
   just build
+  just build-fast           # швидка збірка (release-fast профіль, більший exe)
   ```
 - Тести:
   ```powershell
@@ -53,7 +54,7 @@
   ```
 - Фінальні перевірки:
   ```powershell
-  just final-checks      # фінальний pipeline перевірок
+  just final-checks      # фінальний pipeline: version sync + tsc + clippy + tests + build
   ```
 - Утиліти:
   ```powershell

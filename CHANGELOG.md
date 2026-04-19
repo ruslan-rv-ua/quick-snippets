@@ -14,6 +14,10 @@
 ### Known Limitations
 - Auto-type does not work into applications running with elevated privileges (UAC / Run as administrator) unless QuickSnippets is also elevated.
 
+### Changed
+- `just final-checks` now verifies version sync across `package.json`, `tauri.conf.json`, and `Cargo.toml` before running other checks.
+- Added `just build-fast` recipe (alias `bf`) for quick builds using `release-fast` Cargo profile.
+
 ---
 
 ## v0.1.2 - 2026-03-05

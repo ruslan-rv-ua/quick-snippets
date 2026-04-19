@@ -110,6 +110,12 @@ format:
 build profile=profile:
     if ("{{ profile }}" -eq "release") { Write-Host "[build] Production bundle..." -ForegroundColor Cyan; npm run tauri build } else { Write-Host "[build] Debug build..." -ForegroundColor Cyan; npm run build; Push-Location src-tauri; cargo build; Pop-Location }
 
+# Fast release build — larger exe, quick compile (release-fast profile)
+build-fast:
+    npm run tauri build -- -- --profile release-fast
+
+alias bf := build-fast
+
 # Production bundle — npm run tauri build → .exe + installer  (alias: r)
 release:
     npx tsc --noEmit

@@ -23,6 +23,9 @@ npm run tauri dev        # Full Tauri dev build with hot reload
 npm run build            # Frontend production build
 npx tauri build --no-bundle  # Portable build (no installer); used in CI release
 
+# Build (fast — larger exe, quick compile; uses release-fast Cargo profile)
+just build-fast          # or: npm run tauri build -- -- --profile release-fast
+
 # Testing
 npm run test             # Frontend: Vitest (single run)
 npm run test:watch       # Frontend: Vitest watch mode
