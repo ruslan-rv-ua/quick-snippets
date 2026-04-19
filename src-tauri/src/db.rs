@@ -22,9 +22,7 @@ pub struct SnippetRow {
 // ---------------------------------------------------------------------------
 
 pub fn get_db_path() -> PathBuf {
-    let exe_path = std::env::current_exe().expect("Failed to get current exe path");
-    let exe_dir = exe_path.parent().expect("Failed to get exe directory");
-    exe_dir.join("snippets.db")
+    crate::paths::get_data_dir().join("snippets.db")
 }
 
 // ---------------------------------------------------------------------------
@@ -552,15 +550,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_db_path_is_next_to_exe() {
+    fn test_get_db_path_is_in_data_dir() {
         let db_path = get_db_path();
-        let exe_dir = std::env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        assert_eq!(db_path, exe_dir.join("snippets.db"));
-        // Must NOT contain "AppData"
+        let data_dir = crate::paths::get_data_dir();
+        assert_eq!(db_path, data_dir.join("snippets.db"));
         assert!(
             !db_path.to_string_lossy().contains("AppData"),
             "db path must not be in AppData"

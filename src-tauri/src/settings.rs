@@ -61,12 +61,9 @@ impl Default for Settings {
 // Path helpers
 // ------------------------------------------------------------------
 
-/// Returns the path to `settings.json` next to the running `.exe`.
+/// Returns the path to `settings.json` in the data directory.
 pub fn get_settings_path() -> PathBuf {
-    let exe = std::env::current_exe().expect("Cannot determine exe path");
-    exe.parent()
-        .expect("Exe has no parent directory")
-        .join("settings.json")
+    crate::paths::get_data_dir().join("settings.json")
 }
 
 // ------------------------------------------------------------------

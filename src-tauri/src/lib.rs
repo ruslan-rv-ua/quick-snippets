@@ -2,6 +2,7 @@ pub mod autotype;
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod paths;
 pub mod search;
 pub mod settings;
 
