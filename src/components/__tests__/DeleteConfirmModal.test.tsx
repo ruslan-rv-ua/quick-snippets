@@ -16,6 +16,7 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof DeleteConfir
         snippetTitle="My Test Snippet"
         snippetId={42}
         onSuccess={vi.fn()}
+        onError={vi.fn()}
         {...overrides}
       />
     </LanguageProvider>,

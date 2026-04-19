@@ -9,6 +9,7 @@ export interface DeleteConfirmModalProps {
   snippetTitle: string;
   snippetId: number;
   onSuccess: () => void;
+  onError: (err: string) => void;
 }
 
 export function DeleteConfirmModal({
@@ -17,6 +18,7 @@ export function DeleteConfirmModal({
   snippetTitle,
   snippetId,
   onSuccess,
+  onError,
 }: DeleteConfirmModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -33,10 +35,10 @@ export function DeleteConfirmModal({
       await deleteSnippet(snippetId);
       onSuccess();
       onClose();
-    } catch {
-      // ignore
+    } catch (err: unknown) {
+      onError(String(err));
     }
-  }, [snippetId, onSuccess, onClose]);
+  }, [snippetId, onSuccess, onClose, onError]);
 
   useEffect(() => {
     if (!isOpen) return;

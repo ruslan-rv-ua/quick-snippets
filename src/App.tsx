@@ -58,7 +58,7 @@ const DEFAULT_DIRECTIONS: Record<string, string> = {
  *
  * ## State Management
  *
- * - Snippets list & search: useSnippets() hook
+ * - Snippets list & search: useSearchLogic() hook
  * - Modal dialogs: useModalState() hook
  * - Window events (blur/show): useWindowEvents() hook
  * - Keyboard shortcuts: useKeyboard() hook
@@ -298,6 +298,7 @@ function AppInner(): React.ReactElement {
           addToast(t('deleteSuccess'), 'success');
           refreshSnippets();
         }}
+        onError={(err) => addToast(err, 'error')}
       />
 
       {passwordSnippet && (
