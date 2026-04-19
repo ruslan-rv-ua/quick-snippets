@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.2.0 - 2026-04-19
+
 ### Added
 - **Snippet sorting**: sort the snippet list by creation date, modification date, alphabetical order, or last used time. Switch modes with `Ctrl+Shift+1`–`Ctrl+Shift+4`; pressing the same shortcut again toggles ascending/descending order. The active sort mode is shown as a label next to the search field. Sort preference is saved and restored on app restart.
 - Snippets that have never been used appear at the bottom of the list when sorting by "last used", regardless of sort direction.

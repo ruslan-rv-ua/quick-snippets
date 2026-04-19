@@ -1,6 +1,6 @@
 [package]
 name = "quick-snippets"
-version = "0.1.2"
+version = "0.2.0"
 description = "QuickSnippets — portable Windows desktop app for quick snippet access"
 authors = ["you"]
 edition = "2021"
