@@ -17,6 +17,10 @@
 ### Changed
 - `just final-checks` now verifies version sync across `package.json`, `tauri.conf.json`, and `Cargo.toml` before running other checks.
 - Added `just build-fast` recipe (alias `bf`) for quick builds using `release-fast` Cargo profile.
+- Release workflow: `workflow_dispatch` only (removed automatic `push tag` trigger), auto-creates git tag.
+- Release ZIP now includes `LICENSE` and `README.md` alongside the `.exe`.
+- Scoop bucket update is now a separate manual workflow (`update-scoop.yml`) with SHA256 verification.
+- Removed `notify-scoop-bucket.yml` (replaced by `update-scoop.yml`).
 
 ---
 

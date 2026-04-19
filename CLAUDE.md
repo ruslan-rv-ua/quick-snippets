@@ -90,10 +90,11 @@ The autotype module simulates keyboard input to type snippet content into the fo
 
 ### Release & CI
 
-- GitHub Actions release triggered by version tags (`v*`).
-- Uses `npx tauri build --no-bundle` (not `npm run tauri build`) — skips Wix/NSIS installer generation for portability.
-- Tags with `-alpha`, `-beta`, `-rc` suffixes are auto-marked as pre-release.
-- Non-prerelease triggers `repository_dispatch` to Scoop bucket repo for package manager updates.
+- GitHub Actions release triggered manually via `workflow_dispatch` (version specified in UI).
+- Workflow auto-creates git tag `v{version}` and pushes it.
+- Uses `npx tauri build --no-bundle` — skips Wix/NSIS installer generation for portability.
+- ZIP contains `.exe`, `LICENSE`, `README.md`.
+- Scoop bucket update is a separate manual workflow (`update-scoop.yml`) with SHA256 verification.
 - Release profile: `strip = true`, `lto = true`, `codegen-units = 1`, `opt-level = "s"`.
 
 ### Key Design Constraints
