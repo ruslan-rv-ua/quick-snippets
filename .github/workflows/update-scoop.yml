@@ -1,3 +1,15 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# update-scoop.yml — Оновлення Scoop маніфесту після релізу
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Запускається ВРУЧНУ після створення релізу через release.yml.
+# Завантажує ZIP, перевіряє SHA256, та відправляє repository_dispatch
+# до scoop-bucket для оновлення маніфесту.
+#
+# НЕОБХІДНІ СЕКРЕТИ
+#   SCOOP_BUCKET_TOKEN — Fine-grained PAT з правом Contents:write на scoop-bucket
+# ─────────────────────────────────────────────────────────────────────────────
+
 name: Update Scoop manifest
 
 on:
@@ -16,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get release info
+      - name: Resolve version and URLs
         id: info
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -32,17 +44,44 @@ jobs:
           ZIP_NAME="${APP_NAME}-${VERSION}-windows-x64.zip"
           URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${ZIP_NAME}"
 
-          # Download .sha256 file from release
-          HASH=$(gh release download "v${VERSION}" --repo ${{ github.repository }} --pattern "${ZIP_NAME}.sha256" --output - | tr -d '[:space:]')
-
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "APP_ID=$APP_ID" >> $GITHUB_OUTPUT
           echo "URL=$URL" >> $GITHUB_OUTPUT
-          echo "HASH=$HASH" >> $GITHUB_OUTPUT
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_OUTPUT
 
           echo "Version: $VERSION"
           echo "URL: $URL"
-          echo "Hash: $HASH"
+
+      - name: Download and verify ZIP
+        id: verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.info.outputs.VERSION }}"
+          ZIP_NAME="${{ steps.info.outputs.ZIP_NAME }}"
+          URL="${{ steps.info.outputs.URL }}"
+
+          # Download ZIP and .sha256
+          echo "Downloading: $URL"
+          curl -fsSL -o "$ZIP_NAME" "$URL"
+
+          EXPECTED_HASH=$(gh release download "v${VERSION}" \
+            --repo ${{ github.repository }} \
+            --pattern "${ZIP_NAME}.sha256" \
+            --output - | tr -d '[:space:]')
+
+          ACTUAL_HASH=$(sha256sum "$ZIP_NAME" | awk '{print $1}')
+
+          echo "Expected: $EXPECTED_HASH"
+          echo "Actual:   $ACTUAL_HASH"
+
+          if [ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]; then
+            echo "ERROR: SHA256 mismatch!"
+            exit 1
+          fi
+
+          echo "SHA256 verified"
+          echo "HASH=$ACTUAL_HASH" >> $GITHUB_OUTPUT
 
       - name: Dispatch to Scoop bucket
         uses: peter-evans/repository-dispatch@v3
@@ -54,6 +93,6 @@ jobs:
             {
               "app": "${{ steps.info.outputs.APP_ID }}",
               "version": "${{ steps.info.outputs.VERSION }}",
-              "hash": "${{ steps.info.outputs.HASH }}",
+              "hash": "${{ steps.verify.outputs.HASH }}",
               "url": "${{ steps.info.outputs.URL }}"
             }
