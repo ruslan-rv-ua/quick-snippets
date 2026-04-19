@@ -129,7 +129,7 @@ final-checks:
 
 # Delete dev snippets.db to reset local database
 db-reset:
-    Remove-Item -Force snippets.db -ErrorAction SilentlyContinue
+    Remove-Item -Force quick-snippets-data\snippets.db -ErrorAction SilentlyContinue
     @Write-Host "[OK] snippets.db removed" -ForegroundColor Yellow
 
 # Generate demo SQLite DB with 40+ snippets (uses generate_demo_db.py in project root)

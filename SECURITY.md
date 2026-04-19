@@ -8,7 +8,7 @@ QuickSnippets prioritizes the security and privacy of your snippets. This docume
 
 - **No cloud, no telemetry** — all data stays on your device
 - **Encrypted by default (optional)** — sensitive snippets can be protected with AES-256-GCM encryption
-- **Local storage only** — the database lives next to the executable; no AppData directories
+- **Local storage only** — the database lives in the `quick-snippets-data` folder next to the executable; no AppData directories
 - **Keys never transmitted** — encryption keys are derived locally and never leave your device
 - **Portable and auditable** — the application is small and self-contained, making it easy to verify
 
@@ -41,7 +41,7 @@ Each encryption produces a unique ciphertext even with the same plaintext and pa
 
 ### Data Storage
 
-- **Location**: The database file (`snippets.db`) and settings (`settings.json`) are stored in the same directory as `quick-snippets.exe`
+- **Location**: The database file (`snippets.db`) and settings (`settings.json`) are stored in the `quick-snippets-data` folder next to `quick-snippets.exe`
 - **No registry**: Unlike traditional Windows applications, QuickSnippets does not use `HKEY_LOCAL_MACHINE` or `HKEY_CURRENT_USER`
 - **No AppData**: Data is not stored in `%APPDATA%`, `%LOCALAPPDATA%`, or other system directories
 - **Portability**: You can back up, move, or transfer the entire application folder as-is
@@ -121,7 +121,7 @@ When a security update is released:
 
 - [ ] Check the [Releases page](https://github.com/ruslan-rv-ua/quick-snippets/releases)
 - [ ] Verify the SHA-256 checksum (included with each release)
-- [ ] Back up your `snippets.db` and `settings.json` before upgrading
+- [ ] Back up your `quick-snippets-data` folder before upgrading
 - [ ] Replace your existing `quick-snippets.exe` with the updated version
 - [ ] Restart the application
 

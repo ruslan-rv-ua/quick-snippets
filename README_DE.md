@@ -56,7 +56,7 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im selben Ordner wie die ausführbare Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
+Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im Ordner `quick-snippets-data` neben der ausführbaren Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
 
 > **SHA-256-Prüfsumme** — eine `.sha256`-Datei ist jedem Release zur Überprüfung beigefügt.
 

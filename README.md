@@ -62,7 +62,7 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the same folder as the executable. To move or back up the app, copy the entire folder.
+Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder.
 
 > **SHA-256 checksum** — a `.sha256` file is attached to every release for verification.
 
@@ -103,7 +103,7 @@ Your privacy is paramount. QuickSnippets is designed to keep your snippets on yo
 - **AES-256-GCM encryption** — sensitive snippets can be password-protected with military-grade encryption
 - **PBKDF2 key derivation** — passwords are stretched with 100,000 iterations to resist brute-force attacks
 - **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
-- **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the application folder; no cloud, no telemetry, no sync
+- **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the `quick-snippets-data` folder next to the executable; no cloud, no telemetry, no sync
 - **No registry** — QuickSnippets does not touch Windows registry or AppData directories
 - **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
 
