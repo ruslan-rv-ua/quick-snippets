@@ -1,5 +1,17 @@
 $ErrorActionPreference = "Stop"
 
+# 0. Version sync check
+Write-Host "=== Version sync ===" -ForegroundColor Cyan
+$pkgVer = (Get-Content package.json | ConvertFrom-Json).version
+$tauriVer = (Get-Content src-tauri\tauri.conf.json | ConvertFrom-Json).version
+$cargoContent = Get-Content src-tauri\Cargo.toml -Raw
+if ($cargoContent -match '(?m)^version\s*=\s*"([^"]+)"') { $cargoVer = $Matches[1] } else { Write-Error "Cannot parse Cargo.toml version"; exit 1 }
+if ($pkgVer -ne $tauriVer -or $pkgVer -ne $cargoVer) {
+    Write-Error "Version mismatch: package.json=$pkgVer, tauri.conf.json=$tauriVer, Cargo.toml=$cargoVer"
+    exit 1
+}
+Write-Host "All versions match: $pkgVer" -ForegroundColor Green
+
 # 1. TypeScript compilation
 Write-Host "=== TypeScript check ===" -ForegroundColor Cyan
 npx tsc --noEmit

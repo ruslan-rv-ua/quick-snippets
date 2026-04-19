@@ -16,6 +16,9 @@ const defaultSettings: Settings = {
   confirm_on_close: true,
   language: 'en',
   window_state: { x: 0, y: 0, width: 480, height: 600 },
+  autotype_delay_ms: 0,
+  sort_mode: 'modified',
+  sort_direction: 'desc',
 };
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof SettingsModal>> = {}) {
@@ -167,6 +170,13 @@ describe('SettingsModal', () => {
     await waitFor(() => screen.getByRole('combobox'));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('displays app version in footer', async () => {
+    renderModal();
+    await waitFor(() => {
+      expect(screen.getByText(/QuickSnippets version \d+\.\d+\.\d+/)).toBeInTheDocument();
+    });
   });
 
   it('calls save_settings IPC on save', async () => {

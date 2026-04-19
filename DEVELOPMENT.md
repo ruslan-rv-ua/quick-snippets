@@ -29,6 +29,7 @@
 - Локальна збірка + пакування:
   ```powershell
   just build
+  just build-fast           # швидка збірка (release-fast профіль, більший exe)
   ```
 - Тести:
   ```powershell
@@ -53,7 +54,7 @@
   ```
 - Фінальні перевірки:
   ```powershell
-  just final-checks      # фінальний pipeline перевірок
+  just final-checks      # фінальний pipeline: version sync + tsc + clippy + tests + build
   ```
 - Утиліти:
   ```powershell
@@ -170,43 +171,35 @@ git commit -m "chore: bump version to 1.2.3"
 # 3. Finish the release (merges to main + develop, creates tag v1.2.3)
 git flow release finish 1.2.3
 
-# 4. Push main, develop, and the tag
-git push origin main develop --tags
+# 4. Push main and develop
+git push origin main develop
 ```
 
-The push to `main` automatically triggers `.github/workflows/release.yml`.
+### Creating a GitHub Release
 
-### What the release workflow does
+Release створюється вручну через GitHub Actions UI:
 
-1. Reads the version from `src-tauri/Cargo.toml`
-2. Builds the frontend with `npm run build` (creates `dist/` for Tauri to embed)
-3. Builds the Rust binary with `cargo build --release` in `src-tauri/`
-   - Uses direct `cargo` build — **not** `npm run tauri build` — to avoid
-     triggering the Wix/NSIS bundler (we need only the raw `.exe`, not an installer)
-4. Packages `quick-snippets.exe` + `WebView2Loader.dll` into a ZIP:
-   `quick-snippets-windows-x64-v{version}.zip`
-5. Generates a SHA-256 checksum file
-6. Creates (or updates) a GitHub Release tagged `v{version}` with both files
+1. **Actions → Release → Run workflow**
+2. Вказати версію (формат: `1.2.3`, без `v`)
+3. За потреби позначити як pre-release
 
-### Re-running a failed release
+Workflow автоматично:
+1. Створює тег `v{version}` та пушить його
+2. Запускає `npx tauri build --no-bundle` (збірка фронтенду + Rust binary)
+3. Пакує `quick-snippets.exe`, `LICENSE`, `README.md` у ZIP:
+   `quick-snippets-{version}-windows-x64.zip`
+4. Генерує SHA-256 checksum файл
+5. Створює GitHub Release з обома файлами
 
-If the automatic trigger failed (e.g. transient runner error) and no new commit
-is needed, re-trigger manually via the GitHub Actions UI:
-- Go to **Actions → Release → Run workflow**
-- Leave `version_override` empty to re-read from `Cargo.toml`, or fill it in if
-  needed (format: `1.2.3`, no `v` prefix)
+### Оновлення Scoop маніфесту
 
-### Planned: Scoop bucket workflow
-
-A future `release-scoop.yml` workflow will listen for the `release` event and
-update a Scoop manifest.  The download URL follows a predictable pattern:
+Після створення релізу вручну запустіть **Actions → Update Scoop manifest**:
+1. Вказати версію (або залишити порожнім для останньої)
+2. Workflow завантажить ZIP, перевірить SHA256, та відправить dispatch до scoop-bucket
 
 ```
-https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-windows-x64-v{version}.zip
+https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-{version}-windows-x64.zip
 ```
-
-The `.sha256` file attached to every release contains the checksum in
-`sha256sum`-compatible format, ready for the Scoop manifest `hash` field.
 
 TDD та безпека
 - Проєкт дотримується TDD: пишіть тести перед фічами.

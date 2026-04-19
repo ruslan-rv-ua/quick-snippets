@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="logo-vector.svg" alt="QuickSnippets logo" />
+	<img src="logo-vector.svg" alt="QuickSnippets logo" width="120" />
 	<h1>QuickSnippets</h1>
 	<p><strong>Ein portabler Windows-Launcher für Ihre Textschnipsel — immer nur einen Tastendruck entfernt.</strong></p>
 	<p>
@@ -33,6 +33,8 @@ Vertrauliche Schnipsel können lokal mit AES-256-GCM verschlüsselt werden, soda
 - **Drei Sprachen** — Englisch, Ukrainisch und Deutsch; Sprache wird automatisch vom System erkannt
 - **Einzelinstanz** — erneutes Starten der App bringt einfach das bestehende Fenster in den Fokus
 - **Automatisches Ausblenden** — das Fenster verschwindet, wenn Sie zu einer anderen Anwendung wechseln, genau wie ein Launcher
+- **Automatisches Tippen** — drücken Sie `Umschalt+Enter`, um einen Schnipsel direkt in das aktive Fenster einzutippen, ohne die Zwischenablage zu verwenden
+- **Schnipsel sortieren** — nach Erstellungsdatum, Änderungsdatum, alphabetisch oder nach letzter Verwendung sortieren; mit `Strg+Umschalt+1`–`Strg+Umschalt+4` umschalten; Einstellung wird zwischen Neustarts gespeichert
 
 ---
 
@@ -54,7 +56,7 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im selben Ordner wie die ausführbare Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
+Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im Ordner `quick-snippets-data` neben der ausführbaren Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
 
 > **SHA-256-Prüfsumme** — eine `.sha256`-Datei ist jedem Release zur Überprüfung beigefügt.
 
@@ -75,6 +77,8 @@ Geben Sie ihm einen kurzen, einprägsamen Titel — danach werden Sie suchen. F�
 3. Verwenden Sie **Pfeil hoch / runter**, um durch die Ergebnisse zu navigieren.
 4. Drücken Sie **Enter**, um den ausgewählten Schnipsel in die Zwischenablage zu kopieren.
 5. Wechseln Sie zu Ihrer Zielanwendung und fügen Sie ihn ein (**Strg+V**).
+
+Alternativ können Sie **Umschalt+Enter** (statt **Enter**) drücken, um den Schnipsel direkt in das zuvor aktive Fenster einzutippen — ohne Zwischenablage. Das Fenster wird ausgeblendet, der Fokus kehrt zur Zielanwendung zurück, und der Text wird Zeichen für Zeichen eingegeben.
 
 Das QuickSnippets-Fenster blendet sich automatisch aus, wenn Sie zu einer anderen Anwendung wechseln.
 
@@ -101,12 +105,17 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Pfeil hoch / runter | Auswahl in der Schnipsel-Liste bewegen |
 | Pos1 / Ende | Zum ersten / letzten Schnipsel springen |
 | Enter | Ausgewählten Schnipsel in die Zwischenablage kopieren |
+| Umschalt+Enter | Ausgewählten Schnipsel automatisch in die aktive Anwendung tippen |
 | Strg+N oder Einfügen | Neuen Schnipsel erstellen |
 | Strg+E | Ausgewählten Schnipsel bearbeiten |
 | Entf oder Strg+D | Ausgewählten Schnipsel löschen |
 | Strg+F oder / | Suchfeld fokussieren |
 | Strg+, | Einstellungen öffnen |
 | Strg+Umschalt+T | Helles / dunkles Design umschalten |
+| Strg+Umschalt+1 | Nach Erstellungsdatum sortieren (erneut drücken für Richtungswechsel) |
+| Strg+Umschalt+2 | Nach Änderungsdatum sortieren (erneut drücken für Richtungswechsel) |
+| Strg+Umschalt+3 | Alphabetisch sortieren (erneut drücken für Richtungswechsel) |
+| Strg+Umschalt+4 | Nach letzter Verwendung sortieren (erneut drücken für Richtungswechsel) |
 | Strg+Umschalt+Space | Ausgewählten Schnipsel ansagen (Screenreader) |
 | Esc | Modal schließen / Suche leeren |
 | Alt+F4 | Anwendung beenden |
@@ -131,6 +140,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Im Tray starten | Fenster beim Start ausblenden; nur das Tray-Icon ist sichtbar |
 | Beim Start ausführen | QuickSnippets automatisch beim Windows-Start starten |
 | Beim Schließen bestätigen | Bestätigungsdialog vor dem Beenden anzeigen |
+| Autotipp-Verzögerung (ms) | Zeichenverzögerung beim automatischen Tippen (Standard: 1 ms). Auf `0` setzen für maximale Geschwindigkeit. Erhöhen Sie den Wert auf 10–50 ms, wenn Zeichen fehlen oder in falscher Reihenfolge erscheinen. **Hinweis:** Automatisches Tippen funktioniert nicht in Anwendungen mit erhöhten Berechtigungen (Als Administrator ausführen). |
 
 ---
 

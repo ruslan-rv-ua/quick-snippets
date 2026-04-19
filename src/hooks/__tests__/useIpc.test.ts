@@ -15,6 +15,7 @@ import {
   getSnippetById,
   createSnippet,
   activateSnippet,
+  autotypeSnippet,
   updateSnippet,
   deleteSnippet,
   getSettings,
@@ -22,6 +23,7 @@ import {
   getPendingNotification,
   quitApp,
   cancelClose,
+  getSortedSnippets,
 } from '../useIpc';
 import type { SearchResult, SnippetView, Settings } from '../../types';
 
@@ -56,6 +58,9 @@ const makeSettings = (overrides: Partial<Settings> = {}): Settings => ({
   confirm_on_close: true,
   language: 'en',
   window_state: { x: 100, y: 200, width: 400, height: 600 },
+  autotype_delay_ms: 0,
+  sort_mode: 'modified',
+  sort_direction: 'desc',
   ...overrides,
 });
 
@@ -208,6 +213,41 @@ describe('activateSnippet', () => {
     mockInvoke.mockRejectedValueOnce(new Error('wrong password'));
 
     await expect(activateSnippet(1, 'bad')).rejects.toThrow('wrong password');
+  });
+});
+
+// ── autotypeSnippet ───────────────────────────────────────────────────────
+
+describe('autotypeSnippet', () => {
+  it('calls invoke with "autotype_snippet" and id/password', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await autotypeSnippet(3, '');
+
+    expect(mockInvoke).toHaveBeenCalledOnce();
+    expect(mockInvoke).toHaveBeenCalledWith('autotype_snippet', { id: 3, password: '' });
+  });
+
+  it('passes the password for encrypted snippets', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await autotypeSnippet(5, 'secret');
+
+    expect(mockInvoke).toHaveBeenCalledWith('autotype_snippet', { id: 5, password: 'secret' });
+  });
+
+  it('resolves with undefined (plaintext is NEVER returned)', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    const result = await autotypeSnippet(1, '');
+
+    expect(result).toBeUndefined();
+  });
+
+  it('propagates errors', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('UIPI blocked'));
+
+    await expect(autotypeSnippet(1, '')).rejects.toThrow('UIPI blocked');
   });
 });
 
@@ -411,5 +451,38 @@ describe('cancelClose', () => {
     mockInvoke.mockRejectedValueOnce(new Error('cancel failed'));
 
     await expect(cancelClose()).rejects.toThrow('cancel failed');
+  });
+});
+
+describe('getSortedSnippets', () => {
+  it('calls invoke with "get_sorted_snippets" and sort arguments', async () => {
+    const results: SearchResult[] = [makeSearchResult()];
+    mockInvoke.mockResolvedValueOnce(results);
+
+    await getSortedSnippets('alphabetical', 'asc');
+
+    expect(mockInvoke).toHaveBeenCalledOnce();
+    expect(mockInvoke).toHaveBeenCalledWith('get_sorted_snippets', {
+      sortMode: 'alphabetical',
+      sortDirection: 'asc',
+    });
+  });
+
+  it('returns the resolved array from invoke', async () => {
+    const results: SearchResult[] = [
+      makeSearchResult({ id: 1, title: 'Alpha', score: 0 }),
+      makeSearchResult({ id: 2, title: 'Beta', score: 0 }),
+    ];
+    mockInvoke.mockResolvedValueOnce(results);
+
+    const returned = await getSortedSnippets('modified', 'desc');
+
+    expect(returned).toEqual(results);
+  });
+
+  it('propagates errors', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('sort failed'));
+
+    await expect(getSortedSnippets('created', 'desc')).rejects.toThrow('sort failed');
   });
 });

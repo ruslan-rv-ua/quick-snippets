@@ -9,6 +9,7 @@ export interface TranslationMap {
 
   // ── Actions ──────────────────────────────────────────────────────────────
   copy: string;
+  autotype: string;
   save: string;
   cancel: string;
   delete: string;
@@ -16,6 +17,9 @@ export interface TranslationMap {
 
   // ── Feedback toasts ──────────────────────────────────────────────────────
   copySuccess: string;
+  autotypeSuccess: string;
+  autotypeError: string;
+  autotypeErrorNoEvents: string;
   saveSuccess: string;
   deleteSuccess: string;
 
@@ -52,10 +56,12 @@ export interface TranslationMap {
   startInTrayLabel: string;
   autostartLabel: string;
   confirmOnCloseLabel: string;
+  autotypeDelayLabel: string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
   restartHint: string;
+  appVersion: (version: string) => string;
 
   // ── Exit / close dialog ──────────────────────────────────────────────────
   exitConfirmTitle: string;
@@ -67,6 +73,17 @@ export interface TranslationMap {
   decrypting: string;
   corruptedDb: string;
   corruptedSettings: string;
+
+  // ── Sorting ─────────────────────────────────────────────────────────────
+  sortCreatedDesc: string;
+  sortCreatedAsc: string;
+  sortModifiedDesc: string;
+  sortModifiedAsc: string;
+  sortAlphaAsc: string;
+  sortAlphaDesc: string;
+  sortLastUsedDesc: string;
+  sortLastUsedAsc: string;
+  sortToast: (label: string) => string;
 
   // ── Parametrized strings ─────────────────────────────────────────────────
   /** `n` — number of results, `query` — search query. */
@@ -85,6 +102,7 @@ const en: TranslationMap = {
 
   // Actions
   copy: 'Copy',
+  autotype: 'Auto-type',
   save: 'Save',
   cancel: 'Cancel',
   delete: 'Delete',
@@ -92,6 +110,9 @@ const en: TranslationMap = {
 
   // Toasts
   copySuccess: 'Copied',
+  autotypeSuccess: 'Typed',
+  autotypeError: 'Auto-type failed',
+  autotypeErrorNoEvents: 'Auto-type failed: no events were sent. Target app may require elevation',
   saveSuccess: 'Saved',
   deleteSuccess: 'Deleted',
 
@@ -128,10 +149,12 @@ const en: TranslationMap = {
   startInTrayLabel: 'Start in system tray',
   autostartLabel: 'Start with Windows',
   confirmOnCloseLabel: 'Confirm before closing',
+  autotypeDelayLabel: 'Autotype delay (ms)',
   darkTheme: 'Dark',
   lightTheme: 'Light',
   autoLanguage: 'Auto (system)',
   restartHint: 'Some settings take effect after restart',
+  appVersion: (v) => `QuickSnippets version ${v}`,
 
   // Exit dialog
   exitConfirmTitle: 'Quit QuickSnippets?',
@@ -143,6 +166,17 @@ const en: TranslationMap = {
   decrypting: 'Decrypting…',
   corruptedDb: 'Database appears corrupted — back it up before continuing',
   corruptedSettings: 'Settings file is invalid — defaults have been applied',
+
+  // Sorting
+  sortCreatedDesc: 'Newest',
+  sortCreatedAsc: 'Oldest',
+  sortModifiedDesc: 'Modified ↓',
+  sortModifiedAsc: 'Modified ↑',
+  sortAlphaAsc: 'A–Z',
+  sortAlphaDesc: 'Z–A',
+  sortLastUsedDesc: 'Recent',
+  sortLastUsedAsc: 'Least used',
+  sortToast: (label) => `Sorted: ${label}`,
 
   // Parametrized
   searchResults: (n, query) =>
@@ -160,6 +194,7 @@ const uk: TranslationMap = {
 
   // Actions
   copy: 'Копіювати',
+  autotype: 'Автодрук',
   save: 'Зберегти',
   cancel: 'Скасувати',
   delete: 'Видалити',
@@ -167,6 +202,9 @@ const uk: TranslationMap = {
 
   // Toasts
   copySuccess: 'Скопійовано',
+  autotypeSuccess: 'Надруковано',
+  autotypeError: 'Помилка автодруку',
+  autotypeErrorNoEvents: 'Помилка автодруку: жодна подія не надіслана. Цільовий застосунок може вимагати прав адміністратора',
   saveSuccess: 'Збережено',
   deleteSuccess: 'Видалено',
 
@@ -203,10 +241,12 @@ const uk: TranslationMap = {
   startInTrayLabel: 'Запускати у треї',
   autostartLabel: 'Запускати з Windows',
   confirmOnCloseLabel: 'Підтверджувати закриття',
+  autotypeDelayLabel: 'Затримка автодруку (мс)',
   darkTheme: 'Темна',
   lightTheme: 'Світла',
   autoLanguage: 'Авто (системна)',
   restartHint: 'Деякі налаштування застосуються після перезапуску',
+  appVersion: (v) => `QuickSnippets версія ${v}`,
 
   // Exit dialog
   exitConfirmTitle: 'Вийти з QuickSnippets?',
@@ -218,6 +258,17 @@ const uk: TranslationMap = {
   decrypting: 'Розшифрування…',
   corruptedDb: 'База даних пошкоджена — зробіть резервну копію перед продовженням',
   corruptedSettings: 'Файл налаштувань некоректний — застосовано стандартні значення',
+
+  // Sorting
+  sortCreatedDesc: 'Найновіші',
+  sortCreatedAsc: 'Найстаріші',
+  sortModifiedDesc: 'Змінені ↓',
+  sortModifiedAsc: 'Змінені ↑',
+  sortAlphaAsc: 'А–Я',
+  sortAlphaDesc: 'Я–А',
+  sortLastUsedDesc: 'Нещодавні',
+  sortLastUsedAsc: 'Найдавніші',
+  sortToast: (label) => `Сортування: ${label}`,
 
   // Parametrized
   searchResults: (n, query) =>
@@ -239,6 +290,7 @@ const de: TranslationMap = {
 
   // Actions
   copy: 'Kopieren',
+  autotype: 'Automatisch tippen',
   save: 'Speichern',
   cancel: 'Abbrechen',
   delete: 'Löschen',
@@ -246,6 +298,9 @@ const de: TranslationMap = {
 
   // Toasts
   copySuccess: 'Kopiert',
+  autotypeSuccess: 'Eingegeben',
+  autotypeError: 'Automatisches Tippen fehlgeschlagen',
+  autotypeErrorNoEvents: 'Automatisches Tippen fehlgeschlagen: Keine Ereignisse gesendet. Zielprogramm erfordert möglicherweise erhöhte Rechte',
   saveSuccess: 'Gespeichert',
   deleteSuccess: 'Gelöscht',
 
@@ -282,10 +337,12 @@ const de: TranslationMap = {
   startInTrayLabel: 'Im Infobereich starten',
   autostartLabel: 'Mit Windows starten',
   confirmOnCloseLabel: 'Vor dem Schließen bestätigen',
+  autotypeDelayLabel: 'Autotipp-Verzögerung (ms)',
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
   autoLanguage: 'Automatisch (System)',
   restartHint: 'Einige Einstellungen treten nach einem Neustart in Kraft',
+  appVersion: (v) => `QuickSnippets Version ${v}`,
 
   // Exit dialog
   exitConfirmTitle: 'QuickSnippets beenden?',
@@ -297,6 +354,17 @@ const de: TranslationMap = {
   decrypting: 'Entschlüsseln…',
   corruptedDb: 'Datenbank scheint beschädigt — bitte sichern Sie sie, bevor Sie fortfahren',
   corruptedSettings: 'Einstellungsdatei ist ungültig — Standardwerte wurden angewendet',
+
+  // Sorting
+  sortCreatedDesc: 'Neueste',
+  sortCreatedAsc: 'Älteste',
+  sortModifiedDesc: 'Geändert ↓',
+  sortModifiedAsc: 'Geändert ↑',
+  sortAlphaAsc: 'A–Z',
+  sortAlphaDesc: 'Z–A',
+  sortLastUsedDesc: 'Zuletzt',
+  sortLastUsedAsc: 'Älteste Nutzung',
+  sortToast: (label) => `Sortiert: ${label}`,
 
   // Parametrized
   searchResults: (n, query) =>

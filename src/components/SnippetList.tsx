@@ -21,6 +21,7 @@ export function SnippetList({
   const { t, tf } = useLanguage();
   const listRef = useRef<HTMLDivElement>(null);
   const [liveText, setLiveText] = useState('');
+  const prevQueryRef = useRef(query);
 
   // Scroll active item into view
   useEffect(() => {
@@ -32,11 +33,14 @@ export function SnippetList({
   }, [activeIndex, snippets]);
 
   // Announce first result's accessible label after 200ms delay,
-  // or `noResults` when there are no snippets.
+  // but only when the query changed (search results).
+  // Sort/refresh changes are already covered by aria-activedescendant + toast.
   useEffect(() => {
-    // Clear the live region first to force AT to re-announce even when
-    // the announced string equals the previous one (many screen readers
-    // ignore identical consecutive messages).
+    const queryChanged = query !== prevQueryRef.current;
+    prevQueryRef.current = query;
+
+    if (!queryChanged) return;
+
     setLiveText('');
     const id = setTimeout(() => {
       if (snippets.length > 0) {
@@ -47,7 +51,7 @@ export function SnippetList({
       }
     }, 200);
     return () => clearTimeout(id);
-  }, [snippets, t, tf]);
+  }, [snippets, query, t, tf]);
 
   const isEmpty = snippets.length === 0;
 

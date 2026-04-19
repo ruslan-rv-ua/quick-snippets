@@ -13,6 +13,7 @@ export interface KeyboardHandlers {
   onAnnounce: () => void;
   onSelectFirst?: () => void;
   onSelectLast?: () => void;
+  onSort?: (mode: string) => void;
 }
 
 /**
@@ -159,6 +160,38 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
           key: 'End',
           needsInputCheck: true,
           handler: () => handlers.onSelectLast?.(),
+        },
+
+        // Ctrl+Shift+1 → sort by created
+        {
+          ctrl: true,
+          shift: true,
+          code: 'Digit1',
+          handler: () => handlers.onSort?.('created'),
+        },
+
+        // Ctrl+Shift+2 → sort by modified
+        {
+          ctrl: true,
+          shift: true,
+          code: 'Digit2',
+          handler: () => handlers.onSort?.('modified'),
+        },
+
+        // Ctrl+Shift+3 → sort by alphabetical
+        {
+          ctrl: true,
+          shift: true,
+          code: 'Digit3',
+          handler: () => handlers.onSort?.('alphabetical'),
+        },
+
+        // Ctrl+Shift+4 → sort by last_used
+        {
+          ctrl: true,
+          shift: true,
+          code: 'Digit4',
+          handler: () => handlers.onSort?.('last_used'),
         },
       ];
 

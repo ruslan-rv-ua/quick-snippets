@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="logo-vector.svg" alt="QuickSnippets logo" />
+	<img src="logo-vector.svg" alt="QuickSnippets logo" width="120" />
 	<h1>QuickSnippets</h1>
 	<p><strong>A portable Windows launcher for your text snippets — always one keystroke away.</strong></p>
 	<p>
@@ -39,6 +39,8 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Three languages** — English, Ukrainian, and German; language auto-detected from your system
 - **Single-instance** — launching the app again simply brings the existing window to focus
 - **Auto-hide on blur** — the window disappears when you switch away, just like a launcher
+- **Auto-type** — press `Shift+Enter` to type a snippet directly into the active window; no clipboard required
+- **Snippet sorting** — sort by creation date, modification date, alphabetical order, or last used time; toggle with `Ctrl+Shift+1`–`Ctrl+Shift+4`; preference is saved across restarts
 
 ---
 
@@ -60,7 +62,7 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the same folder as the executable. To move or back up the app, copy the entire folder.
+Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder.
 
 > **SHA-256 checksum** — a `.sha256` file is attached to every release for verification.
 
@@ -82,6 +84,8 @@ Give it a short, memorable title — that's what you search by. Paste or type th
 4. Press **Enter** to copy the selected snippet to the clipboard.
 5. Switch to your target application and paste (**Ctrl+V**).
 
+Alternatively, press **Shift+Enter** (instead of **Enter**) to auto-type the snippet directly into the previously active window — without using the clipboard. The window hides, focus returns to the target app, and the text is typed character by character.
+
 The QuickSnippets window hides automatically when you switch away.
 
 ### System tray
@@ -99,7 +103,7 @@ Your privacy is paramount. QuickSnippets is designed to keep your snippets on yo
 - **AES-256-GCM encryption** — sensitive snippets can be password-protected with military-grade encryption
 - **PBKDF2 key derivation** — passwords are stretched with 100,000 iterations to resist brute-force attacks
 - **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
-- **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the application folder; no cloud, no telemetry, no sync
+- **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the `quick-snippets-data` folder next to the executable; no cloud, no telemetry, no sync
 - **No registry** — QuickSnippets does not touch Windows registry or AppData directories
 - **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
 
@@ -147,12 +151,17 @@ For complete details on the security model, threat assessment, and responsible d
 | Arrow Up / Down | Move selection in the snippet list |
 | Home / End | Jump to first / last snippet |
 | Enter | Copy selected snippet to clipboard |
+| Shift+Enter | Auto-type selected snippet into the active application |
 | Ctrl+N or Insert | Create new snippet |
 | Ctrl+E | Edit selected snippet |
 | Delete or Ctrl+D | Delete selected snippet |
 | Ctrl+F or / | Focus the search box |
 | Ctrl+, | Open Settings |
 | Ctrl+Shift+T | Toggle light / dark theme |
+| Ctrl+Shift+1 | Sort by creation date (press again to toggle direction) |
+| Ctrl+Shift+2 | Sort by modification date (press again to toggle direction) |
+| Ctrl+Shift+3 | Sort alphabetically (press again to toggle direction) |
+| Ctrl+Shift+4 | Sort by last used time (press again to toggle direction) |
 | Ctrl+Shift+Space | Announce selected snippet (screen reader) |
 | Escape | Close modal / clear search |
 | Alt+F4 | Quit the application |
@@ -177,6 +186,7 @@ Open Settings with **Ctrl+,** or via the tray menu.
 | Start in tray | Hide the window on launch; only the tray icon is visible |
 | Launch on startup | Start QuickSnippets automatically when Windows starts |
 | Confirm on close | Show a confirmation dialog before quitting |
+| Autotype delay (ms) | Inter-character delay for auto-type (default: 1 ms). Set to `0` for maximum speed. Increase to 10–50 ms if characters are dropped or appear out of order in the target app. **Note:** Auto-type does not work into applications running with elevated privileges (Run as administrator). |
 
 ---
 

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## v0.2.0 - 2026-04-19
+
+### Added
+- **Snippet sorting**: sort the snippet list by creation date, modification date, alphabetical order, or last used time. Switch modes with `Ctrl+Shift+1`–`Ctrl+Shift+4`; pressing the same shortcut again toggles ascending/descending order. The active sort mode is shown as a label next to the search field. Sort preference is saved and restored on app restart.
+- Snippets that have never been used appear at the bottom of the list when sorting by "last used", regardless of sort direction.
+- **Auto-type**: press `Shift+Enter` on any selected snippet to type its content directly into the previously active window — no clipboard involved. Works for both plain and encrypted snippets.
+- **Autotype delay** setting (0–1000 ms, default: 1 ms) — configurable inter-character delay for auto-type. Increase to 10–50 ms if characters are dropped or appear out of order in the target application.
+- Screen reader compatibility for auto-type: primary method uses `PostMessage(WM_CHAR)`, bypassing `WH_KEYBOARD_LL` hooks used by NVDA and JAWS. The `SendInput` fallback enforces a minimum 50 ms inter-character delay.
+- Tabs (`\t`) and all newline variants (`\n`, `\r`, `\r\n`) in auto-typed text are sent as real `VK_TAB` / `VK_RETURN` key events.
+- Emoji and non-BMP characters are auto-typed correctly via UTF-16 surrogate pairs.
+
+### Known Limitations
+- Auto-type does not work into applications running with elevated privileges (UAC / Run as administrator) unless QuickSnippets is also elevated.
+
+### Changed
+- `just final-checks` now verifies version sync across `package.json`, `tauri.conf.json`, and `Cargo.toml` before running other checks.
+- Added `just build-fast` recipe (alias `bf`) for quick builds using `release-fast` Cargo profile.
+- Release workflow: `workflow_dispatch` only (removed automatic `push tag` trigger), auto-creates git tag.
+- Release ZIP now includes `LICENSE` and `README.md` alongside the `.exe`.
+- Scoop bucket update is now a separate manual workflow (`update-scoop.yml`) with SHA256 verification.
+- Removed `notify-scoop-bucket.yml` (replaced by `update-scoop.yml`).
+
 ---
 
 ## v0.1.2 - 2026-03-05

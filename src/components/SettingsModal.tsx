@@ -9,6 +9,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
 import { ThemeContext } from '../contexts/ThemeContext';
 import { LanguageContext } from '../contexts/LanguageContext';
+import { getVersion } from '@tauri-apps/api/app';
 import { getSettings, saveSettings } from '../hooks/useIpc';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { FOCUSABLE_SELECTORS } from '../utils/focusable';
@@ -26,25 +27,28 @@ export function SettingsModal({
   onClose,
   onError,
 }: SettingsModalProps): React.ReactElement | null {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const { theme, toggleTheme } = useContext(ThemeContext);
   const { language, setLanguage } = useContext(LanguageContext);
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     setLoading(true);
     setSettings(null);
-    getSettings()
-      .then((s) => {
-        setSettings(s);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    Promise.all([
+      getSettings(),
+      getVersion().catch(() => null),
+    ]).then(([s, v]) => {
+      setSettings(s);
+      setAppVersion(v);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [isOpen]);
 
   // After async load resolves, move focus to the first interactive element
@@ -174,6 +178,26 @@ export function SettingsModal({
               </label>
             </div>
 
+            {/* Autotype delay */}
+            <div className="form-field">
+              <label htmlFor="settings-autotype-delay">
+                {t('autotypeDelayLabel')}
+              </label>
+              <input
+                id="settings-autotype-delay"
+                type="number"
+                min={0}
+                max={1000}
+                step={1}
+                value={settings?.autotype_delay_ms ?? 1}
+                onChange={(e) => {
+                  const v = Math.max(0, Math.min(1000, Math.floor(Number(e.target.value) || 0)));
+                  setSettings((s) => s ? { ...s, autotype_delay_ms: v } : s);
+                }}
+                style={{ width: '5em' }}
+              />
+            </div>
+
             <p className="settings-hint">
               {t('restartHint')}
             </p>
@@ -191,6 +215,10 @@ export function SettingsModal({
                 {t('save')}
               </button>
             </div>
+
+            {appVersion && (
+              <p className="settings-version">{tf.appVersion(appVersion)}</p>
+            )}
           </>
         )}
       </div>

@@ -14,6 +14,7 @@ pub struct SnippetRow {
     pub is_encrypted: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub last_used_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -21,9 +22,7 @@ pub struct SnippetRow {
 // ---------------------------------------------------------------------------
 
 pub fn get_db_path() -> PathBuf {
-    let exe_path = std::env::current_exe().expect("Failed to get current exe path");
-    let exe_dir = exe_path.parent().expect("Failed to get exe directory");
-    exe_dir.join("snippets.db")
+    crate::paths::get_data_dir().join("snippets.db")
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +40,7 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             is_encrypted INTEGER NOT NULL DEFAULT 0,
             created_at   TEXT    NOT NULL,
             updated_at   TEXT    NOT NULL,
+            last_used_at TEXT,
             CHECK (length(title) >= 3 AND length(title) <= 50),
             CHECK (length(content) <= 65536)
         );
@@ -49,6 +49,14 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_snippets_title
             ON snippets (title);",
     )?;
+    // Schema migrations via user_version
+    let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 1 {
+        conn.execute_batch(
+            "ALTER TABLE snippets ADD COLUMN last_used_at TEXT;"
+        ).ok(); // .ok() because fresh DBs already have the column from CREATE TABLE
+        conn.execute_batch("PRAGMA user_version = 1;")?;
+    }
     Ok(())
 }
 
@@ -127,7 +135,7 @@ pub fn create_snippet(
 
 pub fn get_snippet_by_id(conn: &Connection, id: i64) -> Result<SnippetRow> {
     conn.query_row(
-        "SELECT id, title, content, is_encrypted, created_at, updated_at
+        "SELECT id, title, content, is_encrypted, created_at, updated_at, last_used_at
          FROM snippets WHERE id = ?1",
         params![id],
         |row| {
@@ -138,6 +146,7 @@ pub fn get_snippet_by_id(conn: &Connection, id: i64) -> Result<SnippetRow> {
                 is_encrypted: row.get::<_, i64>(3)? != 0,
                 created_at: row.get(4)?,
                 updated_at: row.get(5)?,
+                last_used_at: row.get(6)?,
             })
         },
     )
@@ -181,6 +190,18 @@ pub fn delete_snippet(conn: &Connection, id: i64) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Usage tracking
+// ---------------------------------------------------------------------------
+
+pub fn touch_last_used(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE snippets SET last_used_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?1",
+        params![id],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Search list
 // ---------------------------------------------------------------------------
 
@@ -188,6 +209,47 @@ pub fn list_snippets_for_search(conn: &Connection) -> Vec<(i64, String, bool)> {
     let mut stmt = match conn.prepare(
         "SELECT id, title, is_encrypted FROM snippets ORDER BY updated_at DESC",
     ) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+
+    stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)? != 0,
+        ))
+    })
+    .map(|rows| rows.filter_map(|r| r.ok()).collect())
+    .unwrap_or_default()
+}
+
+/// List all snippets sorted by the given mode and direction.
+/// Unknown mode/direction falls back to "modified" / "desc".
+pub fn list_snippets_sorted(
+    conn: &Connection,
+    sort_mode: &str,
+    sort_direction: &str,
+) -> Vec<(i64, String, bool)> {
+    let dir = match sort_direction {
+        "asc" => "ASC",
+        "desc" => "DESC",
+        _ => "DESC",
+    };
+
+    let order_clause = match sort_mode {
+        "created" => format!("created_at {dir}"),
+        "modified" => format!("updated_at {dir}"),
+        "alphabetical" => format!("title COLLATE NOCASE {dir}"),
+        "last_used" => format!("last_used_at IS NULL, last_used_at {dir}"),
+        _ => format!("updated_at {dir}"),
+    };
+
+    let sql = format!(
+        "SELECT id, title, is_encrypted FROM snippets ORDER BY {order_clause}"
+    );
+
+    let mut stmt = match conn.prepare(&sql) {
         Ok(s) => s,
         Err(_) => return vec![],
     };
@@ -488,15 +550,10 @@ mod tests {
     }
 
     #[test]
-    fn test_get_db_path_is_next_to_exe() {
+    fn test_get_db_path_is_in_data_dir() {
         let db_path = get_db_path();
-        let exe_dir = std::env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        assert_eq!(db_path, exe_dir.join("snippets.db"));
-        // Must NOT contain "AppData"
+        let data_dir = crate::paths::get_data_dir();
+        assert_eq!(db_path, data_dir.join("snippets.db"));
         assert!(
             !db_path.to_string_lossy().contains("AppData"),
             "db path must not be in AppData"
@@ -571,7 +628,7 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
-        for expected in &["id", "title", "content", "is_encrypted", "created_at", "updated_at"] {
+        for expected in &["id", "title", "content", "is_encrypted", "created_at", "updated_at", "last_used_at"] {
             assert!(
                 columns.iter().any(|c| c == expected),
                 "column '{}' not found in snippets table; found: {:?}",
@@ -579,6 +636,22 @@ mod tests {
                 columns
             );
         }
+    }
+
+    #[test]
+    fn test_schema_has_last_used_at_column() {
+        let conn = setup_test_db();
+        let mut stmt = conn.prepare("PRAGMA table_info(snippets)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            columns.contains(&"last_used_at".to_string()),
+            "last_used_at column not found; found: {:?}",
+            columns
+        );
     }
 
     /// The unique index on `title` is created by open_and_init_db.
@@ -644,6 +717,130 @@ mod tests {
             .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
             .unwrap();
         assert_eq!(mode, "delete", "journal_mode must be DELETE on a real file");
+    }
+
+    // --- touch_last_used ---
+
+    #[test]
+    fn test_touch_last_used_sets_timestamp() {
+        let conn = setup_test_db();
+        let id = create_snippet(&conn, "test snip", b"data".to_vec(), false).unwrap();
+        let row = get_snippet_by_id(&conn, id).unwrap();
+        assert!(row.last_used_at.is_none(), "last_used_at should be None initially");
+
+        touch_last_used(&conn, id).unwrap();
+        let row = get_snippet_by_id(&conn, id).unwrap();
+        assert!(row.last_used_at.is_some(), "last_used_at should be set after touch");
+    }
+
+    #[test]
+    fn test_touch_last_used_updates_on_second_call() {
+        let conn = setup_test_db();
+        let id = create_snippet(&conn, "test snip", b"data".to_vec(), false).unwrap();
+        touch_last_used(&conn, id).unwrap();
+        let first = get_snippet_by_id(&conn, id).unwrap().last_used_at.unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        touch_last_used(&conn, id).unwrap();
+        let second = get_snippet_by_id(&conn, id).unwrap().last_used_at.unwrap();
+        assert!(second > first, "second touch should have a later timestamp");
+    }
+
+    // --- list_snippets_sorted ---
+
+    #[test]
+    fn test_list_snippets_sorted_by_title_asc() {
+        let conn = setup_test_db();
+        create_snippet(&conn, "Charlie", b"c".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        create_snippet(&conn, "Alpha", b"a".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
+
+        let list = list_snippets_sorted(&conn, "alphabetical", "asc");
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].1, "Alpha");
+        assert_eq!(list[1].1, "Bravo");
+        assert_eq!(list[2].1, "Charlie");
+    }
+
+    #[test]
+    fn test_list_snippets_sorted_by_title_desc() {
+        let conn = setup_test_db();
+        create_snippet(&conn, "Alpha", b"a".to_vec(), false).unwrap();
+        create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
+        create_snippet(&conn, "Charlie", b"c".to_vec(), false).unwrap();
+
+        let list = list_snippets_sorted(&conn, "alphabetical", "desc");
+        assert_eq!(list[0].1, "Charlie");
+        assert_eq!(list[1].1, "Bravo");
+        assert_eq!(list[2].1, "Alpha");
+    }
+
+    #[test]
+    fn test_list_snippets_sorted_by_created_desc() {
+        let conn = setup_test_db();
+        let id_a = create_snippet(&conn, "AAA first", b"a".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let id_b = create_snippet(&conn, "BBB second", b"b".to_vec(), false).unwrap();
+
+        let list = list_snippets_sorted(&conn, "created", "desc");
+        assert_eq!(list[0].0, id_b);
+        assert_eq!(list[1].0, id_a);
+    }
+
+    #[test]
+    fn test_list_snippets_sorted_by_created_asc() {
+        let conn = setup_test_db();
+        let id_a = create_snippet(&conn, "AAA first", b"a".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let id_b = create_snippet(&conn, "BBB second", b"b".to_vec(), false).unwrap();
+
+        let list = list_snippets_sorted(&conn, "created", "asc");
+        assert_eq!(list[0].0, id_a);
+        assert_eq!(list[1].0, id_b);
+    }
+
+    #[test]
+    fn test_list_snippets_sorted_by_last_used_nulls_last() {
+        let conn = setup_test_db();
+        let id_a = create_snippet(&conn, "Never used", b"a".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let id_b = create_snippet(&conn, "Used once", b"b".to_vec(), false).unwrap();
+        touch_last_used(&conn, id_b).unwrap();
+
+        let list = list_snippets_sorted(&conn, "last_used", "desc");
+        assert_eq!(list[0].0, id_b, "used snippet should be first");
+        assert_eq!(list[1].0, id_a, "never-used snippet should be last");
+    }
+
+    #[test]
+    fn test_list_snippets_sorted_by_last_used_asc_nulls_last() {
+        let conn = setup_test_db();
+        let id_a = create_snippet(&conn, "Never used", b"a".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let id_b = create_snippet(&conn, "Used first", b"b".to_vec(), false).unwrap();
+        touch_last_used(&conn, id_b).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let id_c = create_snippet(&conn, "Used second", b"c".to_vec(), false).unwrap();
+        touch_last_used(&conn, id_c).unwrap();
+
+        let list = list_snippets_sorted(&conn, "last_used", "asc");
+        assert_eq!(list[0].0, id_b, "oldest usage first");
+        assert_eq!(list[1].0, id_c, "newest usage second");
+        assert_eq!(list[2].0, id_a, "never-used last");
+    }
+
+    #[test]
+    fn test_list_snippets_sorted_unknown_mode_falls_back() {
+        let conn = setup_test_db();
+        let id_a = create_snippet(&conn, "AAA first", b"a".to_vec(), false).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let id_b = create_snippet(&conn, "BBB second", b"b".to_vec(), false).unwrap();
+
+        // Unknown mode should fall back to "modified" desc
+        let list = list_snippets_sorted(&conn, "unknown", "xyz");
+        assert_eq!(list[0].0, id_b);
+        assert_eq!(list[1].0, id_a);
     }
 
     // --- handle_db_corruption ---

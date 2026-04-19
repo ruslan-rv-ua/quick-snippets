@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from './useDebounce';
-import { searchSnippets } from './useIpc';
+import { searchSnippets, getSortedSnippets } from './useIpc';
 import type { SearchResult } from '../types';
+
+export interface SortConfig {
+  sortMode: string;
+  sortDirection: string;
+}
 
 export interface SearchLogicState {
   query: string;
@@ -14,7 +19,10 @@ export interface SearchLogicState {
   reset: () => void;
 }
 
-export function useSearchLogic(): SearchLogicState {
+export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
+  const sortMode = sortConfig?.sortMode ?? 'modified';
+  const sortDirection = sortConfig?.sortDirection ?? 'desc';
+
   const [query, setQuery] = useState<string>('');
   const [snippets, setSnippets] = useState<SearchResult[]>([]);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
@@ -23,14 +31,19 @@ export function useSearchLogic(): SearchLogicState {
 
   // ── Fetch snippets on debounced query change OR window show ────────────
   useEffect(() => {
-    searchSnippets(debouncedQuery)
+    const fetchPromise =
+      debouncedQuery.trim() === ''
+        ? getSortedSnippets(sortMode, sortDirection)
+        : searchSnippets(debouncedQuery);
+
+    fetchPromise
       .then((results) => {
         const safeResults = Array.isArray(results) ? results : [];
         setSnippets(safeResults);
         setActiveIndex(safeResults.length > 0 ? 0 : -1);
       })
       .catch(() => void 0);
-  }, [debouncedQuery, refreshTick]);
+  }, [debouncedQuery, refreshTick, sortMode, sortDirection]);
 
   // ── Reset search logic ─────────────────────────────────────────────────
   const reset = useCallback(() => {

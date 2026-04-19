@@ -207,4 +207,46 @@ describe('useKeyboard', () => {
     fire({ code: 'KeyT', key: 'Е', ctrlKey: true, shiftKey: true });
     expect(toggleTheme).toHaveBeenCalledOnce();
   });
+
+  // ── Ctrl+Shift+1-4 sort shortcuts ────────────────────────────────────────
+  it('fires onSort with "created" on Ctrl+Shift+1', () => {
+    const onSort = vi.fn();
+    const h = makeHandlers({ onSort });
+    renderHook(() => useKeyboard(h), { wrapper });
+    fire({ ctrlKey: true, shiftKey: true, code: 'Digit1', key: '1' });
+    expect(onSort).toHaveBeenCalledWith('created');
+  });
+
+  it('fires onSort with "modified" on Ctrl+Shift+2', () => {
+    const onSort = vi.fn();
+    const h = makeHandlers({ onSort });
+    renderHook(() => useKeyboard(h), { wrapper });
+    fire({ ctrlKey: true, shiftKey: true, code: 'Digit2', key: '2' });
+    expect(onSort).toHaveBeenCalledWith('modified');
+  });
+
+  it('fires onSort with "alphabetical" on Ctrl+Shift+3', () => {
+    const onSort = vi.fn();
+    const h = makeHandlers({ onSort });
+    renderHook(() => useKeyboard(h), { wrapper });
+    fire({ ctrlKey: true, shiftKey: true, code: 'Digit3', key: '3' });
+    expect(onSort).toHaveBeenCalledWith('alphabetical');
+  });
+
+  it('fires onSort with "last_used" on Ctrl+Shift+4', () => {
+    const onSort = vi.fn();
+    const h = makeHandlers({ onSort });
+    renderHook(() => useKeyboard(h), { wrapper });
+    fire({ ctrlKey: true, shiftKey: true, code: 'Digit4', key: '4' });
+    expect(onSort).toHaveBeenCalledWith('last_used');
+  });
+
+  it('does not fire onSort when onSort handler is not provided', () => {
+    const h = makeHandlers({ onSort: undefined });
+    renderHook(() => useKeyboard(h), { wrapper });
+    // Should not throw when onSort is undefined
+    expect(() => {
+      fire({ ctrlKey: true, shiftKey: true, code: 'Digit1', key: '1' });
+    }).not.toThrow();
+  });
 });

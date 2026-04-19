@@ -11,6 +11,16 @@ export function searchSnippets(query: string): Promise<SearchResult[]> {
   return invoke<SearchResult[]>('search_snippets', { query });
 }
 
+export function getSortedSnippets(
+  sortMode: string,
+  sortDirection: string,
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>('get_sorted_snippets', {
+    sortMode,
+    sortDirection,
+  });
+}
+
 export function getSnippetById(id: number): Promise<SnippetView> {
   return invoke<SnippetView>('get_snippet_by_id', { id });
 }
@@ -34,6 +44,15 @@ export function createSnippet(
  */
 export function activateSnippet(id: number, password: string): Promise<void> {
   return invoke<void>('activate_snippet', { id, password });
+}
+
+/**
+ * Auto-type a snippet into the active OS input field via SendInput.
+ * For encrypted snippets, `password` must be provided.
+ * IPC response is always `void` — plaintext is never returned.
+ */
+export function autotypeSnippet(id: number, password: string): Promise<void> {
+  return invoke<void>('autotype_snippet', { id, password });
 }
 
 export function updateSnippet(

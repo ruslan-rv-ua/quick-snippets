@@ -10,6 +10,8 @@ export interface SearchBoxProps {
   activeIndex: number;
   onActiveIndexChange: (index: number) => void;
   onActivate: (snippet: SearchResult) => void;
+  onAutotype?: (snippet: SearchResult) => void;
+  sortLabel?: string;
 }
 
 export interface SearchBoxHandle {
@@ -24,6 +26,8 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     activeIndex,
     onActiveIndexChange,
     onActivate,
+    onAutotype,
+    sortLabel,
   },
   ref,
 ) {
@@ -45,6 +49,7 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     value,
     onNavigate: onActiveIndexChange,
     onSelect: onActivate,
+    onAutotype,
     onEscape: () => {}, // not used in current logic, but kept for interface completeness
     onSetValue: onChange,
   });
@@ -81,6 +86,14 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
         onKeyDown={handleKeyDown}
         placeholder={t('searchPlaceholder')}
       />
+      {sortLabel && (
+        <span
+          className="sort-label"
+          aria-hidden="true"
+        >
+          {sortLabel}
+        </span>
+      )}
     </div>
   );
 });

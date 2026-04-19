@@ -3,61 +3,38 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # ЩО ВІДБУВАЄТЬСЯ ПРИ ЗАПУСКУ
-#   push тегу v*  →  збірка  →  ZIP + SHA256  →  GitHub Release  →
-#   →  repository_dispatch  →  scoop-bucket автоматично оновлює маніфест
+#   workflow_dispatch (ручний)  →  створення тегу  →  збірка  →
+#   →  ZIP + SHA256  →  GitHub Release
 #
-# ТРИГЕРИ
-#   • push тегу  v*        — основний шлях: git tag v1.2.3 && git push --tags
-#   • workflow_dispatch    — ручний перезапуск (наприклад, якщо автоматичний
-#                            завершився з помилкою, а код вже виправлено)
+# ТРИГЕР
+#   • workflow_dispatch — єдиний спосіб запуску. Вказується версія та прапорець
+#     pre-release. Тег v{version} створюється автоматично.
 #
 # PRE-RELEASE
-#   Теги з суфіксами -alpha, -beta, -rc автоматично позначаються як pre-release.
-#   Крім того, при ручному запуску можна явно поставити прапорець prerelease.
-#   Для pre-release крок "Update Scoop bucket" пропускається.
+#   Якщо позначено прапорець prerelease — реліз маркується як pre-release.
 #
-# НЕОБХІДНІ СЕКРЕТИ
-#   SCOOP_BUCKET_TOKEN  — Fine-grained PAT з правом Contents: write на scoop-bucket
+# SCOOP BUCKET
+#   Оновлюється ОКРЕМИМ workflow (update-scoop.yml) вручну після перевірки
+#   релізу. Цей workflow НЕ відправляє repository_dispatch.
 #
 # BUILD STRATEGY
-#   We use `cargo build --release` DIRECTLY instead of `npm run tauri build`.
-#   Why: `tauri.conf.json` has `"bundle": { "active": true, "targets": "all" }`
-#   which would invoke Wix/NSIS to produce MSI/NSIS installers.  The portability
-#   model of this app needs only the raw .exe — no installer.
-#   Procedure:
-#     1. `npm ci`                       → install JS deps
-#     2. `npx tauri build --no-bundle` → runs `npm run build` (via
-#        beforeBuildCommand), sets compile-time constants that embed the
-#        frontend into the binary, and compiles the Rust release binary —
-#        all without invoking Wix/NSIS to produce an installer.
-#        NOTE: --no-bundle skips the bundler, which means WebView2Loader.dll
-#        is NOT automatically copied to target/release/.
-#     3. Manual copy of WebView2Loader.dll from the webview2-com-sys build
-#        output directory to target/release/ (step 7b).
+#   `npx tauri build --no-bundle`:
+#     1. Запускає `npm run build` (beforeBuildCommand) — збірка фронтенду
+#     2. Встановлює compile-time константи для вбудовування фронтенду в бінарник
+#     3. Компілює Rust release binary
+#     4. --no-bundle пропускає Wix/NSIS (портативний .exe без інсталятора)
 #
 # RELEASE ARTIFACTS
-#   quick-snippets-windows-x64-v{version}.zip   — portable archive
-#   quick-snippets-windows-x64-v{version}.zip.sha256  — SHA-256 checksum
-#
-# SCOOP BUCKET INTEGRATION (planned)
-#   A separate workflow (release-scoop.yml) will listen to the `release` event
-#   published here and update a Scoop manifest.  The download URL is predictable:
-#     https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-windows-x64-v{version}.zip
-#   The SHA-256 checksum file lets the Scoop bucket workflow populate the `hash`
-#   field without re-downloading the ZIP.
+#   quick-snippets-{version}-windows-x64.zip        — portable archive (.exe + LICENSE + README.md)
+#   quick-snippets-{version}-windows-x64.zip.sha256  — SHA-256 checksum
 #
 # PERMISSIONS
-#   Only `contents: write` is required to create releases and upload assets.
-#   All other permissions are left at the default (`read` for public repos,
-#   `none` for private) — principle of least privilege.
+#   `contents: write` — створення тегів, релізів, завантаження артефактів.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -71,11 +48,7 @@ on:
         default: false
 
 env:
-  # ─── ЄДИНЕ МІСЦЕ ДЕ ТРЕБА ЗМІНИТИ ІМ'Я ───────────────────────────────────
-  # Регістр важливий: це ім'я буде використано в назві ZIP-архіву.
-  # APP_ID (для event-type у scoop-bucket) буде автоматично приведено до lowercase.
   APP_NAME: quick-snippets
-  # ──────────────────────────────────────────────────────────────────────────
 
 permissions:
   contents: write
@@ -131,9 +104,6 @@ jobs:
       #      tauri.conf.json) before compiling Rust, ensuring the frontend dist/
       #      directory is always fresh and in sync.
       #
-      # WebView2Loader.dll is NOT copied by --no-bundle (that happens in the
-      # bundler step which we skip).  It is copied manually in step 7b below.
-      #
       # `--no-bundle` skips Wix/NSIS installer generation entirely, even though
       # `bundle.active = true` in tauri.conf.json.  This is distinct from
       # `--bundles` whose only valid values are `msi` and `nsis` — there is no
@@ -144,38 +114,13 @@ jobs:
       - name: Build Tauri app (release, no installer bundle)
         run: npx tauri build --no-bundle
 
-      # ── 7b. Copy WebView2Loader.dll to target/release/ ───────────────────────
-      # `--no-bundle` skips the Tauri bundler entirely, including the step that
-      # copies WebView2Loader.dll from the webview2-com-sys build-script output
-      # directory to target/release/.  Without this DLL next to the exe, the
-      # WebView2 bootstrapper cannot locate the runtime and the app shows
-      # ERR_CONNECTION_REFUSED on launch.
-      #
-      # The DLL is produced by the `webview2-com-sys` crate's build script and
-      # lands at a hashed path:
-      #   target/release/build/webview2-com-sys-{hash}/out/x64/WebView2Loader.dll
-      # We glob for the x64 variant and copy it to target/release/.
-      - name: Copy WebView2Loader.dll to release dir
-        shell: pwsh
-        run: |
-          $dll = Get-ChildItem `
-            'src-tauri/target/release/build/webview2-com-sys-*/out/x64/WebView2Loader.dll' `
-            | Select-Object -First 1
-          if (-not $dll) {
-            Write-Error 'WebView2Loader.dll not found in build output — check webview2-com-sys build output'
-            exit 1
-          }
-          Copy-Item $dll.FullName 'src-tauri/target/release/WebView2Loader.dll'
-          $sizeMB = [Math]::Round($dll.Length / 1MB, 2)
-          Write-Host "Copied: $($dll.FullName)  ($sizeMB MB)"
-
       # ── Verify artifacts ──────────────────────────────────────────────────────
       # Швидка перевірка — падаємо одразу з чітким повідомленням якщо файл відсутній.
       - name: Verify release artifacts exist
         shell: pwsh
         run: |
           $releaseDir = 'src-tauri/target/release'
-          $required   = @('quick-snippets.exe', 'WebView2Loader.dll')
+          $required   = @('quick-snippets.exe')
           $allOk = $true
           foreach ($file in $required) {
             $path = Join-Path $releaseDir $file
@@ -191,21 +136,19 @@ jobs:
 
       # ─────────────────────────────────────────────────────────────────────────
 
-      # При push-тегу: VERSION береться з тегу (refs/tags/v1.2.3 → 1.2.3)
       # При ручному запуску: VERSION береться з inputs.version
-      - name: Get version and app info
+      - name: Get version
         id: info
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ inputs.version }}"
-          else
-            VERSION=${GITHUB_REF#refs/tags/v}
-          fi
-          APP_ID=$(echo "${{ env.APP_NAME }}" | tr '[:upper:]' '[:lower:]')
+          VERSION="${{ inputs.version }}"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "APP_ID=$APP_ID" >> $GITHUB_OUTPUT
-          echo "Building ${{ env.APP_NAME }} version $VERSION (app id: $APP_ID)"
+          echo "Building ${{ env.APP_NAME }} version $VERSION"
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ steps.info.outputs.VERSION }}"
+          git push origin "v${{ steps.info.outputs.VERSION }}"
 
       - name: Create release package
         id: package
@@ -219,7 +162,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $packageDir
 
           Copy-Item "src-tauri/target/release/quick-snippets.exe" -Destination $packageDir
-          Copy-Item "src-tauri/target/release/WebView2Loader.dll" -Destination $packageDir
+          Copy-Item "LICENSE" -Destination $packageDir
+          Copy-Item "README.md" -Destination $packageDir
 
           Compress-Archive -Path "$packageDir\*" -DestinationPath $zipName -Force
 
@@ -241,23 +185,6 @@ jobs:
             ${{ env.APP_NAME }}-*.zip.sha256
           generate_release_notes: true
           draft: false
-          # Pre-release якщо: тег містить -alpha/-beta/-rc АБО вручну позначено
-          prerelease: ${{ inputs.prerelease || contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          prerelease: ${{ inputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Оновлення scoop-bucket пропускається для pre-release (будь-якого виду)
-      - name: Update Scoop bucket
-        if: ${{ !inputs.prerelease && !contains(github.ref, '-alpha') && !contains(github.ref, '-beta') && !contains(github.ref, '-rc') }}
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
-          repository: ruslan-rv-ua/scoop-bucket
-          event-type: update-${{ steps.info.outputs.APP_ID }}
-          client-payload: |
-            {
-              "app": "${{ steps.info.outputs.APP_ID }}",
-              "version": "${{ steps.info.outputs.VERSION }}",
-              "hash": "${{ steps.package.outputs.HASH }}",
-              "url": "https://github.com/${{ github.repository }}/releases/download/v${{ steps.info.outputs.VERSION }}/${{ steps.package.outputs.ZIP_NAME }}"
-            }

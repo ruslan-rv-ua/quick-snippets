@@ -177,6 +177,28 @@ pub fn delete_snippet_inner(conn: &Connection, id: i64) -> Result<(), String> {
     db::delete_snippet(conn, id).map_err(|e| e.to_string())
 }
 
+pub fn get_sorted_snippets_inner(
+    conn: &Connection,
+    sort_mode: &str,
+    sort_direction: &str,
+) -> Result<Vec<search::SearchResult>, String> {
+    let rows = db::list_snippets_sorted(conn, sort_mode, sort_direction);
+    Ok(rows
+        .into_iter()
+        .map(|(id, title, is_encrypted)| search::SearchResult {
+            id,
+            title,
+            score: 0,
+            matched_positions: vec![],
+            is_encrypted,
+        })
+        .collect())
+}
+
+pub fn touch_last_used_inner(conn: &Connection, id: i64) -> Result<(), String> {
+    db::touch_last_used(conn, id).map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Tauri AppState + commands — compiled only outside test mode
 // ---------------------------------------------------------------------------
@@ -232,7 +254,9 @@ pub mod tauri_commands {
         // Get plaintext in a limited scope so it is dropped before we return
         let plaintext = {
             let conn = state.conn.lock().map_err(|e| e.to_string())?;
-            activate_snippet_get_content(&conn, id, &password)?
+            let content = activate_snippet_get_content(&conn, id, &password)?;
+            db::touch_last_used(&conn, id).ok();
+            content
         };
         // SECURITY: only clipboard call here — plaintext never enters IPC response.
         // plaintext is already Zeroizing<Vec<u8>>, so it will be securely erased on drop.
@@ -266,6 +290,16 @@ pub mod tauri_commands {
     pub fn delete_snippet(id: i64, state: State<AppState>) -> Result<(), String> {
         let conn = state.conn.lock().map_err(|e| e.to_string())?;
         delete_snippet_inner(&conn, id)
+    }
+
+    #[tauri::command]
+    pub fn get_sorted_snippets(
+        sort_mode: String,
+        sort_direction: String,
+        state: State<AppState>,
+    ) -> Result<Vec<search::SearchResult>, String> {
+        let conn = state.conn.lock().map_err(|e| e.to_string())?;
+        get_sorted_snippets_inner(&conn, &sort_mode, &sort_direction)
     }
 
     #[tauri::command]
@@ -353,6 +387,57 @@ pub mod tauri_commands {
             .lock()
             .ok()
             .and_then(|mut n| n.take())
+    }
+
+    /// Delay before typing to let the target app regain focus after window.hide().
+    const FOCUS_DELAY_MS: u64 = 150;
+
+    #[cfg(target_os = "windows")]
+    #[tauri::command]
+    pub fn autotype_snippet(
+        id: i64,
+        password: String,
+        window: Window,
+        state: State<AppState>,
+    ) -> Result<(), String> {
+        use zeroize::Zeroize;
+
+        let plaintext = {
+            let conn = state.conn.lock().map_err(|e| e.to_string())?;
+            let content = activate_snippet_get_content(&conn, id, &password)?;
+            db::touch_last_used(&conn, id).ok();
+            content
+        };
+
+        // Convert to String for typing; plaintext (Zeroizing<Vec<u8>>) drops after this block.
+        let mut text: Zeroizing<String> = match String::from_utf8(plaintext.to_vec()) {
+            Ok(s) => Zeroizing::new(s),
+            Err(e) => {
+                let mut bytes = e.into_bytes();
+                bytes.zeroize();
+                return Err("Invalid UTF-8 content".to_string());
+            }
+        };
+
+        // Hide window so the target app receives focus.
+        let _ = window.hide();
+        std::thread::sleep(std::time::Duration::from_millis(FOCUS_DELAY_MS));
+
+        // Read user-configured inter-character delay.
+        let delay_ms = state
+            .settings
+            .lock()
+            .map(|s| s.autotype_delay_ms)
+            .unwrap_or(0);
+
+        // Type the text via PostMessage (primary) or SendInput (fallback).
+        let result = crate::autotype::win::send_unicode_text(&text, delay_ms);
+
+        // Zeroize text before returning — drop will also zeroize, but be explicit.
+        text.zeroize();
+
+        result
+        // IPC response: Ok(()) or Err(...) — plaintext NEVER in the response.
     }
 
     #[tauri::command]
@@ -608,6 +693,47 @@ mod tests {
         let second = notification.take();
         assert_eq!(first, Some("Warning!".to_string()));
         assert_eq!(second, None);
+    }
+
+    // === get_sorted_snippets ===
+
+    #[test]
+    fn test_get_sorted_snippets_inner_alphabetical_asc() {
+        let conn = setup();
+        db::create_snippet(&conn, "Charlie", b"c".to_vec(), false).unwrap();
+        db::create_snippet(&conn, "Alpha", b"a".to_vec(), false).unwrap();
+        db::create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
+
+        let results = get_sorted_snippets_inner(&conn, "alphabetical", "asc").unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].title, "Alpha");
+        assert_eq!(results[1].title, "Bravo");
+        assert_eq!(results[2].title, "Charlie");
+        assert_eq!(results[0].score, 0);
+        assert!(results[0].matched_positions.is_empty());
+    }
+
+    #[test]
+    fn test_get_sorted_snippets_inner_returns_search_result_type() {
+        let conn = setup();
+        db::create_snippet(&conn, "Test item", b"data".to_vec(), true).unwrap();
+
+        let results = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].is_encrypted, true);
+        assert_eq!(results[0].score, 0);
+    }
+
+    #[test]
+    fn test_touch_last_used_inner_updates_timestamp() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "test snip", b"data".to_vec(), false).unwrap();
+        let before = db::get_snippet_by_id(&conn, id).unwrap();
+        assert!(before.last_used_at.is_none());
+
+        touch_last_used_inner(&conn, id).unwrap();
+        let after = db::get_snippet_by_id(&conn, id).unwrap();
+        assert!(after.last_used_at.is_some());
     }
 
     // === end-to-end command integration ===

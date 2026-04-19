@@ -1,6 +1,6 @@
 [package]
 name = "quick-snippets"
-version = "0.1.2"
+version = "0.2.0"
 description = "QuickSnippets — portable Windows desktop app for quick snippet access"
 authors = ["you"]
 edition = "2021"
@@ -33,6 +33,9 @@ serde_json = "1"
 anyhow = "1"
 rfd = "0.14"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation"] }
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -41,4 +44,12 @@ strip = true
 lto = true
 codegen-units = 1
 opt-level = "s"
+panic = "abort"
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 16
+strip = false
 
