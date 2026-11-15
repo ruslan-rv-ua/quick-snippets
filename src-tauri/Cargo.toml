@@ -14,12 +14,11 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
-tauri-plugin-dialog = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 aes-gcm = "0.10"
 pbkdf2 = "0.12"
@@ -42,7 +41,7 @@ tempfile = "3"
 strip = true
 lto = true
 codegen-units = 1
-opt-level = "s"
+opt-level = "z"
 panic = "abort"
 
 [profile.release-fast]

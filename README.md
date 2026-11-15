@@ -49,13 +49,13 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 QuickSnippets is a portable application — no installer needed.
 
 1. Go to the [Releases page](https://github.com/ruslan-rv-ua/quick-snippets/releases).
-2. Download the latest `quick-snippets-windows-x64-vX.Y.Z.zip`.
+2. Download the latest `quick-snippets-X.Y.Z-windows-x64.zip`.
 3. Extract the ZIP to any folder (e.g. `C:\Tools\QuickSnippets\`).
 4. Run `quick-snippets.exe`.
 
 ### Installing via Scoop
 
-If you use [Scoop](https://scoop.sh/), you can install QuickSnippets from the official bucket:
+If you use [Scoop](https://scoop.sh/), you can install QuickSnippets from the author's bucket:
 
 ```powershell
 scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
@@ -63,6 +63,8 @@ scoop install quick-snippets
 ```
 
 Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder.
+
+With Scoop, that folder is kept across updates in `~\scoop\persist\quick-snippets\quick-snippets-data` — back up that folder instead.
 
 > **SHA-256 checksum** — a `.sha256` file is attached to every release for verification.
 

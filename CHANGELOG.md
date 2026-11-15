@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+- Smaller release executable (5.3 MB → 3.8 MB): PNG-compressed app icon, unused Tauri plugin commands no longer compiled in, an unused dependency removed, and `opt-level = "z"`.
+- The main window no longer has direct access to the clipboard, global-shortcut, and autostart plugins; these features run in the Rust backend.
+- CI: lint and all tests now run on every push to `develop`/`main` and on pull requests.
+- Scoop: the manifest is now updated by Excavator in the `scoop-bucket` repository; `update-scoop.yml` was removed from this repository.
+
+### Fixed
+- READMEs: correct release ZIP name and the Scoop data folder location.
+
 ## v0.2.0 - 2026-04-19
 
 ### Added

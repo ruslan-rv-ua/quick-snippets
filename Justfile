@@ -21,7 +21,6 @@ alias c   := check
 alias l   := lint
 alias fmt := format
 alias fc  := final-checks
-alias gdb := generate-demo-db
 
 # Show this list
 [private]
@@ -137,10 +136,6 @@ final-checks:
 db-reset:
     Remove-Item -Force quick-snippets-data\snippets.db -ErrorAction SilentlyContinue
     @Write-Host "[OK] snippets.db removed" -ForegroundColor Yellow
-
-# Generate demo SQLite DB with 40+ snippets (uses generate_demo_db.py in project root)
-generate-demo-db:
-    python .\generate_demo_db.py
 
 # Remove dist/ and src-tauri/target/
 clean:
