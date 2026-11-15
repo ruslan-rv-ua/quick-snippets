@@ -1,34 +1,49 @@
 ---
 id: TASK-3
-title: Add end-to-end UI tests with tauri-driver
+title: Decide whether to add end-to-end UI tests with tauri-driver
 status: To Do
 assignee: []
 created_date: '2026-11-15T19:12:00Z'
-updated_date: '2026-11-15T23:18:00Z'
+updated_date: '2026-11-15T23:33:00Z'
 labels:
-  - testing accessibility
-dependencies: []
+  - testing
+  - accessibility
+  - investigation
+  - model-opus
+  - effort-high
+milestone: m-2
+dependencies:
+  - TASK-4
 references:
   - https://v2.tauri.app/develop/tests/webdriver/
+  - scripts/smoke-nvda.ps1
+  - .github/workflows/ci.yml
 priority: medium
-ordinal: 3000
+ordinal: 5000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Changes to Tauri capabilities, plugins or build settings (for example removeUnusedCommands) can break features that unit tests do not see, because Vitest mocks all Tauri APIs. Today the only check is a manual run of the release exe, which is slow and easy to skip. The author uses the NVDA screen reader, so the tests should also protect accessibility: focus moves, accessible names and live announcements. tauri-driver (official Tauri WebDriver bridge) works on Windows with msedgedriver.
+Changes to Tauri capabilities, plugins or build settings (for example removeUnusedCommands) can break features that unit tests do not see, because Vitest mocks all Tauri APIs. `just smoke` (scripts/smoke-nvda.ps1) now covers most flows on the real exe with NVDA, but it needs the user to keep hands off the keyboard and cannot run in CI. This task decides whether tauri-driver end-to-end tests are worth adding on top of it; TASK-6 builds them only if the answer is go.
 
-Since this task was written, `just smoke` (scripts/smoke-nvda.ps1) covers most of these flows on the real exe with NVDA, but it needs the user to keep hands off the keyboard and cannot run in CI. So start with research: whether tauri-driver works here (msedgedriver must match the installed WebView2 runtime, on the developer machine and on windows-latest), what WebDriver cannot reach (the global hotkey, the tray, autotype into another window), and whether accessible names and focus can be checked through it. Decide what the suite would add beyond just smoke, mainly coverage in CI, or whether the task should be dropped. Ask the user before any run that opens windows or sends keys on their desktop.
+Research: whether tauri-driver works here (msedgedriver must match the installed WebView2 runtime, on the developer machine and on windows-latest), what WebDriver cannot reach (the global hotkey, the tray, autotype into another window), and whether accessible names and focus can be checked through it. Ask the user before any run that opens windows or sends keys on their desktop.
+
+Recommended setup: Claude Opus 5.5 (`/model opus`), effort high (`/effort high`). A short research task that ends in a judgment call; the stronger model pays off here, and the build itself (TASK-6) can then run on a cheaper one.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Research findings are recorded in the task notes before building anything: whether tauri-driver works here on Windows and in CI, what the suite would add beyond just smoke, and a go or no-go decision (no-go closes the task)
-- [ ] #2 One command (npm script and just recipe) builds the app and runs the E2E suite locally
-- [ ] #3 Tests cover: create snippet, search, copy to clipboard (Enter), encrypted snippet with password prompt, edit, delete, settings save
-- [ ] #4 Tests check accessible names of the main controls and that focus lands in the right field after each modal opens and closes
-- [ ] #5 Tests run against an isolated data folder and never touch the real quick-snippets-data
-- [ ] #6 CI runs the suite on windows-latest
-- [ ] #7 DEVELOPMENT.md explains how to run and extend the suite
+- [ ] #1 Findings are recorded in the task notes: whether tauri-driver works on Windows here and on windows-latest in CI, with the msedgedriver and WebView2 versions checked
+- [ ] #2 Findings say what WebDriver cannot reach (global hotkey, tray, autotype) and whether accessible names and focus can be checked through it
+- [ ] #3 A go or no-go decision with reasons is recorded; on go TASK-6 is updated with the findings, on no-go TASK-6 is archived
 <!-- AC:END -->
+
+## Definition of Done
+<!-- DOD:BEGIN -->
+- [ ] #1 `npm run test:all` passes
+- [ ] #2 `npm run lint` passes
+- [ ] #3 CHANGELOG.md [Unreleased] updated for user-visible changes
+- [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
+- [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
+<!-- DOD:END -->
