@@ -95,6 +95,24 @@ public static class QsSmokeNative {
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
+    [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    // True when nobody holds Ctrl+Alt+Space: register it for a moment and release it at once.
+    public static bool HotkeyFree() {
+        const int id = 0x5153;
+        if (!RegisterHotKey(IntPtr.Zero, id, 0x0001 | 0x0002 | 0x4000, 0x20)) return false;  // Alt|Ctrl|NoRepeat, Space
+        UnregisterHotKey(IntPtr.Zero, id);
+        return true;
+    }
+
+    public static uint ForegroundProcessId() {
+        uint pid = 0;
+        GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+        return pid;
+    }
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
+    static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     // Windows only lets the foreground owner switch the foreground window. Sharing the
     // current foreground thread's input state for a moment lets this process do it.
@@ -226,9 +244,24 @@ function Test-AppReady {
     return (Test-HasFocus (Get-SearchBox)) -or ($null -ne (Get-FocusedListItem))
 }
 
+# Shows the app with the hotkey, or, once the hotkey is known to be broken, by starting
+# the exe again (single instance: a second launch brings up the running window).
 function Show-App {
-    Send-Keys 'Ctrl+Alt+Space'
+    if ($script:HotkeyBroken) { Start-Process $TestExe } else { Send-Keys 'Ctrl+Alt+Space' }
     Wait-Until 'вікно програми з фокусом' { Test-AppReady }
+}
+
+function Find-TextLike([string]$Pattern) {
+    $w = Get-AppWindow
+    if ($null -eq $w) { return $null }
+    $texts = $w.FindAll($Scope::Descendants, (New-Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)))
+    foreach ($e in $texts) { if ($e.Current.Name -like $Pattern) { return $e } }
+    return $null
+}
+
+# Process name only (never the window title): names the window that had the keyboard.
+function Get-ForegroundProcessName {
+    try { return (Get-Process -Id ([QsSmokeNative]::ForegroundProcessId())).ProcessName } catch { return 'невідомо' }
 }
 
 function Wait-Until([string]$What, [scriptblock]$Condition, [int]$Seconds = $TimeoutSec) {
@@ -403,7 +436,10 @@ function Get-Count([string]$Haystack, [string]$Needle) {
 
 # ── Steps ────────────────────────────────────────────────────────────────────
 $Results = New-Object System.Collections.Generic.List[object]
+$Notes = New-Object System.Collections.Generic.List[string]
 $script:Aborted = $false
+$script:HotkeyBroken = $false
+$script:SoftFail = $null
 $script:SetupError = ''
 $script:NvdaErrors = @()
 
@@ -434,8 +470,10 @@ function Invoke-Step {
     if ($script:Aborted) { $r.Status = 'ПРОПУЩЕНО'; $r.Detail = 'попередній крок не вдався'; $Results.Add($r); return }
 
     $from = Get-LogLength
+    $script:SoftFail = $null  # a step sets this to fail without stopping the remaining steps
     try { $null = & $Action }
     catch { $r.Status = 'ПОМИЛКА'; $r.Detail = $_.Exception.Message; $script:Aborted = $true }
+    if ($r.Status -eq 'OK' -and $script:SoftFail) { $r.Status = 'ПОМИЛКА'; $r.Detail = $script:SoftFail }
 
     if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectCount.Count)) {
         # NVDA can lag behind the app: wait until it has said what we expect.
@@ -534,6 +572,10 @@ try {
         $UserApps | Stop-Process -Force
         $UserApps | ForEach-Object { $null = $_.WaitForExit(5000) }
     }
+    # Windows frees the hotkey of a closed process a moment later. A test copy started
+    # before that silently runs without Ctrl+Alt+Space.
+    try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 }
+    catch { $Notes.Add('Ctrl+Alt+Space зайнята іншою програмою ще до запуску тестової копії QuickSnippets.') }
 
     $dataDir = Join-Path $Work 'quick-snippets-data'
     $null = New-Item -ItemType Directory -Force -Path $dataDir
@@ -552,12 +594,31 @@ try {
         $script:Aborted = $true
         $script:SetupError = "не вдалося відкрити тестове вікно: $($_.Exception.Message)"
     }
-    Start-Sleep -Seconds 2
+    # Let the hidden app finish starting (WebView and its accessibility tree): shown too
+    # early, NVDA sometimes said nothing about the window.
+    Start-Sleep -Seconds 5
 
     Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' {
         Send-Keys 'Ctrl+Alt+Space'
-        try { $null = Wait-Until 'вікно програми' { Get-AppWindow } 8 }
-        catch { Send-Keys 'Ctrl+Alt+Space' }  # the app may still have been starting
+        $shown = $true
+        try { $null = Wait-Until 'вікно програми' { Get-AppWindow } 6 }
+        catch {
+            Send-Keys 'Ctrl+Alt+Space'  # the app may still have been starting
+            try { $null = Wait-Until 'вікно програми' { Get-AppWindow } 4 } catch { $shown = $false }
+        }
+        if (-not $shown) {
+            if ($script:AppProc.HasExited) { throw "програма завершилась, код $($script:AppProc.ExitCode)" }
+            $fg = Get-ForegroundProcessName
+            # Open the window another way, so the remaining steps can still run.
+            $script:HotkeyBroken = $true
+            Start-Process $TestExe
+            $null = Wait-Until 'вікно після повторного запуску exe' { Get-AppWindow } 8
+            $warned = $false
+            try { $warned = [bool](Wait-Until 'попередження про гарячу клавішу' { (Find-TextLike '*hotkey*') -or (Find-TextLike '*гаряч*') } 3) } catch { }
+            if ($warned) { $script:SoftFail = 'Ctrl+Alt+Space не відкрила вікно: програма повідомила, що не змогла зареєструвати гарячу клавішу' }
+            else { $script:SoftFail = "Ctrl+Alt+Space не відкрила вікно (клавіатура була в процесі $fg)" }
+            $script:SoftFail += '; далі вікно відкривається повторним запуском exe'
+        }
         Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
     } -Expect $UI.SearchPlaceholder
 
@@ -637,7 +698,7 @@ try {
         Send-Keys 'Enter'
         Wait-Until 'текст помилки' { Find-Element (Get-AppWindow) -Name $UI.WrongPassword }
         Wait-Until 'фокус знову в полі пароля' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input') }
-    } -Expect $UI.WrongPassword
+    } -ExpectCount @{ ($UI.WrongPassword) = 1 }
 
     Invoke-Step 'Правильний пароль копіює розшифрований текст' {
         Send-Keys 'Ctrl+A'
@@ -699,6 +760,7 @@ $lines.Add(('Звіт перевірки QuickSnippets з NVDA, {0:dd.MM.yyyy HH
 $lines.Add(('Exe: {0}, зібрано {1:dd.MM.yyyy HH:mm}' -f $Exe, $exeTime))
 if ($script:LogPath) { $lines.Add("Лог NVDA: $script:LogPath") } else { $lines.Add('NVDA: мовлення не перевірялось') }
 if ($script:SetupError) { $lines.Add("Підготовка: ПОМИЛКА ($script:SetupError)") }
+foreach ($note in $Notes) { $lines.Add("Увага: $note") }
 $lines.Add('')
 
 $appOk = 0; $appFail = 0; $skipped = 0; $nvdaOk = 0; $nvdaAll = 0; $anySpeech = $false

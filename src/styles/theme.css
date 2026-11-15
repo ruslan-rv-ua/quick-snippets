@@ -165,7 +165,8 @@ button {
   user-select: none;
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
