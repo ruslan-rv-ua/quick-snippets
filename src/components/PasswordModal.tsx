@@ -28,6 +28,9 @@ export function PasswordModal({
 }: PasswordModalProps): React.ReactElement | null {
   const { t } = useLanguage();
   const pwdRef = useRef<HTMLInputElement>(null);
+  // Guards against a second submit while decryption runs; a ref, so the check
+  // never sees a stale `loading` value captured by an older callback.
+  const busyRef = useRef(false);
 
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -35,6 +38,7 @@ export function PasswordModal({
 
   useEffect(() => {
     if (isOpen) {
+      busyRef.current = false;
       setPassword('');
       setErrorMsg('');
       setLoading(false);
@@ -43,14 +47,15 @@ export function PasswordModal({
   }, [isOpen]);
 
   const handleSubmit = useCallback(async () => {
+    if (busyRef.current) return;
     if (!password) {
       setErrorMsg(t('enterPassword'));
-      // move focus back so screen reader announces the message instead of just
-      // reading the ‘warning’ cue that aria-invalid triggers
       setTimeout(() => pwdRef.current?.focus(), 10);
       return;
     }
+    busyRef.current = true;
     setLoading(true);
+    // Empty the live region first, so the same message is announced again next time.
     setErrorMsg('');
     try {
       const ipcCall = action === 'autotype' ? autotypeSnippet : activateSnippet;
@@ -62,7 +67,11 @@ export function PasswordModal({
       setLoading(false);
       setPassword('');
       setErrorMsg(t('wrongPassword'));
+      // Focus stays in the field (it is never disabled); this only matters when the
+      // password was submitted with the button.
       setTimeout(() => pwdRef.current?.focus(), 10);
+    } finally {
+      busyRef.current = false;
     }
   }, [password, snippetId, onSuccess, onClose, t, action]);
 
@@ -85,12 +94,13 @@ export function PasswordModal({
 
       <div className="form-field">
         <label htmlFor="pwd-input">{t('passwordLabel')}</label>
+        {/* Never disabled: a disabled field drops focus, and NVDA then says
+            "unavailable" and re-reads the whole dialog. */}
         <input
           ref={pwdRef}
           id="pwd-input"
           type="password"
           value={password}
-          disabled={loading}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -101,17 +111,17 @@ export function PasswordModal({
           aria-invalid={!!errorMsg ? 'true' : undefined}
           aria-describedby={errorMsg ? 'pwd-error' : undefined}
         />
-        {errorMsg && (
-          <span
-            id="pwd-error"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            className="field-error"
-          >
-            {errorMsg}
-          </span>
-        )}
+        {/* Always rendered, empty until an error: screen readers announce text changes
+            in an existing live region. A newly inserted role="alert" was read by NVDA
+            as just "alert", without its text, because the app root has role="application". */}
+        <span
+          id="pwd-error"
+          aria-live="assertive"
+          aria-atomic="true"
+          className="field-error"
+        >
+          {errorMsg}
+        </span>
       </div>
 
       {loading && (
@@ -121,18 +131,19 @@ export function PasswordModal({
       )}
 
       <div className="modal-actions">
+        {/* aria-disabled instead of disabled: the buttons keep focus while decrypting. */}
         <button
           type="button"
           className="btn-secondary"
-          disabled={loading}
-          onClick={onClose}
+          aria-disabled={loading || undefined}
+          onClick={() => { if (!busyRef.current) onClose(); }}
         >
           {t('cancel')}
         </button>
         <button
           type="button"
           className="btn-primary"
-          disabled={loading}
+          aria-disabled={loading || undefined}
           onClick={() => void handleSubmit()}
         >
           {t(action)}

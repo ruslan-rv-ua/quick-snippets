@@ -49,33 +49,45 @@ describe('PasswordModal', () => {
     });
   });
 
+  // The error region must exist before the error: screen readers announce text changes
+  // in an existing live region, while a newly inserted role="alert" was read by NVDA
+  // as just "alert" without its text (the app root has role="application").
+  it('has an empty assertive live region for errors before any error', () => {
+    renderModal();
+    const region = document.getElementById('pwd-error');
+    expect(region).toBeInTheDocument();
+    expect(region).toBeEmptyDOMElement();
+    expect(region).toHaveAttribute('aria-live', 'assertive');
+    expect(region).not.toHaveAttribute('role', 'alert');
+  });
+
   it('shows error for empty password submission and refocuses field', async () => {
     renderModal();
     fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
     await waitFor(() => {
-      const alert = screen.getByRole('alert');
-      expect(alert).toBeInTheDocument();
+      expect(document.getElementById('pwd-error')).toHaveTextContent(/enter password|введіть пароль/i);
       expect(document.activeElement).toBe(screen.getByLabelText(/^(password|пароль)$/i));
-      expect(alert).toHaveAttribute('aria-live', 'assertive');
     });
   });
 
-  it('shows "wrong password" error, clears and refocuses field', async () => {
+  it('shows "wrong password" error in the same live region, clears and refocuses field', async () => {
     mockInvoke.mockRejectedValue(new Error('wrong password'));
     renderModal();
+    const regionBefore = document.getElementById('pwd-error');
     fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
     await waitFor(() => {
-      const alert = screen.getByRole('alert');
-      expect(alert).toBeInTheDocument();
-      expect(alert).toHaveAttribute('aria-live', 'assertive');
+      expect(document.getElementById('pwd-error')).toHaveTextContent(/wrong password|невірний пароль/i);
       expect(document.activeElement).toBe(screen.getByLabelText(/^(password|пароль)$/i));
     });
+    expect(document.getElementById('pwd-error')).toBe(regionBefore);
     const pwdField = screen.getByLabelText(/^(password|пароль)$/i) as HTMLInputElement;
     expect(pwdField.value).toBe('');
+    expect(pwdField).toHaveAttribute('aria-describedby', 'pwd-error');
   });
 
-  it('disables field and buttons during decryption', async () => {
+  // A disabled field drops focus: NVDA said "unavailable" and re-read the whole dialog.
+  it('keeps the field and buttons focusable during decryption', async () => {
     let resolveInvoke!: () => void;
     let invokePromise: Promise<void> | null = null;
     mockInvoke.mockImplementation(() => {
@@ -83,12 +95,41 @@ describe('PasswordModal', () => {
       return invokePromise;
     });
     renderModal();
-    fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'mypass' } });
-    fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
+    const pwdField = screen.getByLabelText(/^(password|пароль)$/i);
+    const copyBtn = screen.getByRole('button', { name: /copy|копіювати/i });
+    fireEvent.change(pwdField, { target: { value: 'mypass' } });
+    fireEvent.click(copyBtn);
     await waitFor(() => {
-      const pwdField = screen.getByLabelText(/^(password|пароль)$/i);
-      expect(pwdField).toBeDisabled();
+      expect(copyBtn).toHaveAttribute('aria-disabled', 'true');
     });
+    expect(pwdField).not.toBeDisabled();
+    expect(document.activeElement).toBe(pwdField);
+    expect(copyBtn).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /cancel|скасувати/i })).not.toBeDisabled();
+    await act(async () => {
+      resolveInvoke();
+      if (invokePromise) await invokePromise;
+    });
+  });
+
+  it('ignores another submit while decryption is running', async () => {
+    let resolveInvoke!: () => void;
+    let invokePromise: Promise<void> | null = null;
+    mockInvoke.mockImplementation(() => {
+      invokePromise = new Promise<void>((r) => { resolveInvoke = r; });
+      return invokePromise;
+    });
+    renderModal();
+    const pwdField = screen.getByLabelText(/^(password|пароль)$/i);
+    fireEvent.change(pwdField, { target: { value: 'mypass' } });
+    fireEvent.keyDown(pwdField, { key: 'Enter' });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /copy|копіювати/i })).toHaveAttribute('aria-disabled', 'true');
+    });
+    fireEvent.keyDown(pwdField, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: /copy|копіювати/i }));
+    // LanguageProvider also calls invoke (settings), so count only the decryption calls.
+    expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === 'activate_snippet')).toHaveLength(1);
     await act(async () => {
       resolveInvoke();
       if (invokePromise) await invokePromise;
