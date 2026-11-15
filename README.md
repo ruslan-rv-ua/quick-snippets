@@ -141,7 +141,7 @@ For complete details on the security model, threat assessment, and responsible d
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+Alt+Space | Show / hide the QuickSnippets window |
+| Ctrl+Alt+Space | Show the QuickSnippets window |
 
 ### In the main window
 

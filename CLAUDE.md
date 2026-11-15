@@ -36,6 +36,9 @@ npm run test:all         # Both frontend and backend tests
 # Run a single frontend test file
 npx vitest run src/hooks/__tests__/useSearchLogic.test.ts
 
+# NVDA smoke test of the built release exe (~1 min, hands off; NVDA log level "input/output")
+just smoke               # scripts/smoke-nvda.ps1; report also in %TEMP%\quick-snippets-smoke-report.txt
+
 # Lint
 npm run lint             # TypeScript strict noEmit + cargo clippy -D warnings
 ```
@@ -69,8 +72,8 @@ App-level state lives in [src/App.tsx](src/App.tsx) via `useSnippets`, `useSearc
 | [src-tauri/src/paths.rs](src-tauri/src/paths.rs) | Data directory path helpers (`quick-snippets-data/` next to `.exe`) |
 | [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file in data directory (not AppData); includes `autotype_delay_ms`, `sort_mode`, `sort_direction` |
 | [src-tauri/src/autotype.rs](src-tauri/src/autotype.rs) | Windows keyboard input simulation (PostMessage primary, SendInput fallback) |
-| [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events |
-| [src-tauri/src/main.rs](src-tauri/src/main.rs) | App entry, Ctrl+Alt+Space global hotkey |
+| [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events, Ctrl+Alt+Space global hotkey (shows the window; it never hides it) |
+| [src-tauri/src/main.rs](src-tauri/src/main.rs) | App entry (calls `quick_snippets_lib::run`) |
 
 ### Autotype
 
@@ -103,7 +106,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 
 - **Portable**: No installer, no registry, no AppData — all data stays in `quick-snippets-data/` next to the `.exe`. Handles Scoop `persist` directory stubs.
 - **Rust tests must run single-threaded** (`--test-threads=1`) because SQLite connections are not `Send`-safe across threads in the test setup.
-- **Screen reader support**: WebView2 accessibility tree is pre-initialized via `--force-renderer-accessibility` browser argument. Keep semantic HTML and ARIA labels on all interactive elements.
+- **Screen reader support**: WebView2 accessibility tree is pre-initialized via `--force-renderer-accessibility` browser argument. Keep semantic HTML and ARIA labels on all interactive elements. After changes to capabilities, focus handling, dialogs or announcements, rebuild and run `just smoke` (drives the real exe and checks what NVDA says).
 - **i18n**: All user-facing strings must be added to [src/i18n/translations.ts](src/i18n/translations.ts) for English (`en`), Ukrainian (`uk`), and German (`de`). Tray menu labels are also localized in Rust.
 - **Windows-only target**: The build and some APIs (tray, global hotkey, autostart, autotype) are Windows-specific. Do not abstract for cross-platform unless explicitly requested.
 - **Single instance**: `tauri-plugin-single-instance` prevents multiple app instances.

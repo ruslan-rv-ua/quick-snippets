@@ -82,6 +82,10 @@ test-mod module:
 
 alias tm := test-mod
 
+# Smoke test of the release exe with NVDA: drives the app, reports what NVDA said (~1 min, hands off)
+smoke:
+    powershell -NoProfile -File scripts/smoke-nvda.ps1
+
 # ═════════════════════════════════════════════════════════════════════════════
 # QUALITY   check · lint · format
 # ═════════════════════════════════════════════════════════════════════════════

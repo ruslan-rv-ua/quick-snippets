@@ -96,7 +96,7 @@ scoop install quick-snippets
 
 | Комбінація | Дія |
 |---|---|
-| Ctrl+Alt+Space | Показати / приховати вікно QuickSnippets |
+| Ctrl+Alt+Space | Показати вікно QuickSnippets |
 
 ### У головному вікні
 
