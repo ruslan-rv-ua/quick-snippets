@@ -581,22 +581,35 @@ try {
     $null = New-Item -ItemType Directory -Force -Path $dataDir
     Copy-Item $Exe $TestExe
     $settings = [ordered]@{
-        theme = 'dark'; start_in_tray = $true; autostart = $false; confirm_on_close = $false; language = 'uk'
+        # Like a default install: the window opens at launch (start_in_tray off).
+        theme = 'dark'; start_in_tray = $false; autostart = $false; confirm_on_close = $false; language = 'uk'
         window_state = [ordered]@{ x = 100; y = 100; width = 680; height = 520 }
         autotype_delay_ms = 1; sort_mode = 'modified'; sort_direction = 'desc'
     }
     # No BOM: serde_json rejects it.
     [IO.File]::WriteAllText((Join-Path $dataDir 'settings.json'), ($settings | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
 
-    $script:AppProc = Start-Process $TestExe -PassThru
+    # The home window first: the app window then opens over it, and focus returns to it
+    # whenever the app hides.
     try { Start-Target }
     catch {
         $script:Aborted = $true
         $script:SetupError = "не вдалося відкрити тестове вікно: $($_.Exception.Message)"
     }
-    # Let the hidden app finish starting (WebView and its accessibility tree): shown too
-    # early, NVDA sometimes said nothing about the window.
-    Start-Sleep -Seconds 5
+    $script:AppProc = Start-Process $TestExe -PassThru
+
+    # NVDA may stay silent about the very first show of a freshly started window until the
+    # next key press, so this step only hopes for speech; later shows are checked strictly.
+    Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, Escape його ховає' {
+        $null = Wait-Until 'вікно програми після запуску' { Get-AppWindow } 20
+        if (-not (Test-AppReady)) {
+            $w = Get-AppWindow
+            $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+        }
+        $null = Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
+        Send-Keys 'Esc'
+        Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
+    } -Hope $UI.SearchPlaceholder
 
     Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' {
         Send-Keys 'Ctrl+Alt+Space'
