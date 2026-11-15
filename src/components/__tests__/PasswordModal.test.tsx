@@ -83,7 +83,10 @@ describe('PasswordModal', () => {
     expect(document.getElementById('pwd-error')).toBe(regionBefore);
     const pwdField = screen.getByLabelText(/^(password|пароль)$/i) as HTMLInputElement;
     expect(pwdField.value).toBe('');
-    expect(pwdField).toHaveAttribute('aria-describedby', 'pwd-error');
+    expect(pwdField).toHaveAttribute('aria-invalid', 'true');
+    // The live region announces the message. Pointing the focused field at it as well
+    // made NVDA say it twice (live region + description change).
+    expect(pwdField).not.toHaveAttribute('aria-describedby');
   });
 
   // A disabled field drops focus: NVDA said "unavailable" and re-read the whole dialog.

@@ -109,7 +109,8 @@ export function PasswordModal({
             }
           }}
           aria-invalid={!!errorMsg ? 'true' : undefined}
-          aria-describedby={errorMsg ? 'pwd-error' : undefined}
+          // No aria-describedby to pwd-error: the live region below announces the message,
+          // and a description change on the focused field made NVDA say it a second time.
         />
         {/* Always rendered, empty until an error: screen readers announce text changes
             in an existing live region. A newly inserted role="alert" was read by NVDA

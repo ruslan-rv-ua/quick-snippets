@@ -594,7 +594,9 @@ try {
         $script:Aborted = $true
         $script:SetupError = "не вдалося відкрити тестове вікно: $($_.Exception.Message)"
     }
-    Start-Sleep -Seconds 2
+    # Let the hidden app finish starting (WebView and its accessibility tree): shown too
+    # early, NVDA sometimes said nothing about the window.
+    Start-Sleep -Seconds 5
 
     Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' {
         Send-Keys 'Ctrl+Alt+Space'
@@ -696,7 +698,7 @@ try {
         Send-Keys 'Enter'
         Wait-Until 'текст помилки' { Find-Element (Get-AppWindow) -Name $UI.WrongPassword }
         Wait-Until 'фокус знову в полі пароля' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input') }
-    } -Expect $UI.WrongPassword
+    } -ExpectCount @{ ($UI.WrongPassword) = 1 }
 
     Invoke-Step 'Правильний пароль копіює розшифрований текст' {
         Send-Keys 'Ctrl+A'
