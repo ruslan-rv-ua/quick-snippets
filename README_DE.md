@@ -96,7 +96,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 
 | Kürzel | Aktion |
 |---|---|
-| Strg+Alt+Space | QuickSnippets-Fenster anzeigen / ausblenden |
+| Strg+Alt+Space | QuickSnippets-Fenster anzeigen |
 
 ### Im Hauptfenster
 
