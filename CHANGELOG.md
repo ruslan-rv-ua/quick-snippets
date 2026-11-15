@@ -12,6 +12,7 @@
 - Scoop: the manifest is now updated by Excavator in the `scoop-bucket` repository; `update-scoop.yml` was removed from this repository.
 
 ### Fixed
+- Screen readers: validation errors in the create and edit dialogs (title length, empty content, passwords do not match) are now always announced with their text, once. Before, the first error in a dialog could be read as just "alert", and every message was followed by the word "alert".
 - Screen readers: the "Wrong password" message is now announced. The password field is no longer disabled while checking, so focus stays in it (NVDA no longer says "unavailable").
 - Screen readers: a new notification no longer re-reads older ones still on screen (NVDA said "Saved Copied" after copying right after a save).
 - READMEs: correct release ZIP name and the Scoop data folder location.

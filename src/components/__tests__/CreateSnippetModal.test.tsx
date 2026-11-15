@@ -31,6 +31,9 @@ describe('CreateSnippetModal', () => {
     expect(document.activeElement).toBe(titleInput);
   });
 
+  const region = (id: string) => document.getElementById(id);
+  const save = () => fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+
   it('validates title min length 3 on save click', async () => {
     renderModal();
     const titleInput = screen.getByLabelText(/title|назва/i);
@@ -38,10 +41,12 @@ describe('CreateSnippetModal', () => {
     // Fill valid content so only the title error fires
     const contentInput = screen.getByLabelText(/content|вміст/i);
     fireEvent.change(contentInput, { target: { value: 'some content' } });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    save();
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(region('create-title-err')).toHaveTextContent(/3.*50/);
+      expect(document.activeElement).toBe(titleInput);
     });
+    expect(region('create-content-err')).toBeEmptyDOMElement();
   });
 
   it('validates title max length 50 on save click', async () => {
@@ -50,20 +55,22 @@ describe('CreateSnippetModal', () => {
     fireEvent.change(titleInput, { target: { value: 'a'.repeat(51) } });
     const contentInput = screen.getByLabelText(/content|вміст/i);
     fireEvent.change(contentInput, { target: { value: 'some content' } });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    save();
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(region('create-title-err')).toHaveTextContent(/3.*50/);
     });
   });
 
-  it('validates content required on save click', async () => {
+  it('validates content required on save click and focuses content field', async () => {
     renderModal();
     const titleInput = screen.getByLabelText(/title|назва/i);
     fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    save();
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(region('create-content-err')).toHaveTextContent(/content|вміст/i);
+      expect(document.activeElement).toBe(screen.getByLabelText(/^content|^вміст/i));
     });
+    expect(region('create-title-err')).toBeEmptyDOMElement();
   });
 
   it('validates password match on save click and focuses confirm field', async () => {
@@ -74,43 +81,70 @@ describe('CreateSnippetModal', () => {
     fireEvent.change(pwd, { target: { value: 'pass1' } });
     const confirmPwd = screen.getByLabelText(/confirm|підтвердити/i);
     fireEvent.change(confirmPwd, { target: { value: 'pass2' } });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    save();
     await waitFor(() => {
-      // an alert element should appear
-      expect(screen.getByRole('alert')).toBeInTheDocument();
-      // focus should land on the confirmation input so that AT reads the message
+      expect(region('create-confirm-err')).toHaveTextContent(/match|збігаються/i);
       expect(document.activeElement).toBe(confirmPwd);
-      // error span has aria-live so AT can announce text
-      const err = screen.getByRole('alert');
-      expect(err).toHaveAttribute('aria-live', 'assertive');
+    });
+  });
+
+  it('shows the duplicate-title error from the backend in the title live region', async () => {
+    mockInvoke.mockRejectedValue('Title already exists');
+    renderModal();
+    const titleInput = screen.getByLabelText(/title|назва/i);
+    fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+    fireEvent.change(screen.getByLabelText(/^content|^вміст/i), { target: { value: 'some content' } });
+    save();
+    await waitFor(() => {
+      expect(region('create-title-err')).toHaveTextContent(/already exists|вже існує/i);
+      expect(document.activeElement).toBe(titleInput);
     });
   });
 
   it('does NOT show errors before save is clicked', () => {
     renderModal();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    for (const id of ['create-title-err', 'create-content-err', 'create-confirm-err']) {
+      expect(region(id)).toBeEmptyDOMElement();
+    }
   });
 
   it('sets aria-invalid="true" on invalid fields', async () => {
     renderModal();
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    save();
     await waitFor(() => {
       const titleInput = screen.getByLabelText(/title|назва/i);
       expect(titleInput).toHaveAttribute('aria-invalid', 'true');
     });
   });
 
-  it('error elements have role="alert" and are live regions', async () => {
+  // The error regions must exist before the error: screen readers announce text changes
+  // in an existing live region, while a newly inserted role="alert" was read by NVDA
+  // as just "alert" without its text (the app root has role="application").
+  it('has an empty assertive live region for each field error before any error', () => {
     renderModal();
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    for (const id of ['create-title-err', 'create-content-err', 'create-confirm-err']) {
+      const el = region(id);
+      expect(el).toBeInTheDocument();
+      expect(el).toBeEmptyDOMElement();
+      expect(el).toHaveAttribute('aria-live', 'assertive');
+      expect(el).toHaveAttribute('aria-atomic', 'true');
+    }
+  });
+
+  it('shows errors in the existing live regions, with no role="alert" and no aria-describedby', async () => {
+    renderModal();
+    const before = ['create-title-err', 'create-content-err'].map(region);
+    save();
     await waitFor(() => {
-      const alerts = screen.getAllByRole('alert');
-      expect(alerts.length).toBeGreaterThan(0);
-      alerts.forEach((el) => {
-        expect(el).toHaveAttribute('aria-live', 'assertive');
-        expect(el).toHaveAttribute('aria-atomic', 'true');
-      });
+      expect(region('create-title-err')).not.toBeEmptyDOMElement();
+      expect(region('create-content-err')).not.toBeEmptyDOMElement();
     });
+    expect(['create-title-err', 'create-content-err'].map(region)).toEqual(before);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The live region announces the message. Pointing the focused field at it as well
+    // made NVDA say it twice (live region + description change).
+    expect(screen.getByLabelText(/title|назва/i)).not.toHaveAttribute('aria-describedby');
+    expect(screen.getByLabelText(/^content|^вміст/i)).not.toHaveAttribute('aria-describedby');
   });
 
   it('Ctrl+Enter submits form', async () => {

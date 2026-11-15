@@ -54,6 +54,9 @@ $UI = @{
     WrongPassword     = 'Невірний пароль'
     Encrypted         = 'зашифровано'
     Settings          = 'Налаштування'
+    TitleInvalid      = 'Назва має бути від 3 до 50 символів'
+    ContentEmpty      = 'Вміст не може бути порожнім'
+    PasswordMismatch  = 'Паролі не збігаються'
 }
 
 # Throwaway values for the throwaway copy of the app.
@@ -666,6 +669,78 @@ try {
             -not (Find-Element (Get-AppWindow) -Id 'edit-title') -and (Test-HasFocus (& $plainItem))
         }
     } -Expect $UI.EditTitle
+
+    # Validation errors: each message must be said once, with its text, and focus must
+    # be on the invalid field. The dialogs are closed with Escape, so no snippet is added.
+    $appWin = { Get-AppWindow }
+    $hasFocus = { param($id) Test-HasFocus (Find-Element (& $appWin) -Id $id) }
+
+    Invoke-Step 'Створення, порожній вміст: повідомлення один раз, фокус у полі «Вміст»' {
+        Send-Keys 'Ctrl+N'
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
+        Send-Text $Data.PlainTitle
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.ContentEmpty }
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
+    } -ExpectCount @{ ($UI.ContentEmpty) = 1 } -Forbid $UI.TitleInvalid
+
+    Invoke-Step 'Створення, порожня назва: повідомлення один раз, фокус у полі «Назва»' {
+        Send-Text $Data.PlainText
+        Send-Keys 'Shift+Tab'
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
+        Send-Keys 'Ctrl+A', 'Delete'
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleInvalid }
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
+    } -ExpectCount @{ ($UI.TitleInvalid) = 1 } -Forbid $UI.ContentEmpty
+
+    # Focus is already in the confirmation field when the error appears.
+    Invoke-Step 'Створення, паролі не збігаються: повідомлення один раз, фокус у полі підтвердження' {
+        Send-Text $Data.SecretTitle
+        Send-Keys 'Tab', 'Tab'
+        Wait-Until 'фокус у полі пароля' { & $hasFocus 'create-password' }
+        Send-Text $Data.Password
+        Send-Keys 'Tab'
+        Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
+        Send-Text $Data.WrongPassword
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.PasswordMismatch }
+        Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
+    } -ExpectCount @{ ($UI.PasswordMismatch) = 1 } -Forbid $UI.TitleInvalid, $UI.ContentEmpty
+
+    Invoke-Step 'Escape закриває діалог створення без збереження' {
+        Send-Keys 'Esc'
+        Wait-Until 'діалог створення закрито, фокус на сніпеті' {
+            -not (Find-Element (& $appWin) -Id 'create-title') -and (Test-HasFocus (& $plainItem))
+        }
+    } -Forbid $UI.Saved
+
+    Invoke-Step 'Редагування, порожня назва: повідомлення один раз, фокус у полі «Назва»' {
+        Send-Keys 'Ctrl+E'
+        Wait-Until 'фокус у полі «Назва» діалогу редагування' { & $hasFocus 'edit-title' }
+        Send-Keys 'Ctrl+A', 'Delete'
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleInvalid }
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'edit-title' }
+    } -ExpectCount @{ ($UI.TitleInvalid) = 1 }
+
+    # Focus is already in the content field when the error appears.
+    Invoke-Step 'Редагування, порожній вміст: повідомлення один раз, фокус у полі «Вміст»' {
+        Send-Text $Data.PlainTitle
+        Send-Keys 'Tab'
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'edit-content' }
+        Send-Keys 'Ctrl+A', 'Delete'
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.ContentEmpty }
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'edit-content' }
+    } -ExpectCount @{ ($UI.ContentEmpty) = 1 } -Forbid $UI.TitleInvalid
+
+    Invoke-Step 'Escape закриває діалог редагування без збереження' {
+        Send-Keys 'Esc'
+        Wait-Until 'діалог редагування закрито, фокус на сніпеті' {
+            -not (Find-Element (& $appWin) -Id 'edit-title') -and (Test-HasFocus (& $plainItem))
+        }
+    } -Forbid $UI.Saved
 
     Invoke-Step 'Enter копіює сніпет і ховає вікно' {
         Set-ClipText $Data.Sentinel

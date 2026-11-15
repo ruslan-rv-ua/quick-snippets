@@ -5,6 +5,7 @@ import React, {
   useCallback,
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
+import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { updateSnippet } from '../hooks/useIpc';
@@ -103,19 +104,8 @@ export function EditSnippetModal({
           aria-autocomplete="none"
           spellCheck={false}
           aria-invalid={submitted && !!errors.title ? 'true' : undefined}
-          aria-describedby={submitted && errors.title ? 'edit-title-err' : undefined}
         />
-        {submitted && errors.title && (
-          <span
-            id="edit-title-err"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            className="field-error"
-          >
-            {errors.title}
-          </span>
-        )}
+        <FieldError id="edit-title-err" message={submitted ? errors.title : undefined} />
       </div>
 
       <div className="form-field">
@@ -134,19 +124,8 @@ export function EditSnippetModal({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               aria-invalid={submitted && !!errors.content ? 'true' : undefined}
-              aria-describedby={submitted && errors.content ? 'edit-content-err' : undefined}
             />
-            {submitted && errors.content && (
-              <span
-                id="edit-content-err"
-                role="alert"
-                aria-live="assertive"
-                aria-atomic="true"
-                className="field-error"
-              >
-                {errors.content}
-              </span>
-            )}
+            <FieldError id="edit-content-err" message={submitted ? errors.content : undefined} />
           </>
         )}
       </div>
