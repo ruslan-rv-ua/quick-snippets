@@ -523,6 +523,13 @@ input[type='checkbox'] {
   font-weight: 500;
 }
 
+/* The live region stays in the page while empty (see FieldError.tsx); cancel the
+   form-field gap so it takes no space. Not display: none, which would hide it from
+   screen readers and stop the announcement. */
+.form-field .field-error:empty {
+  margin-top: -6px;
+}
+
 /* ── Modal actions row ─────────────────────────────────────────────────────── */
 .modal-actions {
   display: flex;

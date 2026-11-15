@@ -67,13 +67,19 @@ describe('EditSnippetModal', () => {
     expect(info).toBeInTheDocument();
   });
 
-  it('validates title on save', async () => {
+  const region = (id: string) => document.getElementById(id);
+  const save = () => fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+
+  it('validates title on save and focuses the title field', async () => {
     renderModal(plainSnippet);
-    fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'ab' } });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    const title = screen.getByLabelText(/title|назва/i);
+    fireEvent.change(title, { target: { value: 'ab' } });
+    save();
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(region('edit-title-err')).toHaveTextContent(/3.*50/);
+      expect(document.activeElement).toBe(title);
     });
+    expect(region('edit-content-err')).toBeEmptyDOMElement();
   });
 
   it('validates content on save (unencrypted only) and focuses textarea', async () => {
@@ -81,13 +87,59 @@ describe('EditSnippetModal', () => {
     fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
     const content = screen.getByLabelText(/content|вміст/i);
     fireEvent.change(content, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    save();
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(region('edit-content-err')).toHaveTextContent(/content|вміст/i);
       expect(document.activeElement).toBe(content);
-      const err = screen.getByRole('alert');
-      expect(err).toHaveAttribute('aria-live', 'assertive');
     });
+    expect(region('edit-title-err')).toBeEmptyDOMElement();
+  });
+
+  it('shows the duplicate-title error from the backend in the title live region', async () => {
+    mockInvoke.mockRejectedValue('Title already exists');
+    renderModal(plainSnippet);
+    const title = screen.getByLabelText(/title|назва/i);
+    fireEvent.change(title, { target: { value: 'Other Title' } });
+    save();
+    await waitFor(() => {
+      expect(region('edit-title-err')).toHaveTextContent(/already exists|вже існує/i);
+      expect(document.activeElement).toBe(title);
+    });
+  });
+
+  // The error regions must exist before the error: screen readers announce text changes
+  // in an existing live region, while a newly inserted role="alert" was read by NVDA
+  // as just "alert" without its text (the app root has role="application").
+  it('has an empty assertive live region for each field error before any error', () => {
+    renderModal(plainSnippet);
+    for (const id of ['edit-title-err', 'edit-content-err']) {
+      const el = region(id);
+      expect(el).toBeInTheDocument();
+      expect(el).toBeEmptyDOMElement();
+      expect(el).toHaveAttribute('aria-live', 'assertive');
+      expect(el).toHaveAttribute('aria-atomic', 'true');
+    }
+  });
+
+  it('shows errors in the existing live regions, with no role="alert" and no aria-describedby', async () => {
+    renderModal(plainSnippet);
+    const before = ['edit-title-err', 'edit-content-err'].map(region);
+    const title = screen.getByLabelText(/title|назва/i);
+    const content = screen.getByLabelText(/content|вміст/i);
+    fireEvent.change(title, { target: { value: '' } });
+    fireEvent.change(content, { target: { value: '' } });
+    save();
+    await waitFor(() => {
+      expect(region('edit-title-err')).not.toBeEmptyDOMElement();
+      expect(region('edit-content-err')).not.toBeEmptyDOMElement();
+    });
+    expect(['edit-title-err', 'edit-content-err'].map(region)).toEqual(before);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // The live region announces the message. Pointing the focused field at it as well
+    // made NVDA say it twice (live region + description change).
+    expect(title).toHaveAttribute('aria-invalid', 'true');
+    expect(title).not.toHaveAttribute('aria-describedby');
+    expect(content).not.toHaveAttribute('aria-describedby');
   });
 
   it('does not show password fields', () => {

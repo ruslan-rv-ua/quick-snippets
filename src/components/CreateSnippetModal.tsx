@@ -5,6 +5,7 @@ import React, {
   useCallback,
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
+import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { createSnippet } from '../hooks/useIpc';
@@ -65,10 +66,7 @@ export function CreateSnippetModal({
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      // Focus first invalid field so that screen readers will announce the
-      // associated message (aria-describedby) instead of merely saying
-      // “warning” which is what some assistive tech does when aria-invalid
-      // toggles while focus remains elsewhere.
+      // Focus the first invalid field; its FieldError live region announces the message.
       if (errs.title) {
         titleRef.current?.focus();
       } else if (errs.content) {
@@ -114,19 +112,8 @@ export function CreateSnippetModal({
           aria-autocomplete="none"
           spellCheck={false}
           aria-invalid={submitted && !!errors.title ? 'true' : undefined}
-          aria-describedby={submitted && errors.title ? 'create-title-err' : undefined}
         />
-        {submitted && errors.title && (
-          <span
-            id="create-title-err"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            className="field-error"
-          >
-            {errors.title}
-          </span>
-        )}
+        <FieldError id="create-title-err" message={submitted ? errors.title : undefined} />
       </div>
 
       <div className="form-field">
@@ -139,19 +126,8 @@ export function CreateSnippetModal({
           value={content}
           onChange={(e) => setContent(e.target.value)}
           aria-invalid={submitted && !!errors.content ? 'true' : undefined}
-          aria-describedby={submitted && errors.content ? 'create-content-err' : undefined}
         />
-        {submitted && errors.content && (
-          <span
-            id="create-content-err"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            className="field-error"
-          >
-            {errors.content}
-          </span>
-        )}
+        <FieldError id="create-content-err" message={submitted ? errors.content : undefined} />
       </div>
 
       <div className="form-field">
@@ -173,19 +149,8 @@ export function CreateSnippetModal({
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           aria-invalid={submitted && !!errors.password ? 'true' : undefined}
-          aria-describedby={submitted && errors.password ? 'create-confirm-err' : undefined}
         />
-        {submitted && errors.password && (
-          <span
-            id="create-confirm-err"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            className="field-error"
-          >
-            {errors.password}
-          </span>
-        )}
+        <FieldError id="create-confirm-err" message={submitted ? errors.password : undefined} />
       </div>
 
       <div className="modal-actions">
