@@ -10,8 +10,8 @@
     What it protects:
     - Your data: the test runs a copy of the exe from a temp folder with its own
       empty quick-snippets-data folder. Your snippets and settings are not touched.
-    - A running QuickSnippets is closed for the test (the app allows only one copy)
-      and started again at the end.
+    - The test runs only its own copy. A running QuickSnippets is closed (the app
+      allows only one copy) and is not started again afterwards.
     - Clipboard text is restored at the end. Test values are kept out of Windows
       clipboard history when the script runs in Windows PowerShell (STA).
     - Only the part of nvda.log written during this run is read.
@@ -546,15 +546,13 @@ Write-Host 'Перевірка QuickSnippets з NVDA.'
 if ($newer) { Write-Host "Увага: exe зібрано до змін у коді ($newer). Щоб перевірити свіжі зміни, перезберіть: npx tauri build --no-bundle" }
 if (-not $script:LogPath) { Write-Host 'NVDA не запущено або лог не знайдено: перевіряю лише програму.' }
 if (Get-Process quick-snippets -ErrorAction SilentlyContinue) {
-    Write-Host 'Вашу копію QuickSnippets буде закрито на час тесту й запущено знову.'
+    Write-Host 'Вашу копію QuickSnippets буде закрито: тест запускає лише свою копію.'
 }
 Write-Host 'Тест триває близько хвилини. Не торкайтеся клавіатури й миші, доки не прозвучить «Готово».'
 Start-Sleep -Seconds 4
 
+# Closed before the test and not started again: the test runs only its own copy.
 $UserApps = @(Get-Process quick-snippets -ErrorAction SilentlyContinue)
-# A copy left over from an interrupted smoke run is closed but never started again.
-$UserAppPaths = @($UserApps | ForEach-Object { $_.Path } |
-        Where-Object { $_ -and $_ -notlike '*\quick-snippets-smoke-*' } | Select-Object -Unique)
 $UserRunValue = Get-RunValue
 $ClipBackup = $null
 $ClipHadText = $true
@@ -761,10 +759,6 @@ finally {
     for ($i = 0; $i -lt 10 -and (Test-Path $Work); $i++) {
         try { Remove-Item $Work -Recurse -Force } catch { Start-Sleep -Milliseconds 500 }
     }
-    if ($UserAppPaths.Count -and -not (Get-Process quick-snippets -ErrorAction SilentlyContinue)) {
-        Start-Sleep -Seconds 1
-        foreach ($p in $UserAppPaths) { try { Start-Process $p } catch { } }
-    }
 }
 
 # ── Report ───────────────────────────────────────────────────────────────────
@@ -811,8 +805,7 @@ if ($script:NvdaErrors.Count) {
     $lines.Add("Помилки в лозі NVDA під час тесту: $($script:NvdaErrors.Count). Перша: $($script:NvdaErrors[0])")
 }
 if (-not $ClipHadText) { $lines.Add('У буфері обміну до тесту був не текст, його не відновлено.') }
-if ($UserAppPaths.Count) { $lines.Add('Вашу копію QuickSnippets запущено знову.') }
-elseif ($UserApps.Count) { $lines.Add('Вашу копію QuickSnippets закрито для тесту, запустіть її знову.') }
+if ($UserApps.Count) { $lines.Add('Вашу копію QuickSnippets закрито для тесту.') }
 
 [IO.File]::WriteAllLines($ReportPath, $lines, (New-Object Text.UTF8Encoding $true))
 $lines | ForEach-Object { Write-Host $_ }
