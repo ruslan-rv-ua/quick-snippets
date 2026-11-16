@@ -7,20 +7,99 @@ import React, {
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
 import { useLanguage } from '../hooks/useLanguage';
-import { ThemeContext } from '../contexts/ThemeContext';
-import { LanguageContext } from '../contexts/LanguageContext';
+import { ThemeContext, type Theme } from '../contexts/ThemeContext';
+import { LanguageContext, resolveLanguage } from '../contexts/LanguageContext';
 import { getVersion } from '@tauri-apps/api/app';
-import { getSettings, saveSettings } from '../hooks/useIpc';
+import { getSettings, updateSettings } from '../hooks/useIpc';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
-import { FOCUSABLE_SELECTORS } from '../utils/focusable';
 import { ipcErrorToString } from '../utils/errors';
-import type { Settings, LangCode } from '../types';
+import type { LangCode } from '../types';
 
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onError?: (msg: string) => void;
 }
+
+/** The saved language setting: '' means "Same as Windows". */
+type LanguagePreference = LangCode | '';
+
+/** The settings this dialog edits. Save writes exactly these fields. */
+interface DialogValues {
+  theme: Theme;
+  language: LanguagePreference;
+  autostart: boolean;
+  start_in_tray: boolean;
+  confirm_on_close: boolean;
+  autotype_delay_ms: number;
+}
+
+const MAX_AUTOTYPE_DELAY_MS = 1000;
+const TITLE_ID = 'settings-modal-title';
+const VERSION_ID = 'settings-version';
+
+function toLanguagePreference(raw: string): LanguagePreference {
+  return raw === 'en' || raw === 'uk' || raw === 'de' ? raw : '';
+}
+
+function toDelay(raw: string): number {
+  return Math.max(0, Math.min(MAX_AUTOTYPE_DELAY_MS, Math.floor(Number(raw) || 0)));
+}
+
+function hintId(controlId: string): string {
+  return `${controlId}-hint`;
+}
+
+// ── Layout pieces ─────────────────────────────────────────────────────────
+
+/** A titled group of settings. Screen readers say the title when focus enters it. */
+function SettingsGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <fieldset className="settings-group">
+      <legend>{title}</legend>
+      <div className="settings-card">{children}</div>
+    </fieldset>
+  );
+}
+
+/**
+ * One setting: the label (and an optional hint under it) on the left, the
+ * control on the right. The control must use `controlId` as its id and, when
+ * there is a hint, `aria-describedby={hintId(controlId)}`.
+ */
+function SettingsRow({
+  controlId,
+  label,
+  hint,
+  children,
+}: {
+  controlId: string;
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <div className="settings-row">
+      <div className="settings-row-text">
+        <label htmlFor={controlId}>{label}</label>
+        {hint && (
+          <p id={hintId(controlId)} className="settings-row-hint">
+            {hint}
+          </p>
+        )}
+      </div>
+      <div className="settings-row-control">{children}</div>
+    </div>
+  );
+}
+
+// ── Dialog ────────────────────────────────────────────────────────────────
 
 export function SettingsModal({
   isOpen,
@@ -31,196 +110,220 @@ export function SettingsModal({
   const { theme, setTheme } = useContext(ThemeContext);
   const { language, setLanguage } = useContext(LanguageContext);
 
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  // null until the saved settings are loaded: the dialog appears only then, so
+  // focus enters it once and screen readers read its title and first control together.
+  const [values, setValues] = useState<DialogValues | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const [saving, setSaving] = useState(false);
+  // Theme and language shown when the dialog opened; Cancel brings them back.
+  const shownAtOpen = useRef<{ theme: Theme; language: LangCode } | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
-    setLoading(true);
-    setSettings(null);
-    Promise.all([
-      getSettings(),
-      getVersion().catch(() => null),
-    ]).then(([s, v]) => {
-      setSettings(s);
-      setAppVersion(v);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    if (!isOpen) {
+      setValues(null);
+      return;
+    }
+    // Read once, as they are at the moment the dialog opens.
+    shownAtOpen.current = { theme, language };
+    let cancelled = false;
+    Promise.all([getSettings(), getVersion().catch(() => null)])
+      .then(([s, version]) => {
+        if (cancelled) return;
+        setAppVersion(version);
+        setValues({
+          theme,
+          language: toLanguagePreference(s.language),
+          autostart: s.autostart,
+          start_in_tray: s.start_in_tray,
+          confirm_on_close: s.confirm_on_close,
+          autotype_delay_ms: s.autotype_delay_ms,
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        onError?.(ipcErrorToString(err));
+        onClose();
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Only opening the dialog starts a load. Theme and language are read as they
+    // are at that moment on purpose: the previews must not restart it.
   }, [isOpen]);
 
-  // After async load resolves, move focus to the first interactive element
-  useEffect(() => {
-    if (!isOpen || loading) return;
-    const el = dialogRef.current;
-    if (!el) return;
-    const first = el.querySelector<HTMLElement>(FOCUSABLE_SELECTORS);
-    (first ?? el).focus();
-  }, [isOpen, loading]);
+  /** Cancel, Escape and a click outside: show the theme and language from before, save nothing. */
+  const handleCancel = useCallback(() => {
+    // A save in progress would write the new values after the old ones are shown.
+    if (saving) return;
+    const shown = shownAtOpen.current;
+    if (shown) {
+      setTheme(shown.theme);
+      setLanguage(shown.language);
+    }
+    onClose();
+  }, [saving, setTheme, setLanguage, onClose]);
 
   const handleSave = useCallback(async () => {
-    if (!settings || saving) return;
+    if (!values || saving) return;
     setSaving(true);
     try {
-      const updated: Settings = {
-        ...settings,
-        theme,
-        language,
-      };
-      await saveSettings(updated);
-      // Apply language & theme immediately (already applied via context)
+      // Only this dialog's fields; sort order and window size stay as they are.
+      await updateSettings(values);
       onClose();
     } catch (err: unknown) {
       onError?.(ipcErrorToString(err));
     } finally {
       setSaving(false);
     }
-  }, [settings, saving, theme, language, onClose]);
+  }, [values, saving, onClose, onError]);
 
-  useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSave });
+  useModalKeyboard(isOpen, { onEscape: handleCancel, onCtrlEnter: handleSave });
 
-  if (!isOpen) return null;
+  if (!isOpen || !values) return null;
+
+  const update = (patch: Partial<DialogValues>) =>
+    setValues((v) => (v ? { ...v, ...patch } : v));
+
+  const changeTheme = (next: Theme) => {
+    update({ theme: next });
+    setTheme(next); // shown at once, saved only by Save
+  };
+
+  const changeLanguage = (next: LanguagePreference) => {
+    update({ language: next });
+    setLanguage(resolveLanguage(next)); // shown at once, saved only by Save
+  };
 
   return (
     <ModalOverlay
       isOpen={isOpen}
-      onClose={onClose}
-      titleId="settings-modal-title"
-      busy={loading}
+      onClose={handleCancel}
+      titleId={TITLE_ID}
+      describedBy={appVersion ? VERSION_ID : undefined}
+      className="settings-dialog"
     >
-      <div ref={dialogRef}>
-      <h2 id="settings-modal-title">{t('settingsTitle')}</h2>
+      <h2 id={TITLE_ID}>{t('settingsTitle')}</h2>
 
-      {loading ? (
-        <p>…</p>
-      ) : (
-          <>
-            {/* Theme */}
-            <div className="form-field">
-              <span>{t('themeLabel')}</span>
-              <div className="toggle-group" role="group" aria-label={t('themeLabel')}>
-                <button
-                  type="button"
-                  className="toggle-btn"
-                  aria-pressed={theme === 'dark'}
-                  onClick={() => setTheme('dark')}
-                >
-                  {t('darkTheme')}
-                </button>
-                <button
-                  type="button"
-                  className="toggle-btn"
-                  aria-pressed={theme === 'light'}
-                  onClick={() => setTheme('light')}
-                >
-                  {t('lightTheme')}
-                </button>
-              </div>
-            </div>
+      <SettingsGroup title={t('settingsAppearanceGroup')}>
+        <SettingsRow controlId="settings-theme" label={t('themeLabel')}>
+          <div className="select-wrap">
+            <select
+              id="settings-theme"
+              value={values.theme}
+              onChange={(e) => changeTheme(e.target.value === 'light' ? 'light' : 'dark')}
+            >
+              <option value="dark">{t('darkTheme')}</option>
+              <option value="light">{t('lightTheme')}</option>
+            </select>
+          </div>
+        </SettingsRow>
 
-            {/* Language */}
-            <div className="form-field">
-              <label htmlFor="settings-lang">{t('languageLabel')}</label>
-              <select
-                id="settings-lang"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as LangCode)}
-              >
-                <option value="">{t('autoLanguage')}</option>
-                <option value="en">English</option>
-                <option value="uk">Українська</option>
-                <option value="de">Deutsch</option>
-              </select>
-            </div>
+        <SettingsRow controlId="settings-lang" label={t('languageLabel')}>
+          <div className="select-wrap">
+            <select
+              id="settings-lang"
+              value={values.language}
+              onChange={(e) => changeLanguage(toLanguagePreference(e.target.value))}
+            >
+              <option value="">{t('autoLanguage')}</option>
+              <option value="en" lang="en">English</option>
+              <option value="uk" lang="uk">Українська</option>
+              <option value="de" lang="de">Deutsch</option>
+            </select>
+          </div>
+        </SettingsRow>
+      </SettingsGroup>
 
-            {/* Checkboxes */}
-            <div className="form-field">
-              <label htmlFor="settings-tray">
-                <input
-                  id="settings-tray"
-                  type="checkbox"
-                  checked={settings?.start_in_tray ?? false}
-                  onChange={(e) =>
-                    setSettings((s) => s ? { ...s, start_in_tray: e.target.checked } : s)
-                  }
-                />
-                {' '}{t('startInTrayLabel')}
-              </label>
-            </div>
+      <SettingsGroup title={t('settingsStartupGroup')}>
+        <SettingsRow
+          controlId="settings-autostart"
+          label={t('autostartLabel')}
+          hint={t('autostartHint')}
+        >
+          <input
+            id="settings-autostart"
+            type="checkbox"
+            aria-describedby={hintId('settings-autostart')}
+            checked={values.autostart}
+            onChange={(e) => update({ autostart: e.target.checked })}
+          />
+        </SettingsRow>
 
-            <div className="form-field">
-              <label htmlFor="settings-autostart">
-                <input
-                  id="settings-autostart"
-                  type="checkbox"
-                  checked={settings?.autostart ?? false}
-                  onChange={(e) =>
-                    setSettings((s) => s ? { ...s, autostart: e.target.checked } : s)
-                  }
-                />
-                {' '}{t('autostartLabel')}
-              </label>
-            </div>
+        <SettingsRow
+          controlId="settings-tray"
+          label={t('startInTrayLabel')}
+          hint={t('startInTrayHint')}
+        >
+          <input
+            id="settings-tray"
+            type="checkbox"
+            aria-describedby={hintId('settings-tray')}
+            checked={values.start_in_tray}
+            onChange={(e) => update({ start_in_tray: e.target.checked })}
+          />
+        </SettingsRow>
 
-            <div className="form-field">
-              <label htmlFor="settings-confirm">
-                <input
-                  id="settings-confirm"
-                  type="checkbox"
-                  checked={settings?.confirm_on_close ?? false}
-                  onChange={(e) =>
-                    setSettings((s) => s ? { ...s, confirm_on_close: e.target.checked } : s)
-                  }
-                />
-                {' '}{t('confirmOnCloseLabel')}
-              </label>
-            </div>
+        <SettingsRow
+          controlId="settings-confirm"
+          label={t('confirmOnCloseLabel')}
+          hint={t('confirmOnCloseHint')}
+        >
+          <input
+            id="settings-confirm"
+            type="checkbox"
+            aria-describedby={hintId('settings-confirm')}
+            checked={values.confirm_on_close}
+            onChange={(e) => update({ confirm_on_close: e.target.checked })}
+          />
+        </SettingsRow>
+      </SettingsGroup>
 
-            {/* Autotype delay */}
-            <div className="form-field">
-              <label htmlFor="settings-autotype-delay">
-                {t('autotypeDelayLabel')}
-              </label>
-              <input
-                id="settings-autotype-delay"
-                type="number"
-                min={0}
-                max={1000}
-                step={1}
-                value={settings?.autotype_delay_ms ?? 1}
-                onChange={(e) => {
-                  const v = Math.max(0, Math.min(1000, Math.floor(Number(e.target.value) || 0)));
-                  setSettings((s) => s ? { ...s, autotype_delay_ms: v } : s);
-                }}
-                style={{ width: '5em' }}
-              />
-            </div>
+      <SettingsGroup title={t('settingsAutotypeGroup')}>
+        <SettingsRow
+          controlId="settings-autotype-delay"
+          label={t('autotypeDelayLabel')}
+          hint={t('autotypeDelayHint')}
+        >
+          <input
+            id="settings-autotype-delay"
+            type="number"
+            min={0}
+            max={MAX_AUTOTYPE_DELAY_MS}
+            step={1}
+            aria-describedby={hintId('settings-autotype-delay')}
+            value={values.autotype_delay_ms}
+            onChange={(e) => update({ autotype_delay_ms: toDelay(e.target.value) })}
+          />
+        </SettingsRow>
+      </SettingsGroup>
 
-            <p className="settings-hint">
-              {t('restartHint')}
-            </p>
-
-            <div className="modal-actions">
-              <button type="button" className="btn-secondary" onClick={onClose}>
-                {t('cancel')}
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={saving}
-                onClick={() => void handleSave()}
-              >
-                {t('save')}
-              </button>
-            </div>
-
-            {appVersion && (
-              <p className="settings-version">{tf.appVersion(appVersion)}</p>
-            )}
-          </>
+      <div className="settings-footer">
+        {appVersion && (
+          <p id={VERSION_ID} className="settings-version">
+            {tf.appVersion(appVersion)}
+          </p>
         )}
+        <div className="modal-actions">
+          <button
+            type="button"
+            id="settings-cancel"
+            className="btn-secondary"
+            onClick={handleCancel}
+          >
+            {t('cancel')}
+          </button>
+          <button
+            type="button"
+            id="settings-save"
+            className="btn-primary"
+            // aria-disabled, not disabled: a disabled button would drop the focus
+            // out of the dialog while saving.
+            aria-disabled={saving || undefined}
+            onClick={() => void handleSave()}
+          >
+            {t('save')}
+          </button>
+        </div>
       </div>
     </ModalOverlay>
   );

@@ -54,7 +54,7 @@ export interface Settings {
   start_in_tray: boolean;
   autostart: boolean;
   confirm_on_close: boolean;
-  /** BCP-47 language tag ("en" | "uk") or "" for auto-detect. */
+  /** "en" | "uk" | "de", or "" for "Same as Windows". */
   language: string;
   window_state: WindowState;
   /** Inter-character delay in milliseconds for autotype (0 = no delay). */

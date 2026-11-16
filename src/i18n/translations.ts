@@ -51,16 +51,24 @@ export interface TranslationMap {
 
   // ── Settings ─────────────────────────────────────────────────────────────
   settingsTitle: string;
+  /** Group names in the settings dialog. */
+  settingsAppearanceGroup: string;
+  settingsStartupGroup: string;
+  settingsAutotypeGroup: string;
   themeLabel: string;
   languageLabel: string;
   startInTrayLabel: string;
   autostartLabel: string;
   confirmOnCloseLabel: string;
   autotypeDelayLabel: string;
+  /** Hints shown under a setting and read after it by screen readers. */
+  autostartHint: string;
+  startInTrayHint: string;
+  confirmOnCloseHint: string;
+  autotypeDelayHint: string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
-  restartHint: string;
   appVersion: (version: string) => string;
 
   // ── Exit / close dialog ──────────────────────────────────────────────────
@@ -144,16 +152,22 @@ const en: TranslationMap = {
 
   // Settings
   settingsTitle: 'Settings',
+  settingsAppearanceGroup: 'Appearance and language',
+  settingsStartupGroup: 'Startup and closing',
+  settingsAutotypeGroup: 'Auto-type',
   themeLabel: 'Theme',
   languageLabel: 'Language',
-  startInTrayLabel: 'Start in system tray',
+  startInTrayLabel: 'Start minimized to the tray',
   autostartLabel: 'Start with Windows',
-  confirmOnCloseLabel: 'Confirm before closing',
-  autotypeDelayLabel: 'Autotype delay (ms)',
+  confirmOnCloseLabel: 'Ask before closing the app',
+  autotypeDelayLabel: 'Delay between characters, ms',
+  autostartHint: 'Takes effect the next time you sign in to Windows.',
+  startInTrayHint: 'Takes effect at the next start. Open the window with Ctrl+Alt+Space.',
+  confirmOnCloseHint: "Applies to Alt+F4 and the window's close button.",
+  autotypeDelayHint: '0 is the fastest. If characters go missing, try 10–50.',
   darkTheme: 'Dark',
   lightTheme: 'Light',
-  autoLanguage: 'Auto (system)',
-  restartHint: 'Some settings take effect after restart',
+  autoLanguage: 'Same as Windows',
   appVersion: (v) => `QuickSnippets version ${v}`,
 
   // Exit dialog
@@ -236,16 +250,22 @@ const uk: TranslationMap = {
 
   // Settings
   settingsTitle: 'Налаштування',
+  settingsAppearanceGroup: 'Вигляд і мова',
+  settingsStartupGroup: 'Запуск і закриття',
+  settingsAutotypeGroup: 'Автодрук',
   themeLabel: 'Тема',
   languageLabel: 'Мова',
-  startInTrayLabel: 'Запускати у треї',
-  autostartLabel: 'Запускати з Windows',
-  confirmOnCloseLabel: 'Підтверджувати закриття',
-  autotypeDelayLabel: 'Затримка автодруку (мс)',
+  startInTrayLabel: 'Запускати згорнутим у трей',
+  autostartLabel: 'Запускати разом з Windows',
+  confirmOnCloseLabel: 'Питати перед закриттям програми',
+  autotypeDelayLabel: 'Затримка між символами, мс',
+  autostartHint: 'Діє з наступного входу в Windows.',
+  startInTrayHint: 'Діє з наступного запуску. Вікно відкривається клавішами Ctrl+Alt+Space.',
+  confirmOnCloseHint: 'Стосується Alt+F4 і кнопки закриття вікна.',
+  autotypeDelayHint: '0 — найшвидше. Якщо символи губляться, спробуйте 10–50.',
   darkTheme: 'Темна',
   lightTheme: 'Світла',
-  autoLanguage: 'Авто (системна)',
-  restartHint: 'Деякі налаштування застосуються після перезапуску',
+  autoLanguage: 'Як у Windows',
   appVersion: (v) => `QuickSnippets версія ${v}`,
 
   // Exit dialog
@@ -332,16 +352,22 @@ const de: TranslationMap = {
 
   // Settings
   settingsTitle: 'Einstellungen',
+  settingsAppearanceGroup: 'Darstellung und Sprache',
+  settingsStartupGroup: 'Start und Beenden',
+  settingsAutotypeGroup: 'Automatisch tippen',
   themeLabel: 'Design',
   languageLabel: 'Sprache',
-  startInTrayLabel: 'Im Infobereich starten',
+  startInTrayLabel: 'Minimiert im Infobereich starten',
   autostartLabel: 'Mit Windows starten',
-  confirmOnCloseLabel: 'Vor dem Schließen bestätigen',
-  autotypeDelayLabel: 'Autotipp-Verzögerung (ms)',
+  confirmOnCloseLabel: 'Vor dem Beenden nachfragen',
+  autotypeDelayLabel: 'Verzögerung zwischen Zeichen, ms',
+  autostartHint: 'Gilt ab der nächsten Anmeldung bei Windows.',
+  startInTrayHint: 'Gilt ab dem nächsten Start. Das Fenster öffnet sich mit Strg+Alt+Space.',
+  confirmOnCloseHint: 'Gilt für Alt+F4 und die Schließen-Schaltfläche des Fensters.',
+  autotypeDelayHint: '0 ist am schnellsten. Wenn Zeichen fehlen, 10–50 versuchen.',
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
-  autoLanguage: 'Automatisch (System)',
-  restartHint: 'Einige Einstellungen treten nach einem Neustart in Kraft',
+  autoLanguage: 'Wie in Windows',
   appVersion: (v) => `QuickSnippets Version ${v}`,
 
   // Exit dialog

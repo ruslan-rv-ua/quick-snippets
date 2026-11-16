@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, render, act, screen } from '@testing-library/react';
 import React, { useContext } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { LanguageContext, LanguageProvider } from '../../contexts/LanguageContext';
+import { LanguageContext, LanguageProvider, resolveLanguage } from '../../contexts/LanguageContext';
 import { translations } from '../../i18n/translations';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -179,6 +179,40 @@ describe('LanguageContext', () => {
     const { result } = renderHook(() => useContext(LanguageContext), { wrapper });
     await act(async () => {});
     expect(result.current.language).toBe('en');
+  });
+
+  // 13a. An empty setting ("Same as Windows") follows the WebView language
+  it('resolveLanguage keeps en, uk and de', () => {
+    expect(resolveLanguage('en')).toBe('en');
+    expect(resolveLanguage('uk')).toBe('uk');
+    expect(resolveLanguage('de')).toBe('de');
+  });
+
+  it('resolveLanguage follows the WebView language for "" and unknown values', () => {
+    const spy = vi.spyOn(navigator, 'language', 'get');
+    try {
+      spy.mockReturnValue('uk-UA');
+      expect(resolveLanguage('')).toBe('uk');
+      spy.mockReturnValue('de-AT');
+      expect(resolveLanguage('')).toBe('de');
+      expect(resolveLanguage('fr')).toBe('de');
+      spy.mockReturnValue('pl-PL');
+      expect(resolveLanguage('')).toBe('en');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('loads "" (Same as Windows) as the WebView language', async () => {
+    const spy = vi.spyOn(navigator, 'language', 'get').mockReturnValue('uk-UA');
+    try {
+      vi.mocked(invoke).mockResolvedValue(makeSettings(''));
+      const { result } = renderHook(() => useContext(LanguageContext), { wrapper });
+      await act(async () => {});
+      expect(result.current.language).toBe('uk');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // 14. Using context outside provider returns default values (no throw)

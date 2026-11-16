@@ -23,6 +23,9 @@
     NVDA may announce notifications from other apps during the run; they end up in
     the report like any other speech.
 
+    The settings hints and the app version are object descriptions: NVDA reads them
+    only with "Report object descriptions" on (Object Presentation settings).
+
 .EXAMPLE
     just smoke
 
@@ -57,6 +60,39 @@ $UI = @{
     TitleInvalid      = 'Назва має бути від 3 до 50 символів'
     ContentEmpty      = 'Вміст не може бути порожнім'
     PasswordMismatch  = 'Паролі не збігаються'
+    # Settings dialog
+    AppVersion        = 'QuickSnippets версія'
+    GroupAppearance   = 'Вигляд і мова'
+    GroupStartup      = 'Запуск і закриття'
+    GroupAutotype     = 'Автодрук'
+    Theme             = 'Тема'
+    Dark              = 'Темна'
+    Light             = 'Світла'
+    Language          = 'Мова'
+    Ukrainian         = 'Українська'
+    German            = 'Deutsch'
+    Autostart         = 'Запускати разом з Windows'
+    AutostartHint     = 'Діє з наступного входу в Windows'
+    StartInTray       = 'Запускати згорнутим у трей'
+    StartInTrayHint   = 'Діє з наступного запуску. Вікно відкривається клавішами Ctrl+Alt+Space'
+    ConfirmOnClose    = 'Питати перед закриттям програми'
+    ConfirmOnCloseHint = 'Стосується Alt+F4 і кнопки закриття вікна'
+    AutotypeDelay     = 'Затримка між символами'
+    AutotypeDelayHint = '0 — найшвидше. Якщо символи губляться, спробуйте 10–50'
+    Cancel            = 'Скасувати'
+    Save              = 'Зберегти'
+    SettingsGerman    = 'Einstellungen'
+}
+
+# Role and state words as NVDA says them in Ukrainian, English or German: any one counts.
+$Role = @{
+    Dialog     = 'діалог|dialog'
+    Grouping   = 'групування|grouping|Gruppierung'
+    ComboBox   = 'комбінований список|combo box|Kombinationsfeld'
+    CheckBox   = 'прапорець|check box|Kontrollfeld'
+    NotChecked = 'не позначено|not checked|nicht aktiviert'
+    SpinButton = 'кнопка прокрутки|spin button|Drehschalter'
+    Button     = 'кнопка|button|Schalter'
 }
 
 # Throwaway values for the throwaway copy of the app.
@@ -437,6 +473,12 @@ function Get-Count([string]$Haystack, [string]$Needle) {
     return $n
 }
 
+# True when any of the '|'-separated variants was said.
+function Test-SaidAny([string]$Haystack, [string]$Variants) {
+    foreach ($v in $Variants.Split('|')) { if ((Get-Count $Haystack $v) -ge 1) { return $true } }
+    return $false
+}
+
 # ── Steps ────────────────────────────────────────────────────────────────────
 $Results = New-Object System.Collections.Generic.List[object]
 $Notes = New-Object System.Collections.Generic.List[string]
@@ -455,6 +497,8 @@ function Get-SaidText($Events) {
 }
 
 # Expect      - must be said at least once
+# ExpectAny   - for each entry, one of its '|'-separated variants must be said
+#               (role and state words, which depend on NVDA's language)
 # ExpectCount - must be said exactly N times, e.g. @{ 'Збережено' = 2 }
 # Forbid      - must not be said
 # Hope        - nice to hear, reported but never a failure (speech that races with the window hiding)
@@ -463,6 +507,7 @@ function Invoke-Step {
         [string]$Title,
         [scriptblock]$Action,
         [string[]]$Expect = @(),
+        [string[]]$ExpectAny = @(),
         [hashtable]$ExpectCount = @{},
         [string[]]$Forbid = @(),
         [string[]]$Hope = @(),
@@ -478,13 +523,14 @@ function Invoke-Step {
     catch { $r.Status = 'ПОМИЛКА'; $r.Detail = $_.Exception.Message; $script:Aborted = $true }
     if ($r.Status -eq 'OK' -and $script:SoftFail) { $r.Status = 'ПОМИЛКА'; $r.Detail = $script:SoftFail }
 
-    if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectCount.Count)) {
+    if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectAny.Count -or $ExpectCount.Count)) {
         # NVDA can lag behind the app: wait until it has said what we expect.
         $deadline = (Get-Date).AddSeconds($SpeechWaitSec)
         do {
             $said = Get-SaidText (Get-StepSpeech $from)
             $done = $true
             foreach ($p in $Expect) { if ((Get-Count $said $p) -lt 1) { $done = $false } }
+            foreach ($a in $ExpectAny) { if (-not (Test-SaidAny $said $a)) { $done = $false } }
             foreach ($k in $ExpectCount.Keys) { if ((Get-Count $said $k) -lt $ExpectCount[$k]) { $done = $false } }
             if ($done) { break }
             Start-Sleep -Milliseconds 200
@@ -500,6 +546,10 @@ function Invoke-Step {
         $checks = @()
         foreach ($p in $Expect) {
             $checks += [pscustomobject]@{ Text = "звучить «$p»"; Ok = (Get-Count $all $p) -ge 1; Required = $true }
+        }
+        foreach ($a in $ExpectAny) {
+            $variants = ($a.Split('|') | ForEach-Object { "«$_»" }) -join ' або '
+            $checks += [pscustomobject]@{ Text = "звучить $variants"; Ok = (Test-SaidAny $all $a); Required = $true }
         }
         foreach ($k in $ExpectCount.Keys) {
             $c = Get-Count $all $k
@@ -585,7 +635,9 @@ try {
         # Like a default install: the window opens at launch (start_in_tray off).
         theme = 'dark'; start_in_tray = $false; autostart = $false; confirm_on_close = $false; language = 'uk'
         window_state = [ordered]@{ x = 100; y = 100; width = 680; height = 520 }
-        autotype_delay_ms = 1; sort_mode = 'modified'; sort_direction = 'desc'
+        # 7: a value that no label or hint of the settings dialog contains, so the
+        # settings steps can check that NVDA reads the value of the delay field.
+        autotype_delay_ms = 7; sort_mode = 'modified'; sort_direction = 'desc'
     }
     # No BOM: serde_json rejects it.
     [IO.File]::WriteAllText((Join-Path $dataDir 'settings.json'), ($settings | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
@@ -794,6 +846,77 @@ try {
         Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
     } -Hope $UI.Copied
 
+    # Settings dialog: what NVDA says on opening and at every Tab stop, in the visual
+    # order, and that Escape brings back the theme and language without saving.
+    $settingsFile = Join-Path $dataDir 'settings.json'
+    $readSettings = { Get-Content -Raw -Encoding UTF8 $settingsFile | ConvertFrom-Json }
+    $assertSaved = {
+        param([string]$Theme, [string]$Language)
+        $s = & $readSettings
+        if ($s.theme -ne $Theme -or $s.language -ne $Language) {
+            throw "у settings.json тема «$($s.theme)», мова «$($s.language)», а мали бути «$Theme» і «$Language»"
+        }
+    }
+    $tabTo = {
+        param([string]$Id, [string]$What)
+        Send-Keys 'Tab'
+        Wait-Until "фокус на «$What»" { & $hasFocus $Id }
+    }
+
+    Invoke-Step 'Ctrl+, відкриває налаштування: назва, версія, група, список «Тема»' {
+        Show-App
+        Send-Keys 'Ctrl+Comma'
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+    } -Expect $UI.Settings, $UI.AppVersion, $UI.GroupAppearance, $UI.Theme, $UI.Dark -ExpectAny $Role.Dialog, $Role.Grouping, $Role.ComboBox
+
+    Invoke-Step 'Tab: список «Мова»' {
+        & $tabTo 'settings-lang' $UI.Language
+    } -Expect $UI.Language, $UI.Ukrainian -ExpectAny $Role.ComboBox
+
+    Invoke-Step 'Tab: прапорець «Запускати разом з Windows» з підказкою' {
+        & $tabTo 'settings-autostart' $UI.Autostart
+    } -Expect $UI.GroupStartup, $UI.Autostart, $UI.AutostartHint -ExpectAny $Role.Grouping, $Role.CheckBox, $Role.NotChecked
+
+    Invoke-Step 'Tab: прапорець «Запускати згорнутим у трей» з підказкою' {
+        & $tabTo 'settings-tray' $UI.StartInTray
+    } -Expect $UI.StartInTray, $UI.StartInTrayHint -ExpectAny $Role.CheckBox, $Role.NotChecked
+
+    Invoke-Step 'Tab: прапорець «Питати перед закриттям програми» з підказкою' {
+        & $tabTo 'settings-confirm' $UI.ConfirmOnClose
+    } -Expect $UI.ConfirmOnClose, $UI.ConfirmOnCloseHint -ExpectAny $Role.CheckBox, $Role.NotChecked
+
+    Invoke-Step 'Tab: поле «Затримка між символами» зі значенням і підказкою' {
+        & $tabTo 'settings-autotype-delay' $UI.AutotypeDelay
+    } -Expect $UI.GroupAutotype, $UI.AutotypeDelay, '7', $UI.AutotypeDelayHint -ExpectAny $Role.SpinButton
+
+    Invoke-Step 'Tab: «Скасувати», «Зберегти», а потім знову список «Тема»' {
+        & $tabTo 'settings-cancel' $UI.Cancel
+        & $tabTo 'settings-save' $UI.Save
+        & $tabTo 'settings-theme' $UI.Theme
+    } -Expect $UI.Cancel, $UI.Save, $UI.Theme -ExpectAny $Role.Button
+
+    Invoke-Step 'Escape скасовує: тема й мова повертаються, нічого не записано' {
+        # The theme list has focus. Down shows the light theme at once.
+        Send-Keys 'Down'
+        # Down in the language list shows the interface in German at once.
+        & $tabTo 'settings-lang' $UI.Language
+        Send-Keys 'Down'
+        $null = Wait-Until 'діалог німецькою' { Find-Element (Get-AppWindow) -Name $UI.SettingsGerman }
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито, фокус у головному вікні' {
+            -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady)
+        }
+        & $assertSaved 'dark' 'uk'
+    } -Expect $UI.Light, $UI.German -Forbid $UI.Saved
+
+    Invoke-Step 'Знову Ctrl+,: діалог українською, тема темна' {
+        Send-Keys 'Ctrl+Comma'
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито' { -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady) }
+        & $assertSaved 'dark' 'uk'
+    } -Expect $UI.Settings, $UI.Theme, $UI.Dark -Forbid $UI.SettingsGerman, $UI.Light
+
     $autostartSkip = ''
     if ($UserRunValue) { $autostartSkip = 'у вас увімкнено автозапуск QuickSnippets, тест його не чіпає' }
 
@@ -807,6 +930,10 @@ try {
             $v = Get-RunValue
             $v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0
         }
+        # What the next start reads: the new value, and the other settings unchanged.
+        $null = Wait-Until 'автозапуск у settings.json' { (& $readSettings).autostart -eq $true } 3
+        & $assertSaved 'dark' 'uk'
+        if ((& $readSettings).autotype_delay_ms -ne 7) { throw 'збереження змінило затримку автодруку' }
     } -Expect $UI.Settings -SkipReason $autostartSkip
 
     Invoke-Step 'Автозапуск вимикається' {
@@ -817,6 +944,7 @@ try {
         Set-Toggle $box $false
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'запис автозапуску зник' { -not (Get-RunValue) }
+        $null = Wait-Until 'автозапуск вимкнено в settings.json' { (& $readSettings).autostart -eq $false } 3
     } -SkipReason $autostartSkip
 }
 finally {
@@ -878,6 +1006,19 @@ if ($script:LogPath -and -not $anySpeech -and ($appOk + $appFail) -gt 0) {
 }
 if ($script:NvdaErrors.Count) {
     $lines.Add("Помилки в лозі NVDA під час тесту: $($script:NvdaErrors.Count). Перша: $($script:NvdaErrors[0])")
+}
+# Hints and the app version in Settings reach NVDA as object descriptions.
+$descriptionTexts = @($UI.AppVersion, $UI.AutostartHint, $UI.StartInTrayHint, $UI.ConfirmOnCloseHint, $UI.AutotypeDelayHint)
+$missedDescription = $false
+foreach ($r in $Results) {
+    foreach ($c in $r.Checks) {
+        if (-not $c.Required -or $c.Ok) { continue }
+        foreach ($d in $descriptionTexts) { if ($c.Text.Contains($d)) { $missedDescription = $true } }
+    }
+}
+if ($missedDescription) {
+    # Double quotes: PowerShell takes the Ukrainian apostrophe (U+2019) for a single quote.
+    $lines.Add("NVDA не прочитав підказки чи версію в налаштуваннях: вони є описами об’єктів. Перевірте, що в NVDA увімкнено «Читати опис об’єкта» (Параметри, Налаштування, Представлення об’єкта).")
 }
 if (-not $ClipHadText) { $lines.Add('У буфері обміну до тесту був не текст, його не відновлено.') }
 if ($UserApps.Count) { $lines.Add('Вашу копію QuickSnippets закрито для тесту.') }
