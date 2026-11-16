@@ -277,7 +277,6 @@ function AppInner(): React.ReactElement {
         snippets={snippets}
         activeIndex={activeIndex}
         query={query}
-        listFocused={listFocused}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
       />

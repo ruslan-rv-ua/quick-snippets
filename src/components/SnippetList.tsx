@@ -3,18 +3,10 @@ import { useLanguage } from '../hooks/useLanguage';
 import { SnippetItem } from './SnippetItem';
 import type { SearchResult } from '../types';
 
-/** A new list that would repeat the last announcement for the same query within this time stays silent. */
-const REPEAT_MS = 1500;
-
 export interface SnippetListProps {
   snippets: SearchResult[];
   activeIndex: number;
   query: string;
-  /**
-   * True while screen readers are on the selected snippet (the search box points at it with
-   * aria-activedescendant), false while they are in the search box.
-   */
-  listFocused: boolean;
   onActiveIndexChange: (index: number) => void;
   onActivate: (snippet: SearchResult) => void;
 }
@@ -23,16 +15,20 @@ export function SnippetList({
   snippets,
   activeIndex,
   query,
-  listFocused,
   onActiveIndexChange,
   onActivate,
 }: SnippetListProps): React.ReactElement {
   const { t, tf } = useLanguage();
   const listRef = useRef<HTMLDivElement>(null);
   const [liveText, setLiveText] = useState('');
+  const prevQueryRef = useRef(query);
   const prevSnippetsRef = useRef(snippets);
-  // What the live region said last, for which query, and when.
-  const lastAnnouncedRef = useRef<{ text: string; query: string; at: number } | null>(null);
+  // Results for a changed query have not arrived yet.
+  const pendingRef = useRef(false);
+  // The snippet that was selected before the query changed.
+  const activeIdBeforeRef = useRef<number | undefined>(undefined);
+  const activeId = activeIndex >= 0 ? snippets[activeIndex]?.id : undefined;
+  const lastActiveIdRef = useRef(activeId);
 
   // Scroll active item into view
   useEffect(() => {
@@ -43,39 +39,44 @@ export function SnippetList({
     item?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex, snippets]);
 
-  // While the screen reader is in the search box, nothing points it at the snippets, so each
-  // new result list is announced here once it arrives: the first result, or "no results" for
-  // a query that found nothing. The app changes the query at once and the results about
-  // 100 ms later (debounce + IPC); the list also arrives anew each time the window is shown.
-  // While the screen reader is on a snippet, it reads the selected one through
-  // aria-activedescendant on the search box, so the list stays silent here.
+  // Search results are announced once they arrive. The app changes the query at once and
+  // the results about 100 ms later (debounce + IPC), so the announcement waits for them.
+  // NVDA already reads a newly selected snippet: through aria-activedescendant on the search
+  // box while it is on the list, and as the newly selected option of the list the search box
+  // controls while it is in the search box. So the live region speaks only what nothing else
+  // does: "no results", or the first result when the selected snippet stayed the same.
+  // Sort/refresh changes are already covered by aria-activedescendant + toast.
   useEffect(() => {
-    if (snippets === prevSnippetsRef.current) return;
+    const queryChanged = query !== prevQueryRef.current;
+    const snippetsChanged = snippets !== prevSnippetsRef.current;
+    prevQueryRef.current = query;
     prevSnippetsRef.current = snippets;
-    if (listFocused) return;
+    const activeIdBefore = lastActiveIdRef.current;
+    lastActiveIdRef.current = activeId;
+
+    if (queryChanged) {
+      if (!pendingRef.current) activeIdBeforeRef.current = activeIdBefore;
+      pendingRef.current = true;
+      setLiveText('');
+    }
+    // Results in the same render as the query (tests), or in a later one (the app).
+    if (!pendingRef.current || !snippetsChanged) return;
+    pendingRef.current = false;
 
     let text = '';
-    if (snippets.length > 0) {
+    if (snippets.length === 0) {
+      // An empty query with no list is the reset when the window hides, not a search.
+      if (query.trim() !== '') text = t('noResults');
+    } else if (activeId === activeIdBeforeRef.current) {
       text = tf.snippetLabel(snippets[0].title, snippets[0].is_encrypted);
-    } else if (query.trim() !== '') {
-      text = t('noResults');
     }
-    // The same list delivered again for the same query is not announced twice: the window is
-    // shown by two events (window focus and the show event), and each one reloads the list.
-    const last = lastAnnouncedRef.current;
-    if (text && last && last.text === text && last.query === query && Date.now() - last.at < REPEAT_MS) return;
-
-    setLiveText('');
-    // An empty query with no list is the reset when the window hides, not a search.
     if (!text) return;
     const id = setTimeout(() => {
       // Results that arrive while the window is hidden (the reset on blur) are not announced.
-      if (!document.hasFocus()) return;
-      lastAnnouncedRef.current = { text, query, at: Date.now() };
-      setLiveText(text);
+      if (document.hasFocus()) setLiveText(text);
     }, 200);
     return () => clearTimeout(id);
-  }, [snippets, query, listFocused, t, tf]);
+  }, [snippets, query, activeId, t, tf]);
 
   const isEmpty = snippets.length === 0;
 

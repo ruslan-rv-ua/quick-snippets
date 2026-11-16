@@ -920,7 +920,8 @@ try {
     } -Hope $UI.Copied
 
     # The window opens with NVDA in the search box, so a query typed at once is read as in any
-    # text field; the list then names the first snippet once (the secret one, changed last).
+    # text field. NVDA then reads the first snippet once, as the newly selected option of the
+    # list the search box controls (the secret one, changed last).
     Invoke-Step 'Ctrl+Alt+Space: NVDA у полі пошуку, потім один раз читає перший сніпет' {
         Show-App
         Wait-Until 'фокус у полі пошуку, сніпети в списку' {

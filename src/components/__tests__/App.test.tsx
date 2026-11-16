@@ -269,10 +269,12 @@ describe('App: where the screen reader is', () => {
     return search;
   }
 
-  it('when the window opens, it is in the search box and the live region says the first snippet', async () => {
+  // NVDA reads the newly selected option of the list the search box controls by itself, so
+  // the live region stays silent.
+  it('when the window opens, it is in the search box with the first snippet selected', async () => {
     const search = await openApp();
     expect(pointsAt(search)).toBe('');
-    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+    expect(resultsLiveText()).toBe('');
   });
 
   it('Down moves it onto the selected snippet; Left brings it back, and the snippet stays selected', async () => {
@@ -285,7 +287,7 @@ describe('App: where the screen reader is', () => {
     expect(screen.getByRole('option', { name: 'Goodbye' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('after typing, it stays in the search box, the live region says the first result, and Enter copies it', async () => {
+  it('after typing on the list, it is back in the search box; Enter copies the selected snippet', async () => {
     const search = await openApp();
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     await waitFor(() => expect(pointsAt(search)).toBe('snippet-2'));
@@ -294,10 +296,19 @@ describe('App: where the screen reader is', () => {
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('search_snippets', { query: 'g' }));
     await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
     expect(pointsAt(search)).toBe('');
-    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+    // A newly selected snippet: NVDA reads it itself.
+    expect(resultsLiveText()).toBe('');
 
     fireEvent.keyDown(search, { key: 'Enter' });
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('activate_snippet', { id: 1, password: '' }));
+  });
+
+  it('when a search keeps the same snippet selected, the live region says it', async () => {
+    const search = await openApp();
+    fireEvent.change(search, { target: { value: 'g' } });
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('search_snippets', { query: 'g' }));
+    expect(pointsAt(search)).toBe('');
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
   });
 
   it('coming back from a dialog, it is on the selected snippet', async () => {
