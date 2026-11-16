@@ -112,9 +112,10 @@ function ShortcutList(): React.ReactElement {
 
   let index = 0;
   return (
+    // No name of its own: labelled by the dialog title, NVDA said the title twice
+    // on opening ("Keyboard shortcuts, dialog | Keyboard shortcuts, list").
     <div
       role="listbox"
-      aria-labelledby={TITLE_ID}
       className="help-list"
       onKeyDown={handleKeyDown}
     >

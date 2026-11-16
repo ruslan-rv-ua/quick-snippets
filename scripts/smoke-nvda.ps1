@@ -956,10 +956,10 @@ try {
     # (the app root is role="application", so plain text would stay silent here).
     $helpItem = { param([int]$i) Find-Element (& $appWin) -Id "help-item-$i" }
 
-    Invoke-Step 'F1 відкриває довідку: назва, список, група, перший рядок' {
+    Invoke-Step 'F1 відкриває довідку: назва один раз, список, група, перший рядок' {
         Send-Keys 'F1'
         Wait-Until 'фокус на першому рядку довідки' { Test-HasFocus (& $helpItem 0) }
-    } -Expect $UI.HelpTitle, $UI.HelpGroupGlobal, 'Ctrl+Alt+Space', $HelpActions[0] -ExpectAny $Role.Dialog, $Role.List, $Role.Grouping
+    } -Expect $UI.HelpGroupGlobal, 'Ctrl+Alt+Space', $HelpActions[0] -ExpectAny $Role.Dialog, $Role.List, $Role.Grouping -ExpectCount @{ ($UI.HelpTitle) = 1 }
 
     Invoke-Step 'Стрілка вниз читає кожен рядок довідки з дією і назви груп' {
         for ($i = 1; $i -lt $HelpActions.Count; $i++) {
