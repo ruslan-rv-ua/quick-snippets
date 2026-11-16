@@ -36,7 +36,8 @@ npm run test:all         # Both frontend and backend tests
 # Run a single frontend test file
 npx vitest run src/hooks/__tests__/useSearchLogic.test.ts
 
-# NVDA smoke test of the built release exe (~1 min, hands off; NVDA log level "input/output")
+# NVDA smoke test of the built release exe (~2.5 min, hands off; NVDA log level "input/output";
+# leave a minute between two runs, see DEVELOPMENT.md)
 just smoke               # scripts/smoke-nvda.ps1; report also in %TEMP%\quick-snippets-smoke-report.txt
 
 # Lint

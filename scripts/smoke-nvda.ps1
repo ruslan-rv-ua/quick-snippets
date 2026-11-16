@@ -21,7 +21,8 @@
       script, so NVDA does not describe your other programs into the report.
     - The autostart check is skipped if your own autostart entry exists.
 
-    Do not touch the keyboard or mouse while it runs (about a minute).
+    Do not touch the keyboard or mouse while it runs (about two and a half minutes).
+    Leave a minute or more between two runs (see DEVELOPMENT.md).
     NVDA may announce notifications from other apps during the run; they end up in
     the report like any other speech.
 
@@ -728,7 +729,7 @@ if (-not $script:LogPath) { Write-Host 'NVDA не запущено або лог
 if (Get-Process quick-snippets -ErrorAction SilentlyContinue) {
     Write-Host 'Вашу копію QuickSnippets буде закрито: тест запускає лише свою копію.'
 }
-Write-Host 'Тест триває близько хвилини. Не торкайтеся клавіатури й миші, доки не прозвучить «Готово».'
+Write-Host 'Тест триває близько двох з половиною хвилин. Не торкайтеся клавіатури й миші, доки не прозвучить «Готово».'
 Start-Sleep -Seconds 4
 
 # Closed before the test and not started again: the test runs only its own copy.
