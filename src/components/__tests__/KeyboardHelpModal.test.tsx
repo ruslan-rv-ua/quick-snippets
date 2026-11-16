@@ -92,6 +92,11 @@ describe('KeyboardHelpModal', () => {
     expect(dialog).not.toHaveAttribute('aria-describedby');
   });
 
+  it('says the title once: the list has no name of its own', async () => {
+    const { list } = await openHelp();
+    expect(list).toHaveAccessibleName('');
+  });
+
   it('lists every shortcut as an option named "keys, action", in three named groups', async () => {
     const { list, options } = await openHelp();
     const en = translations.en;
