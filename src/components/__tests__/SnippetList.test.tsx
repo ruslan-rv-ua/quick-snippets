@@ -148,4 +148,60 @@ describe('SnippetList', () => {
     expect(secondAnnounce).toContain('Alpha');
     vi.useRealTimers();
   });
+  // The app changes the query at once and the results about 100 ms later (debounce + IPC).
+  describe('when results arrive after the query', () => {
+    function list(snippets: SearchResult[], query: string, activeIndex: number) {
+      return (
+        <LanguageProvider>
+          <SnippetList
+            snippets={snippets}
+            activeIndex={activeIndex}
+            query={query}
+            onActiveIndexChange={vi.fn()}
+            onActivate={vi.fn()}
+          />
+        </LanguageProvider>
+      );
+    }
+    const liveText = () => document.querySelector('[aria-live="polite"]')?.textContent ?? '';
+
+    function search(query: string, results: SearchResult[]) {
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list(mockSnippets, query, 0));
+      act(() => { vi.advanceTimersByTime(120); });
+      view.rerender(list(results, query, results.length > 0 ? 0 : -1));
+      act(() => { vi.advanceTimersByTime(200); });
+      return view;
+    }
+
+    it('announces "no results" when nothing matches', () => {
+      vi.useFakeTimers();
+      search('zzz', []);
+      expect(liveText()).toMatch(/no results|нічого не знайдено/i);
+      vi.useRealTimers();
+    });
+
+    it('stays silent when the active snippet changes (NVDA reads it through aria-activedescendant)', () => {
+      vi.useFakeTimers();
+      search('be', [mockSnippets[1]]);
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+
+    it('announces the first result when the active snippet stays the same', () => {
+      vi.useFakeTimers();
+      search('al', [mockSnippets[0]]);
+      expect(liveText()).toContain('Alpha');
+      vi.useRealTimers();
+    });
+
+    it('says nothing when the window hides and the search is reset', () => {
+      vi.useFakeTimers();
+      const view = search('al', [mockSnippets[0]]);
+      view.rerender(list([], '', -1));
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+  });
 });

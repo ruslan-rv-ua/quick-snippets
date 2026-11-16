@@ -11,7 +11,9 @@
     - Your data: the test runs a copy of the exe from a temp folder with its own
       empty quick-snippets-data folder. Your snippets and settings are not touched.
     - The test runs only its own copy. A running QuickSnippets is closed (the app
-      allows only one copy) and is not started again afterwards.
+      allows only one copy) and is not started again afterwards. Near the end the test
+      quits its own copy through the exit confirmation and starts it again with the
+      same data folder, to check what a restart keeps.
     - Clipboard text is restored at the end. Test values are kept out of Windows
       clipboard history when the script runs in Windows PowerShell (STA).
     - Only the part of nvda.log written during this run is read.
@@ -90,6 +92,20 @@ $UI = @{
     HelpGroupMain     = 'Головне вікно'
     HelpGroupDialogs  = 'Форми й діалоги'
     Close             = 'Закрити'
+    # Search, delete, sorting, quitting
+    NoResults         = 'Нічого не знайдено'
+    DeleteTitle       = 'Видалити сніпет'
+    Deleted           = 'Видалено'
+    ExitTitle         = 'Вийти з QuickSnippets?'
+    SortPrefix        = 'Сортування: '
+    SortCreatedDesc   = 'Найновіші'
+    SortCreatedAsc    = 'Найстаріші'
+    SortModifiedDesc  = 'Змінені ↓'
+    SortModifiedAsc   = 'Змінені ↑'
+    SortAlphaAsc      = 'А–Я'
+    SortAlphaDesc     = 'Я–А'
+    SortLastUsedDesc  = 'Нещодавні'
+    SortLastUsedAsc   = 'Найдавніші'
 }
 
 # Every action in the help, in list order (helpShortcuts.uk in src/i18n/translations.ts).
@@ -219,7 +235,7 @@ public static class QsSmokeNative {
 }
 
 $VK = @{ Ctrl = 0x11; Alt = 0x12; Shift = 0x10; Space = 0x20; Enter = 0x0D; Tab = 0x09; Esc = 0x1B
-         Comma = 0xBC; Down = 0x28; Up = 0x26; Home = 0x24; End = 0x23; Delete = 0x2E; F1 = 0x70 }
+         Comma = 0xBC; Down = 0x28; Up = 0x26; Home = 0x24; End = 0x23; Delete = 0x2E; F1 = 0x70; F4 = 0x73 }
 $ExtendedVK = @(0x28, 0x26, 0x24, 0x23, 0x2E)
 
 function Send-Keys([string[]]$Chords) {
@@ -523,8 +539,10 @@ $script:SoftFail = $null
 $script:SetupError = ''
 $script:NvdaErrors = @()
 
+# Up to the end of the log, or up to where the step set $script:SpeechUntil.
 function Get-StepSpeech([long]$From) {
-    return @(Get-NvdaEvents (Read-LogRange $From (Get-LogLength)))
+    $to = if ($script:SpeechUntil) { $script:SpeechUntil } else { Get-LogLength }
+    return @(Get-NvdaEvents (Read-LogRange $From $to))
 }
 
 function Get-SaidText($Events) {
@@ -554,6 +572,7 @@ function Invoke-Step {
 
     $from = Get-LogLength
     $script:SoftFail = $null  # a step sets this to fail without stopping the remaining steps
+    $script:SpeechUntil = $null  # a step sets this log offset to ignore what NVDA says after it
     try { $null = & $Action }
     catch { $r.Status = 'ПОМИЛКА'; $r.Detail = $_.Exception.Message; $script:Aborted = $true }
     if ($r.Status -eq 'OK' -and $script:SoftFail) { $r.Status = 'ПОМИЛКА'; $r.Detail = $script:SoftFail }
@@ -1027,6 +1046,185 @@ try {
         Wait-Until 'запис автозапуску зник' { -not (Get-RunValue) }
         $null = Wait-Until 'автозапуск вимкнено в settings.json' { (& $readSettings).autostart -eq $false } 3
     } -SkipReason $autostartSkip
+
+    # ── Search, delete, sorting, quitting, theme after a restart ────────────────
+    $secretName = '{0} ({1})' -f $Data.SecretTitle, $UI.Encrypted
+    $listItemType = [System.Windows.Automation.ControlType]::ListItem
+    # Snippet names in list order.
+    $listNames = {
+        $w = & $appWin
+        if ($null -eq $w) { return @() }
+        return @($w.FindAll($Scope::Descendants, (New-Condition $AE::ControlTypeProperty $listItemType)) | ForEach-Object { $_.Current.Name })
+    }
+    $listIs = { param([string[]]$Names) ((& $listNames) -join ' | ') -eq ($Names -join ' | ') }
+    $searchValue = {
+        $box = Get-SearchBox
+        if ($null -eq $box) { return $null }
+        return $box.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    }
+    $cancelButton = { Find-Element (& $appWin) -Name $UI.Cancel -Type ([System.Windows.Automation.ControlType]::Button) }
+    # Moves the selection to the snippet with this name (Home, then Down).
+    $selectSnippet = {
+        param([string]$Name)
+        Send-Keys 'Home'
+        for ($i = 0; $i -lt 3; $i++) {
+            $f = Get-FocusedListItem
+            if ($f -and $f.Current.Name -eq $Name) { return }
+            Send-Keys 'Down'
+        }
+        throw "не вдалося вибрати сніпет «$Name»"
+    }
+    $assertSort = {
+        param([string]$Mode, [string]$Direction, [string[]]$Order)
+        Wait-Until "сортування $Mode $Direction у settings.json" {
+            $s = & $readSettings
+            $s.sort_mode -eq $Mode -and $s.sort_direction -eq $Direction
+        }
+        Wait-Until "порядок у списку: $($Order -join ', ')" { & $listIs $Order }
+    }
+
+    Invoke-Step 'Пошук: запит лишає в списку лише знайдений сніпет' {
+        Show-App
+        Send-Keys 'Ctrl+F'
+        Send-Text 'звич'
+        Wait-Until 'у списку лише знайдений сніпет' { & $listIs @($Data.PlainTitle) }
+        Wait-Until 'запит у полі пошуку' { (& $searchValue) -eq 'звич' }
+    } -ExpectCount @{ ($Data.PlainTitle) = 1 } -Forbid $UI.NoResults
+
+    Invoke-Step 'Пошук без збігів: список порожній, «Нічого не знайдено»' {
+        Send-Keys 'Ctrl+A'
+        Send-Text 'щщщ'
+        Wait-Until 'порожній список' { (& $searchValue) -eq 'щщщ' -and (& $listNames).Count -eq 0 }
+        Wait-Until 'текст «Нічого не знайдено»' { Find-TextLike $UI.NoResults }
+    } -ExpectCount @{ ($UI.NoResults) = 1 } -Forbid $Data.PlainTitle
+
+    Invoke-Step 'Escape очищає пошук, вікно лишається відкритим' {
+        Send-Keys 'Esc'
+        Wait-Until 'поле пошуку порожнє, у списку обидва сніпети' {
+            (& $searchValue) -eq '' -and (& $listIs @($secretName, $Data.PlainTitle))
+        }
+        Start-Sleep -Milliseconds 400
+        if (-not (Test-AppReady)) { throw 'після Escape вікно сховалося або фокус пішов з нього' }
+    } -ExpectCount @{ ($Data.SecretTitle) = 1 } -Forbid $UI.NoResults
+
+    # Each press is announced once; the second press of the same shortcut reverses the order.
+    # The secret snippet was created, changed and used after the plain one.
+    Invoke-Step 'Ctrl+Shift+1: найновіші, ще раз — найстаріші' {
+        Send-Keys 'Ctrl+Shift+1'
+        & $assertSort 'created' 'desc' @($secretName, $Data.PlainTitle)
+        Send-Keys 'Ctrl+Shift+1'
+        & $assertSort 'created' 'asc' @($Data.PlainTitle, $secretName)
+    } -ExpectCount @{ ($UI.SortPrefix + $UI.SortCreatedDesc) = 1; ($UI.SortPrefix + $UI.SortCreatedAsc) = 1 }
+
+    Invoke-Step 'Ctrl+Shift+2: змінені спадно, ще раз — зростанням' {
+        Send-Keys 'Ctrl+Shift+2'
+        & $assertSort 'modified' 'desc' @($secretName, $Data.PlainTitle)
+        Send-Keys 'Ctrl+Shift+2'
+        & $assertSort 'modified' 'asc' @($Data.PlainTitle, $secretName)
+    } -ExpectCount @{ ($UI.SortPrefix + $UI.SortModifiedDesc) = 1; ($UI.SortPrefix + $UI.SortModifiedAsc) = 1 }
+
+    Invoke-Step 'Ctrl+Shift+3: А–Я, ще раз — Я–А' {
+        Send-Keys 'Ctrl+Shift+3'
+        & $assertSort 'alphabetical' 'asc' @($secretName, $Data.PlainTitle)
+        Send-Keys 'Ctrl+Shift+3'
+        & $assertSort 'alphabetical' 'desc' @($Data.PlainTitle, $secretName)
+    } -ExpectCount @{ ($UI.SortPrefix + $UI.SortAlphaAsc) = 1; ($UI.SortPrefix + $UI.SortAlphaDesc) = 1 }
+
+    Invoke-Step 'Ctrl+Shift+4: нещодавні, ще раз — найдавніші' {
+        Send-Keys 'Ctrl+Shift+4'
+        & $assertSort 'last_used' 'desc' @($secretName, $Data.PlainTitle)
+        Send-Keys 'Ctrl+Shift+4'
+        & $assertSort 'last_used' 'asc' @($Data.PlainTitle, $secretName)
+    } -ExpectCount @{ ($UI.SortPrefix + $UI.SortLastUsedDesc) = 1; ($UI.SortPrefix + $UI.SortLastUsedAsc) = 1 }
+
+    Invoke-Step 'Delete питає підтвердження видалення, фокус на «Скасувати»' {
+        & $selectSnippet $Data.PlainTitle
+        Send-Keys 'Delete'
+        Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
+        if (-not (Find-TextLike "*$($Data.PlainTitle)*")) { throw 'у діалозі немає назви сніпета' }
+    } -Expect $UI.DeleteTitle, $UI.Cancel -ExpectAny $Role.Dialog, $Role.Button
+
+    Invoke-Step 'Escape закриває підтвердження, сніпет лишається' {
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито, фокус у головному вікні' { -not (& $cancelButton) -and (Test-AppReady) }
+        if (-not (& $listIs @($Data.PlainTitle, $secretName))) { throw "у списку: $((& $listNames) -join ', ')" }
+    } -Forbid $UI.Deleted
+
+    Invoke-Step 'Ctrl+D і Ctrl+Enter видаляють сніпет' {
+        & $selectSnippet $Data.PlainTitle
+        Send-Keys 'Ctrl+D'
+        Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'сніпет зник зі списку' { & $listIs @($secretName) }
+        Wait-Until 'діалог закрито, фокус у головному вікні' { -not (& $cancelButton) -and (Test-AppReady) }
+    } -Expect $UI.DeleteTitle -ExpectCount @{ ($UI.Deleted) = 1 }
+
+    Invoke-Step 'Налаштування: увімкнути «Питати перед закриттям програми»' {
+        Send-Keys 'Ctrl+Comma'
+        $box = Wait-Until 'налаштування відкрито' { Find-Element (& $appWin) -Id 'settings-confirm' }
+        Set-Toggle $box $true
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'підтвердження виходу в settings.json' { (& $readSettings).confirm_on_close -eq $true }
+        Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
+        & $assertSaved 'dark' 'uk'
+    } -Expect $UI.Settings
+
+    Invoke-Step 'Ctrl+Shift+T вмикає світлу тему й записує її' {
+        Send-Keys 'Ctrl+Shift+T'
+        Wait-Until 'світла тема в settings.json' { (& $readSettings).theme -eq 'light' }
+        $s = & $readSettings
+        if ($s.confirm_on_close -ne $true -or $s.sort_mode -ne 'last_used') { throw 'зміна теми переписала інші налаштування' }
+        if (-not (Test-AppReady)) { throw 'після Ctrl+Shift+T фокус пішов з головного вікна' }
+    } -Forbid $UI.Settings
+
+    Invoke-Step 'Alt+F4 питає підтвердження виходу, фокус на «Скасувати»' {
+        Send-Keys 'Alt+F4'
+        Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
+        if (-not (Find-TextLike $UI.ExitTitle)) { throw 'немає заголовка діалогу виходу' }
+    } -Expect $UI.ExitTitle, $UI.Cancel -ExpectAny $Role.Dialog, $Role.Button
+
+    Invoke-Step 'Escape: програма працює далі' {
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито, фокус у головному вікні' { -not (& $cancelButton) -and (Test-AppReady) }
+        Start-Sleep -Milliseconds 500  # a blur would hide the window after 200 ms
+        if ($script:AppProc.HasExited) { throw 'програма завершилась' }
+        if (-not (Test-AppReady)) { throw 'вікно сховалося після скасування виходу' }
+    } -Forbid $UI.ExitTitle
+
+    Invoke-Step 'Знову Alt+F4, Ctrl+Enter: програма завершується' {
+        Send-Keys 'Alt+F4'
+        Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
+        # When the app is gone, Windows may activate one of your programs before the home
+        # window gets focus back. What NVDA says from here on stays out of the report.
+        $script:SpeechUntil = Get-LogLength
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'процес завершився' { $script:AppProc.HasExited }
+        if ($script:AppProc.ExitCode -ne 0) { throw "код завершення $($script:AppProc.ExitCode)" }
+        Enter-Target
+        Start-Sleep -Milliseconds 1500  # let NVDA finish with the windows it passed on the way
+    } -Expect $UI.ExitTitle
+
+    # The same exe and data folder: what a user gets after quitting and starting again.
+    Invoke-Step 'Перезапуск тестової копії: світла тема, видалений сніпет не повернувся' {
+        try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
+        $script:AppProc = Start-Process $TestExe -PassThru
+        $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
+        if (-not (Test-AppReady)) {
+            $w = Get-AppWindow
+            $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+        }
+        Wait-Until 'вікно з фокусом' { Test-AppReady }
+        Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
+        if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
+    } -Hope $UI.SearchPlaceholder
+
+    Invoke-Step 'Ctrl+, після перезапуску: тема світла' {
+        Send-Keys 'Ctrl+Comma'
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
+        & $assertSaved 'light' 'uk'
+    } -Expect $UI.Settings, $UI.Theme, $UI.Light -Forbid $UI.Dark
 }
 finally {
     Stop-Target

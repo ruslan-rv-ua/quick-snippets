@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Search: screen readers now say "No results found" when a search finds nothing. Before, they stayed silent, because the announcement was cancelled when the results arrived. When the found snippet is the same one that was selected before, its name is now read too; a newly selected snippet is still read once, as before.
+
 ## v0.3.0 - 2026-11-16
 
 ### Before you upgrade
