@@ -8,11 +8,14 @@
 // it does not come back. Hiding then would hide the active window together with an open
 // dialog and its unsaved changes. So the window hides only once it is no longer the active
 // window; while it is still active, the keyboard is given back to the web content.
+//
+// Both happen only after the same delay: nothing is done before the moment the window used
+// to hide. WebView2 moves the keyboard between its internal windows by itself (when the app
+// starts, when the window is shown, during such an action) and settles within that delay.
 
-/// The window hides this long after it stopped being the active window.
+/// The window hides this long after it stopped being the active window. An active window
+/// gets the keyboard back this long after its web content lost it.
 pub const HIDE_DELAY_MS: u64 = 200;
-/// WebView2 usually takes the keyboard back by itself within 20 ms; help only after this.
-pub const RESTORE_AFTER_MS: u64 = 30;
 /// Pause between two attempts to give the keyboard back.
 pub const RESTORE_RETRY_MS: u64 = 100;
 /// After this many attempts the window is only watched until the user leaves it.
@@ -62,7 +65,7 @@ pub fn next_blur_step(state: BlurState) -> BlurStep {
         None => {
             if state.menu_or_move
                 || state.keyboard_elsewhere
-                || state.since_blur_ms < RESTORE_AFTER_MS
+                || state.since_blur_ms < HIDE_DELAY_MS
                 || state.restore_attempts >= MAX_RESTORE_ATTEMPTS
             {
                 return BlurStep::Wait;
@@ -211,13 +214,19 @@ mod tests {
 
     #[test]
     fn test_active_window_lets_webview_take_the_keyboard_back_first() {
-        assert_eq!(next_blur_step(active(0)), BlurStep::Wait);
-        assert_eq!(next_blur_step(active(RESTORE_AFTER_MS - 1)), BlurStep::Wait);
+        // Nothing happens before the moment the window used to hide.
+        for since_blur_ms in [0, 30, HIDE_DELAY_MS - 1] {
+            assert_eq!(
+                next_blur_step(active(since_blur_ms)),
+                BlurStep::Wait,
+                "after {since_blur_ms} ms"
+            );
+        }
     }
 
     #[test]
     fn test_active_window_gets_the_keyboard_back() {
-        assert_eq!(next_blur_step(active(RESTORE_AFTER_MS)), BlurStep::RestoreFocus);
+        assert_eq!(next_blur_step(active(HIDE_DELAY_MS)), BlurStep::RestoreFocus);
     }
 
     #[test]
@@ -225,7 +234,7 @@ mod tests {
         let just_tried = BlurState {
             restore_attempts: 1,
             since_restore_ms: Some(RESTORE_RETRY_MS - 1),
-            ..active(80)
+            ..active(HIDE_DELAY_MS + 50)
         };
         assert_eq!(next_blur_step(just_tried), BlurStep::Wait);
 
