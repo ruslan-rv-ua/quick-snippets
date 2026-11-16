@@ -235,8 +235,8 @@ public static class QsSmokeNative {
 }
 
 $VK = @{ Ctrl = 0x11; Alt = 0x12; Shift = 0x10; Space = 0x20; Enter = 0x0D; Tab = 0x09; Esc = 0x1B
-         Comma = 0xBC; Down = 0x28; Up = 0x26; Home = 0x24; End = 0x23; Delete = 0x2E; F1 = 0x70; F4 = 0x73 }
-$ExtendedVK = @(0x28, 0x26, 0x24, 0x23, 0x2E)
+         Comma = 0xBC; Down = 0x28; Up = 0x26; Left = 0x25; Home = 0x24; End = 0x23; Delete = 0x2E; F1 = 0x70; F4 = 0x73 }
+$ExtendedVK = @(0x28, 0x26, 0x25, 0x24, 0x23, 0x2E)
 
 function Send-Keys([string[]]$Chords) {
     foreach ($chord in $Chords) {
@@ -1137,17 +1137,41 @@ try {
         & $assertSort 'last_used' 'asc' @($Data.PlainTitle, $secretName)
     } -ExpectCount @{ ($UI.SortPrefix + $UI.SortLastUsedDesc) = 1; ($UI.SortPrefix + $UI.SortLastUsedAsc) = 1 }
 
-    Invoke-Step 'Delete питає підтвердження видалення, фокус на «Скасувати»' {
+    # Delete in the search box erases text while there is text to erase; only with nothing to
+    # erase does it ask to delete the selected snippet. "звч" and "зв" still find the plain snippet.
+    Invoke-Step 'Delete посеред запиту стирає символ, підтвердження немає' {
+        Send-Text 'звич'
+        Wait-Until 'у списку лише знайдений сніпет' { & $listIs @($Data.PlainTitle) }
+        Send-Keys 'Left', 'Left', 'Delete'
+        Wait-Until 'символ після курсора стерто' { (& $searchValue) -eq 'звч' }
+        Start-Sleep -Milliseconds 400
+        if (& $cancelButton) { throw 'Delete відкрив підтвердження видалення' }
+    } -Forbid $UI.DeleteTitle
+
+    # With NVDA a held Delete reaches the app as separate presses: after erasing, more Delete
+    # presses in a row only edit text, so at the end of the query nothing happens.
+    Invoke-Step 'Delete поспіль після стирання: стирає останній символ, у кінці запиту нічого не питає' {
+        Send-Keys 'Delete', 'Delete'
+        Wait-Until 'останній символ стерто' { (& $searchValue) -eq 'зв' }
+        Start-Sleep -Milliseconds 400
+        if (& $cancelButton) { throw 'Delete відкрив підтвердження видалення' }
+    } -Forbid $UI.DeleteTitle
+
+    Invoke-Step 'Після іншої клавіші Delete у кінці запиту питає підтвердження, фокус на «Скасувати»' {
         & $selectSnippet $Data.PlainTitle
         Send-Keys 'Delete'
         Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
         if (-not (Find-TextLike "*$($Data.PlainTitle)*")) { throw 'у діалозі немає назви сніпета' }
     } -Expect $UI.DeleteTitle, $UI.Cancel -ExpectAny $Role.Dialog, $Role.Button
 
-    Invoke-Step 'Escape закриває підтвердження, сніпет лишається' {
+    Invoke-Step 'Escape закриває підтвердження, сніпет лишається; ще один Escape очищає пошук' {
         Send-Keys 'Esc'
         Wait-Until 'діалог закрито, фокус у головному вікні' { -not (& $cancelButton) -and (Test-AppReady) }
-        if (-not (& $listIs @($Data.PlainTitle, $secretName))) { throw "у списку: $((& $listNames) -join ', ')" }
+        if ((& $listNames) -notcontains $Data.PlainTitle) { throw "у списку: $((& $listNames) -join ', ')" }
+        Send-Keys 'Esc'
+        Wait-Until 'поле пошуку порожнє, у списку обидва сніпети' {
+            (& $searchValue) -eq '' -and (& $listIs @($Data.PlainTitle, $secretName))
+        }
     } -Forbid $UI.Deleted
 
     Invoke-Step 'Ctrl+D і Ctrl+Enter видаляють сніпет' {

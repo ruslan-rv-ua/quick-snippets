@@ -164,3 +164,59 @@ describe('App: keyboard shortcuts help (F1)', () => {
     expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).not.toBeInTheDocument();
   });
 });
+
+describe('App: Delete in the search box', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      switch (cmd) {
+        case 'get_settings':
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language: 'en',
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 0,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets':
+        case 'get_sorted_snippets':
+          return [{ id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false }];
+        default:
+          return null;
+      }
+    });
+  });
+
+  /** Searches for `text` and waits until the search has found and selected the snippet. */
+  async function searchFor(text: string): Promise<HTMLInputElement> {
+    render(<App />);
+    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
+    search.focus();
+    fireEvent.change(search, { target: { value: text } });
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('search_snippets', { query: text }));
+    await waitFor(() => expect(search).toHaveAttribute('aria-activedescendant', 'snippet-1'));
+    return search;
+  }
+
+  it('with text after the caret, Delete is left to the search box and asks nothing', async () => {
+    const search = await searchFor('gree');
+    search.setSelectionRange(2, 2);
+    // Not cancelled: the search box itself erases the next character.
+    expect(fireEvent.keyDown(search, { key: 'Delete', code: 'Delete' })).toBe(true);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('with the caret at the end of the text, Delete asks to delete the selected snippet', async () => {
+    const search = await searchFor('gree');
+    search.setSelectionRange(4, 4);
+    expect(fireEvent.keyDown(search, { key: 'Delete', code: 'Delete' })).toBe(false);
+    const dialog = await screen.findByRole('dialog', { name: 'Delete snippet' });
+    expect(dialog).toHaveTextContent('Greeting');
+  });
+});

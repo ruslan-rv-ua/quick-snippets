@@ -1,5 +1,13 @@
-import { useEffect, useContext } from 'react';
+import { useEffect, useContext, useRef } from 'react';
 import { ThemeContext } from '../contexts/ThemeContext';
+
+/** True when Delete would erase text here: a text field with text after the caret, or a selection. */
+function hasTextToErase(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return false;
+  const { selectionStart, selectionEnd, value } = target;
+  if (selectionStart === null || selectionEnd === null) return false;
+  return selectionStart !== selectionEnd || selectionEnd < value.length;
+}
 
 export interface KeyboardHandlers {
   activeIndex: number;
@@ -41,25 +49,47 @@ interface Shortcut {
  *
  *  Ctrl+N / Insert     → openCreate
  *  Ctrl+E              → openEdit   (only if activeIndex >= 0)
- *  Delete / Ctrl+D     → openDelete (only if activeIndex >= 0)
+ *  Delete / Ctrl+D     → openDelete (only if activeIndex >= 0; Delete only when it has no text to erase)
  *  Ctrl+,              → openSettings
  *  Ctrl+Shift+T        → toggleTheme
  *  Ctrl+F / /          → focusSearch
  *  Ctrl+Shift+Space    → announce (screen reader)
  *  F1                  → openHelp
+ *
+ * Delete in the search box erases text as in any text field while there is text after the
+ * caret or a selection; only with nothing to erase does it ask to delete the selected snippet.
+ * Once Delete has erased text, more Delete presses in a row only edit text, until another key
+ * is pressed: with NVDA a held key reaches the app as separate presses, so this is what keeps a
+ * held Delete from opening the confirmation.
  */
 export function useKeyboard(handlers: KeyboardHandlers): void {
   const { toggleTheme } = useContext(ThemeContext);
+  // True while the current run of Delete presses (no other key in between) has erased text.
+  const erasingWithDelete = useRef(false);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      // Skip all shortcuts when disabled (e.g. a modal is open)
-      if (handlers.disabled) return;
+      // Skip all shortcuts when disabled (e.g. a modal is open); a dialog also ends a Delete run.
+      if (handlers.disabled) {
+        erasingWithDelete.current = false;
+        return;
+      }
 
       const ctrl = e.ctrlKey || e.metaKey;
       const shift = e.shiftKey;
       const key = e.key;   // layout-dependent; used only for special keys
       const code = e.code; // layout-independent physical key; used for letters/symbols
+
+      if (key !== 'Delete' || ctrl || shift) {
+        erasingWithDelete.current = false;
+      } else if (hasTextToErase(e.target)) {
+        // Leave it to the text field: it erases the next character or the selection.
+        erasingWithDelete.current = true;
+        return;
+      } else if (erasingWithDelete.current || e.repeat) {
+        // Still erasing (held or pressed again): at the end of the text it does nothing.
+        return;
+      }
 
       // Shortcuts matrix: each shortcut has optional modifiers and a handler
       const shortcuts: Shortcut[] = [
@@ -104,7 +134,7 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
           handler: () => handlers.onOpenEdit(),
         },
 
-        // Delete → delete (only if item selected, no Ctrl, no Shift)
+        // Delete → delete (only if item selected, no Ctrl, no Shift, nothing to erase: see above)
         {
           ctrl: false,
           shift: false,
