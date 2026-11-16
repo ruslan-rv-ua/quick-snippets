@@ -16,6 +16,10 @@
 - Rust tests: the `sha2` crate in debug builds and this crate in test builds are compiled with optimization, so the test suite still runs in seconds with the higher iteration count.
 - Development tooling: Vitest 5, Vite 8 (Rolldown and the Oxc minifier), `@vitejs/plugin-react` 6 and jsdom 31. `npm audit` now reports no vulnerabilities. Node.js 22.22+, 24.15+ or 26+ is needed to run the tests.
 
+### Fixed
+- The theme chosen with Ctrl+Shift+T is now saved and stays after a restart. Before, it lasted only until the app closed, unless Settings was saved in between. Only the theme is changed in the settings file. In the Settings dialog the theme is still saved only by Save.
+- Settings changed by shortcuts (theme and sort order) are now saved one after another, so two quick shortcuts can no longer undo each other's change.
+
 ## v0.2.1 - 2026-11-16
 
 ### Added

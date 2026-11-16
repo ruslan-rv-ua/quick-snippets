@@ -27,7 +27,7 @@ const toggleTheme = vi.fn();
 function wrapper({ children }: { children: React.ReactNode }) {
   return React.createElement(
     ThemeContext.Provider,
-    { value: { theme: 'light', toggleTheme } },
+    { value: { theme: 'light', toggleTheme, setTheme: vi.fn() } },
     children,
   );
 }

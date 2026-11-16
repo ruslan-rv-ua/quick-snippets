@@ -28,7 +28,7 @@ export function SettingsModal({
   onError,
 }: SettingsModalProps): React.ReactElement | null {
   const { t, tf } = useLanguage();
-  const { theme, toggleTheme } = useContext(ThemeContext);
+  const { theme, setTheme } = useContext(ThemeContext);
   const { language, setLanguage } = useContext(LanguageContext);
 
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -105,7 +105,7 @@ export function SettingsModal({
                   type="button"
                   className="toggle-btn"
                   aria-pressed={theme === 'dark'}
-                  onClick={() => { if (theme !== 'dark') toggleTheme(); }}
+                  onClick={() => setTheme('dark')}
                 >
                   {t('darkTheme')}
                 </button>
@@ -113,7 +113,7 @@ export function SettingsModal({
                   type="button"
                   className="toggle-btn"
                   aria-pressed={theme === 'light'}
-                  onClick={() => { if (theme !== 'light') toggleTheme(); }}
+                  onClick={() => setTheme('light')}
                 >
                   {t('lightTheme')}
                 </button>

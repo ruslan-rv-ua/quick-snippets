@@ -77,6 +77,24 @@ export function saveSettings(settings: Settings): Promise<void> {
   return invoke<void>('save_settings', { settings });
 }
 
+// Read-modify-write updates run one after another, so two quick updates
+// (e.g. Ctrl+Shift+T pressed twice, or a theme and a sort shortcut) cannot
+// read the same old settings and overwrite each other's change.
+let settingsUpdateQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Changes only the given fields of the saved settings and keeps the rest.
+ * Updates are serialised; a failed update does not block later ones.
+ */
+export function updateSettings(patch: Partial<Settings>): Promise<void> {
+  const run = settingsUpdateQueue.then(async () => {
+    const current = await getSettings();
+    await saveSettings({ ...current, ...patch });
+  });
+  settingsUpdateQueue = run.catch(() => undefined);
+  return run;
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────
 
 /**
