@@ -168,6 +168,7 @@ For complete details on the security model, threat assessment, and responsible d
 | Ctrl+Shift+3 | Sort alphabetically (press again to toggle direction) |
 | Ctrl+Shift+4 | Sort by last used time (press again to toggle direction) |
 | Ctrl+Shift+Space | Announce selected snippet (screen reader) |
+| F1 | Show the keyboard shortcuts help |
 | Escape | Close modal / clear search |
 | Alt+F4 | Quit the application |
 

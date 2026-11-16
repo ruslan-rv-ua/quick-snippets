@@ -14,6 +14,7 @@ function makeHandlers(overrides: Partial<KeyboardHandlers> = {}): KeyboardHandle
     onOpenEdit: vi.fn(),
     onOpenDelete: vi.fn(),
     onOpenSettings: vi.fn(),
+    onOpenHelp: vi.fn(),
     onFocusSearch: vi.fn(),
     onAnnounce: vi.fn(),
     onSelectFirst: vi.fn(),
@@ -153,6 +154,41 @@ describe('useKeyboard', () => {
     renderHook(() => useKeyboard(h), { wrapper });
     fire({ code: 'Comma', key: 'б', ctrlKey: true }); // Cyrillic layout maps , to б
     expect(h.onOpenSettings).toHaveBeenCalledOnce();
+  });
+
+  // ── F1 (keyboard shortcuts help) ──────────────────────────────────────────
+  it('F1 opens the keyboard shortcuts help and stops the default action', () => {
+    const h = makeHandlers();
+    renderHook(() => useKeyboard(h), { wrapper });
+    const e = new KeyboardEvent('keydown', { key: 'F1', code: 'F1', bubbles: true, cancelable: true });
+    window.dispatchEvent(e);
+    expect(h.onOpenHelp).toHaveBeenCalledOnce();
+    expect(e.defaultPrevented).toBe(true);
+  });
+
+  it('F1 works with focus in the search box', () => {
+    const h = makeHandlers();
+    renderHook(() => useKeyboard(h), { wrapper });
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', code: 'F1', bubbles: true }));
+    input.remove();
+    expect(h.onOpenHelp).toHaveBeenCalledOnce();
+  });
+
+  it('F1 does nothing while a dialog is open', () => {
+    const h = makeHandlers({ disabled: true });
+    renderHook(() => useKeyboard(h), { wrapper });
+    fire({ key: 'F1', code: 'F1' });
+    expect(h.onOpenHelp).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+F1 and Shift+F1 do not open the help', () => {
+    const h = makeHandlers();
+    renderHook(() => useKeyboard(h), { wrapper });
+    fire({ key: 'F1', code: 'F1', ctrlKey: true });
+    fire({ key: 'F1', code: 'F1', shiftKey: true });
+    expect(h.onOpenHelp).not.toHaveBeenCalled();
   });
 
   // ── Ctrl+F — layout-independent ───────────────────────────────────────────

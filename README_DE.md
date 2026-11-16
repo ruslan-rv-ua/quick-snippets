@@ -121,6 +121,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Strg+Umschalt+3 | Alphabetisch sortieren (erneut drücken für Richtungswechsel) |
 | Strg+Umschalt+4 | Nach letzter Verwendung sortieren (erneut drücken für Richtungswechsel) |
 | Strg+Umschalt+Space | Ausgewählten Schnipsel ansagen (Screenreader) |
+| F1 | Hilfe zu den Tastenkürzeln anzeigen |
 | Esc | Modal schließen / Suche leeren |
 | Alt+F4 | Anwendung beenden |
 

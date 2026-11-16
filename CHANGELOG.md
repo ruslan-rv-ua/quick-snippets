@@ -8,6 +8,10 @@
 - Snippets encrypted by 0.2.1 or earlier still open with their password. Each one is re-encrypted in the new format the first time it is copied or auto-typed. The new data is decrypted and compared before it replaces the old data; if anything fails, the old data stays. A snippet that is never opened stays in the old format, because re-encryption needs the password.
 - The buffer that holds the derived key is now wiped also when the password is wrong.
 
+### Added
+- **Keyboard shortcuts help on F1.** F1 in the main window opens a list of all keyboard shortcuts with what each one does, in the interface language: global, main window, and forms and dialogs. Screen readers read it one shortcut at a time with the Up and Down arrows, keys and action together, and say the group name when you move into the next group; Home and End go to the first and last shortcut. Escape or Close closes the help, and focus returns to where it was. F1 does nothing while another dialog is open.
+- `just smoke` opens the help with F1 and checks that NVDA reads the dialog name, the group names and every shortcut with its action, the Close button, and that Escape brings focus back to the main window. It also checks that F1 does nothing in the Create dialog.
+
 ### Changed
 - **Going back to a version before 0.3.0**: older versions cannot read the new format. An encrypted snippet that was created or re-encrypted by this version shows "Wrong password" there, even with the right password. Nothing is damaged, and 0.3.0 or later opens it again. Unencrypted snippets, and encrypted snippets not yet opened in this version, keep working in older versions. If you might go back, back up the `quick-snippets-data` folder before upgrading.
 - Checking the password of an encrypted snippet takes longer, by design: about 0.1 s on a recent desktop CPU (was about 0.03 s) and up to about half a second on old ones. The first use of a snippet from an older version takes about twice as long, once.
