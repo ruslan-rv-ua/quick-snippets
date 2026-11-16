@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import App from '../../App';
@@ -79,5 +79,88 @@ describe('App', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     // No crash, window commands would be invoked
     expect(screen.getByRole('application')).toBeInTheDocument();
+  });
+});
+
+describe('App: keyboard shortcuts help (F1)', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      switch (cmd) {
+        case 'get_settings':
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language: 'en',
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 0,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets':
+        case 'get_sorted_snippets':
+          return [];
+        default:
+          return null;
+      }
+    });
+  });
+
+  async function renderWithSearchFocused() {
+    render(<App />);
+    const search = await screen.findByRole('combobox');
+    search.focus();
+    return search;
+  }
+
+  it('F1 opens the help with focus on the first shortcut; Escape closes it and focus returns to the search box', async () => {
+    const search = await renderWithSearchFocused();
+    fireEvent.keyDown(search, { key: 'F1', code: 'F1' });
+
+    const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+    const first = within(dialog).getAllByRole('option')[0];
+    expect(first).toHaveAccessibleName('Ctrl+Alt+Space, Show the QuickSnippets window');
+    expect(first).toHaveFocus();
+
+    fireEvent.keyDown(first, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(search).toHaveFocus();
+  });
+
+  it('Escape in the help does not hide the window', async () => {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const search = await renderWithSearchFocused();
+    fireEvent.keyDown(search, { key: 'F1', code: 'F1' });
+    await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+    vi.mocked(getCurrentWindow).mockClear();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(getCurrentWindow).not.toHaveBeenCalled();
+  });
+
+  it('the Close button closes the help and focus returns to the search box', async () => {
+    const search = await renderWithSearchFocused();
+    fireEvent.keyDown(search, { key: 'F1', code: 'F1' });
+    await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(search).toHaveFocus();
+  });
+
+  it('F1 does nothing while another dialog is open', async () => {
+    const search = await renderWithSearchFocused();
+    fireEvent.keyDown(search, { key: 'n', code: 'KeyN', ctrlKey: true });
+    const create = await screen.findByRole('dialog');
+    expect(create).not.toHaveAccessibleName('Keyboard shortcuts');
+
+    fireEvent.keyDown(document.activeElement!, { key: 'F1', code: 'F1' });
+    expect(screen.getAllByRole('dialog')).toEqual([create]);
+    expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).not.toBeInTheDocument();
   });
 });

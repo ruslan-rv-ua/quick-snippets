@@ -14,6 +14,9 @@ export interface ModalState {
   setShowSettings: (v: boolean) => void;
   showExit: boolean;
   setShowExit: (v: boolean) => void;
+  /** The keyboard shortcuts help (F1). */
+  showHelp: boolean;
+  setShowHelp: (v: boolean) => void;
   editSnippet: SnippetView | null;
   setEditSnippet: (v: SnippetView | null) => void;
   deleteId: number;
@@ -38,6 +41,7 @@ export function useModalState(): ModalState {
   const [showPassword, setShowPassword] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showExit, setShowExit] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const [editSnippet, setEditSnippet] = useState<SnippetView | null>(null);
   const [deleteId, setDeleteId] = useState(0);
@@ -45,7 +49,7 @@ export function useModalState(): ModalState {
   const [passwordSnippet, setPasswordSnippet] = useState<SearchResult | null>(null);
 
   const anyModalOpen =
-    showCreate || showEdit || showDelete || showPassword || showSettings || showExit;
+    showCreate || showEdit || showDelete || showPassword || showSettings || showExit || showHelp;
 
   const closeAll = useCallback(() => {
     setShowCreate(false);
@@ -54,6 +58,7 @@ export function useModalState(): ModalState {
     setShowPassword(false);
     setShowSettings(false);
     setShowExit(false);
+    setShowHelp(false);
   }, []);
 
   return {
@@ -63,6 +68,7 @@ export function useModalState(): ModalState {
     showPassword, setShowPassword,
     showSettings, setShowSettings,
     showExit, setShowExit,
+    showHelp, setShowHelp,
     editSnippet, setEditSnippet,
     deleteId, setDeleteId,
     deleteTitle, setDeleteTitle,

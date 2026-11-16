@@ -25,6 +25,8 @@
 
     The settings hints and the app version are object descriptions: NVDA reads them
     only with "Report object descriptions" on (Object Presentation settings).
+    The keyboard shortcuts help (F1) does not depend on that setting: every row is
+    a list option whose name holds the keys and the action.
 
 .EXAMPLE
     just smoke
@@ -82,7 +84,39 @@ $UI = @{
     Cancel            = 'Скасувати'
     Save              = 'Зберегти'
     SettingsGerman    = 'Einstellungen'
+    # Keyboard shortcuts help (F1)
+    HelpTitle         = 'Гарячі клавіші'
+    HelpGroupGlobal   = 'Глобальні'
+    HelpGroupMain     = 'Головне вікно'
+    HelpGroupDialogs  = 'Форми й діалоги'
+    Close             = 'Закрити'
 }
+
+# Every action in the help, in list order (helpShortcuts.uk in src/i18n/translations.ts).
+# The first is also what NVDA reads when the help opens.
+$HelpActions = @(
+    'Показати вікно QuickSnippets'
+    'Рухатися списком сніпетів'
+    'Перейти до першого / останнього сніпета'
+    'Скопіювати вибраний сніпет у буфер обміну'
+    'Надрукувати вибраний сніпет в активній програмі'
+    'Створити новий сніпет'
+    'Редагувати вибраний сніпет'
+    'Видалити вибраний сніпет'
+    'Перейти до поля пошуку'
+    'Відкрити налаштування'
+    'Перемкнути світлу й темну тему'
+    'Сортувати за датою створення'
+    'Сортувати за датою зміни'
+    'Сортувати за алфавітом'
+    'Сортувати за часом останнього використання'
+    'Оголосити вибраний сніпет'
+    'Показати цей список гарячих клавіш'
+    'Очистити пошук; якщо він порожній, сховати вікно'
+    'Вийти з програми'
+    'Підтвердити або зберегти, у будь-якому діалозі'
+    'Скасувати й закрити діалог'
+)
 
 # Role and state words as NVDA says them in Ukrainian, English or German: any one counts.
 $Role = @{
@@ -93,6 +127,7 @@ $Role = @{
     NotChecked = 'не позначено|not checked|nicht aktiviert'
     SpinButton = 'кнопка прокрутки|spin button|Drehschalter'
     Button     = 'кнопка|button|Schalter'
+    List       = 'список|list|Liste'
 }
 
 # Throwaway values for the throwaway copy of the app.
@@ -184,7 +219,7 @@ public static class QsSmokeNative {
 }
 
 $VK = @{ Ctrl = 0x11; Alt = 0x12; Shift = 0x10; Space = 0x20; Enter = 0x0D; Tab = 0x09; Esc = 0x1B
-         Comma = 0xBC; Down = 0x28; Up = 0x26; Home = 0x24; End = 0x23; Delete = 0x2E }
+         Comma = 0xBC; Down = 0x28; Up = 0x26; Home = 0x24; End = 0x23; Delete = 0x2E; F1 = 0x70 }
 $ExtendedVK = @(0x28, 0x26, 0x24, 0x23, 0x2E)
 
 function Send-Keys([string[]]$Chords) {
@@ -916,6 +951,52 @@ try {
         Wait-Until 'діалог закрито' { -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'dark' 'uk'
     } -Expect $UI.Settings, $UI.Theme, $UI.Dark -Forbid $UI.SettingsGerman, $UI.Light
+
+    # Keyboard shortcuts help: NVDA reads every row, keys and action, with the arrow keys
+    # (the app root is role="application", so plain text would stay silent here).
+    $helpItem = { param([int]$i) Find-Element (& $appWin) -Id "help-item-$i" }
+
+    Invoke-Step 'F1 відкриває довідку: назва, список, група, перший рядок' {
+        Send-Keys 'F1'
+        Wait-Until 'фокус на першому рядку довідки' { Test-HasFocus (& $helpItem 0) }
+    } -Expect $UI.HelpTitle, $UI.HelpGroupGlobal, 'Ctrl+Alt+Space', $HelpActions[0] -ExpectAny $Role.Dialog, $Role.List, $Role.Grouping
+
+    Invoke-Step 'Стрілка вниз читає кожен рядок довідки з дією і назви груп' {
+        for ($i = 1; $i -lt $HelpActions.Count; $i++) {
+            Send-Keys 'Down'
+            Wait-Until "фокус на рядку довідки $($i + 1)" { Test-HasFocus (& $helpItem $i) }
+        }
+        # The last row: Down stays there.
+        Send-Keys 'Down'
+        if (-not (Test-HasFocus (& $helpItem ($HelpActions.Count - 1)))) { throw 'Стрілка вниз пішла далі останнього рядка' }
+    } -Expect (@($UI.HelpGroupMain, $UI.HelpGroupDialogs, 'F1', 'Ctrl+кома', 'Ctrl+Enter') + $HelpActions[1..($HelpActions.Count - 1)])
+
+    Invoke-Step 'Home повертає на перший рядок довідки' {
+        Send-Keys 'Home'
+        Wait-Until 'фокус на першому рядку довідки' { Test-HasFocus (& $helpItem 0) }
+    } -Expect $HelpActions[0]
+
+    Invoke-Step 'Tab: кнопка «Закрити»' {
+        & $tabTo 'help-close' $UI.Close
+    } -Expect $UI.Close -ExpectAny $Role.Button
+
+    Invoke-Step 'Escape закриває довідку, фокус повертається в головне вікно' {
+        Send-Keys 'Esc'
+        Wait-Until 'довідку закрито, фокус у головному вікні' {
+            -not (& $helpItem 0) -and (Test-AppReady)
+        }
+    } -Forbid $UI.HelpTitle
+
+    Invoke-Step 'F1 у діалозі створення нічого не робить' {
+        Send-Keys 'Ctrl+N'
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
+        Send-Keys 'F1'
+        Start-Sleep -Milliseconds 600
+        if (& $helpItem 0) { throw 'F1 відкрила довідку поверх діалогу створення' }
+        if (-not (& $hasFocus 'create-title')) { throw 'після F1 фокус пішов з поля «Назва»' }
+        Send-Keys 'Esc'
+        Wait-Until 'діалог створення закрито' { -not (Find-Element (& $appWin) -Id 'create-title') -and (Test-AppReady) }
+    } -Expect $UI.CreateTitle -Forbid $UI.HelpTitle
 
     $autostartSkip = ''
     if ($UserRunValue) { $autostartSkip = 'у вас увімкнено автозапуск QuickSnippets, тест його не чіпає' }

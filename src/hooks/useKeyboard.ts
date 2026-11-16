@@ -9,6 +9,8 @@ export interface KeyboardHandlers {
   onOpenEdit: () => void;
   onOpenDelete: () => void;
   onOpenSettings: () => void;
+  /** F1: the keyboard shortcuts help. */
+  onOpenHelp: () => void;
   onFocusSearch: () => void;
   onAnnounce: () => void;
   onSelectFirst?: () => void;
@@ -44,6 +46,7 @@ interface Shortcut {
  *  Ctrl+Shift+T        → toggleTheme
  *  Ctrl+F / /          → focusSearch
  *  Ctrl+Shift+Space    → announce (screen reader)
+ *  F1                  → openHelp
  */
 export function useKeyboard(handlers: KeyboardHandlers): void {
   const { toggleTheme } = useContext(ThemeContext);
@@ -125,6 +128,14 @@ export function useKeyboard(handlers: KeyboardHandlers): void {
           shift: false,
           code: 'Comma',
           handler: () => handlers.onOpenSettings(),
+        },
+
+        // F1 → keyboard shortcuts help (no Ctrl, no Shift)
+        {
+          ctrl: false,
+          shift: false,
+          key: 'F1',
+          handler: () => handlers.onOpenHelp(),
         },
 
         // Ctrl+F → focus search (no Shift)

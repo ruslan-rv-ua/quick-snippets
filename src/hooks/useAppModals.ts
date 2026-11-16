@@ -63,6 +63,8 @@ export function useAppModals(options: UseAppModalsOptions): ModalState & {
     setShowSettings: modals.setShowSettings,
     showExit: modals.showExit,
     setShowExit: modals.setShowExit,
+    showHelp: modals.showHelp,
+    setShowHelp: modals.setShowHelp,
     editSnippet: modals.editSnippet,
     setEditSnippet: modals.setEditSnippet,
     deleteId: modals.deleteId,

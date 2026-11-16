@@ -719,6 +719,90 @@ input[type='checkbox'] {
   user-select: text;
 }
 
+/* ── Keyboard shortcuts help (F1) ──────────────────────────────────────────── */
+/* The list scrolls inside the dialog, so the Close button stays in view in the
+   default 680×520 window. */
+.modal-dialog.help-dialog {
+  max-width: 600px;
+  padding: var(--space-4) var(--space-5);
+  gap: var(--space-3);
+  overflow: hidden;
+}
+
+.help-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+/* A group: small heading over a card, like the settings groups */
+.help-group {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden; /* keeps the focused row's highlight inside the rounded corners */
+  flex-shrink: 0;
+}
+
+.help-group-title {
+  padding: 6px var(--space-3);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text-muted);
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* A row: the keys on the left, the action on the right */
+.help-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 6px var(--space-3);
+  cursor: default;
+}
+
+.help-item + .help-item {
+  border-top: 1px solid var(--color-border);
+}
+
+.help-item[aria-selected='true'] {
+  background: var(--color-accent-subtle);
+}
+
+/* Inset, so the card's rounded corners do not clip it */
+.help-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+  border-radius: 0;
+}
+
+.help-keys {
+  flex: 0 0 180px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-text);
+}
+
+.help-action {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-text);
+}
+
+.help-dialog .modal-actions button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* Delete confirm — snippet name preview */
 .delete-preview {
   font-size: 14px;

@@ -27,6 +27,7 @@ import { DeleteConfirmModal } from './components/DeleteConfirmModal';
 import { PasswordModal } from './components/PasswordModal';
 import { SettingsModal } from './components/SettingsModal';
 import { ExitConfirmModal } from './components/ExitConfirmModal';
+import { KeyboardHelpModal } from './components/KeyboardHelpModal';
 import { ToastContainer } from './components/ToastContainer';
 
 import type { SearchResult } from './types';
@@ -123,6 +124,7 @@ function AppInner(): React.ReactElement {
     showPassword, setShowPassword,
     showSettings, setShowSettings,
     showExit, setShowExit,
+    showHelp, setShowHelp,
     editSnippet,
     deleteId,
     deleteTitle,
@@ -240,6 +242,7 @@ function AppInner(): React.ReactElement {
     onOpenEdit: openEdit,
     onOpenDelete: openDelete,
     onOpenSettings: () => setShowSettings(true),
+    onOpenHelp: () => setShowHelp(true),
     onFocusSearch: () => searchRef.current?.focus(),
     onAnnounce: handleAnnounce,
     onSelectFirst: () => setActiveIndex(snippets.length > 0 ? 0 : -1),
@@ -321,6 +324,8 @@ function AppInner(): React.ReactElement {
         onClose={() => setShowSettings(false)}
         onError={(msg) => addToast(msg, 'error')}
       />
+
+      <KeyboardHelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
 
       <ExitConfirmModal
         isOpen={showExit}

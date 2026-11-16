@@ -1,5 +1,24 @@
 import type { LangCode } from '../types';
 
+/** One row of the keyboard shortcuts help (F1). */
+export interface HelpShortcut {
+  /** The keys as shown, e.g. "Ctrl+N or Insert". */
+  keys: string;
+  /**
+   * The keys as screen readers should read them, when `keys` holds a sign that
+   * NVDA skips at its default punctuation level (the comma, the slash).
+   */
+  spokenKeys?: string;
+  action: string;
+}
+
+/** The rows of the help, in the groups of the README's Keyboard Shortcuts tables. */
+export interface HelpShortcuts {
+  global: HelpShortcut[];
+  main: HelpShortcut[];
+  dialogs: HelpShortcut[];
+}
+
 /** Shape of a single locale's translations. */
 export interface TranslationMap {
   // ── Search ───────────────────────────────────────────────────────────────
@@ -70,6 +89,14 @@ export interface TranslationMap {
   lightTheme: string;
   autoLanguage: string;
   appVersion: (version: string) => string;
+
+  // ── Keyboard shortcuts help (F1) ─────────────────────────────────────────
+  helpTitle: string;
+  helpGroupGlobal: string;
+  helpGroupMain: string;
+  helpGroupDialogs: string;
+  close: string;
+  helpShortcuts: HelpShortcuts;
 
   // ── Exit / close dialog ──────────────────────────────────────────────────
   exitConfirmTitle: string;
@@ -170,6 +197,42 @@ const en: TranslationMap = {
   autoLanguage: 'Same as Windows',
   appVersion: (v) => `QuickSnippets version ${v}`,
 
+  // Keyboard shortcuts help
+  helpTitle: 'Keyboard shortcuts',
+  helpGroupGlobal: 'Global (from any application)',
+  helpGroupMain: 'Main window',
+  helpGroupDialogs: 'Forms and dialogs',
+  close: 'Close',
+  helpShortcuts: {
+    global: [
+      { keys: 'Ctrl+Alt+Space', action: 'Show the QuickSnippets window' },
+    ],
+    main: [
+      { keys: 'Arrow Up / Down', action: 'Move the selection in the snippet list' },
+      { keys: 'Home / End', action: 'Jump to the first / last snippet' },
+      { keys: 'Enter', action: 'Copy the selected snippet to the clipboard' },
+      { keys: 'Shift+Enter', action: 'Auto-type the selected snippet into the active application' },
+      { keys: 'Ctrl+N or Insert', action: 'Create a new snippet' },
+      { keys: 'Ctrl+E', action: 'Edit the selected snippet' },
+      { keys: 'Delete or Ctrl+D', action: 'Delete the selected snippet' },
+      { keys: 'Ctrl+F or /', spokenKeys: 'Ctrl+F or Slash', action: 'Go to the search box' },
+      { keys: 'Ctrl+,', spokenKeys: 'Ctrl+Comma', action: 'Open Settings' },
+      { keys: 'Ctrl+Shift+T', action: 'Switch between the light and dark theme' },
+      { keys: 'Ctrl+Shift+1', action: 'Sort by creation date; press again to reverse the order' },
+      { keys: 'Ctrl+Shift+2', action: 'Sort by modification date; press again to reverse the order' },
+      { keys: 'Ctrl+Shift+3', action: 'Sort alphabetically; press again to reverse the order' },
+      { keys: 'Ctrl+Shift+4', action: 'Sort by last use; press again to reverse the order' },
+      { keys: 'Ctrl+Shift+Space', action: 'Announce the selected snippet (screen reader)' },
+      { keys: 'F1', action: 'Show this list of keyboard shortcuts' },
+      { keys: 'Escape', action: 'Clear the search; if it is empty, hide the window' },
+      { keys: 'Alt+F4', action: 'Quit the application' },
+    ],
+    dialogs: [
+      { keys: 'Ctrl+Enter', action: 'Confirm or save, in every dialog' },
+      { keys: 'Escape', action: 'Cancel and close the dialog' },
+    ],
+  },
+
   // Exit dialog
   exitConfirmTitle: 'Quit QuickSnippets?',
   exitConfirmMessage: 'The application will close.',
@@ -267,6 +330,42 @@ const uk: TranslationMap = {
   lightTheme: 'Світла',
   autoLanguage: 'Як у Windows',
   appVersion: (v) => `QuickSnippets версія ${v}`,
+
+  // Keyboard shortcuts help
+  helpTitle: 'Гарячі клавіші',
+  helpGroupGlobal: 'Глобальні (з будь-якої програми)',
+  helpGroupMain: 'Головне вікно',
+  helpGroupDialogs: 'Форми й діалоги',
+  close: 'Закрити',
+  helpShortcuts: {
+    global: [
+      { keys: 'Ctrl+Alt+Space', action: 'Показати вікно QuickSnippets' },
+    ],
+    main: [
+      { keys: 'Стрілка Вгору / Вниз', action: 'Рухатися списком сніпетів' },
+      { keys: 'Home / End', action: 'Перейти до першого / останнього сніпета' },
+      { keys: 'Enter', action: 'Скопіювати вибраний сніпет у буфер обміну' },
+      { keys: 'Shift+Enter', action: 'Надрукувати вибраний сніпет в активній програмі (автодрук)' },
+      { keys: 'Ctrl+N або Insert', action: 'Створити новий сніпет' },
+      { keys: 'Ctrl+E', action: 'Редагувати вибраний сніпет' },
+      { keys: 'Delete або Ctrl+D', action: 'Видалити вибраний сніпет' },
+      { keys: 'Ctrl+F або /', spokenKeys: 'Ctrl+F або слеш', action: 'Перейти до поля пошуку' },
+      { keys: 'Ctrl+,', spokenKeys: 'Ctrl+кома', action: 'Відкрити налаштування' },
+      { keys: 'Ctrl+Shift+T', action: 'Перемкнути світлу й темну тему' },
+      { keys: 'Ctrl+Shift+1', action: 'Сортувати за датою створення; повторне натискання змінює напрямок' },
+      { keys: 'Ctrl+Shift+2', action: 'Сортувати за датою зміни; повторне натискання змінює напрямок' },
+      { keys: 'Ctrl+Shift+3', action: 'Сортувати за алфавітом; повторне натискання змінює напрямок' },
+      { keys: 'Ctrl+Shift+4', action: 'Сортувати за часом останнього використання; повторне натискання змінює напрямок' },
+      { keys: 'Ctrl+Shift+Space', action: 'Оголосити вибраний сніпет (екранний читач)' },
+      { keys: 'F1', action: 'Показати цей список гарячих клавіш' },
+      { keys: 'Escape', action: 'Очистити пошук; якщо він порожній, сховати вікно' },
+      { keys: 'Alt+F4', action: 'Вийти з програми' },
+    ],
+    dialogs: [
+      { keys: 'Ctrl+Enter', action: 'Підтвердити або зберегти, у будь-якому діалозі' },
+      { keys: 'Escape', action: 'Скасувати й закрити діалог' },
+    ],
+  },
 
   // Exit dialog
   exitConfirmTitle: 'Вийти з QuickSnippets?',
@@ -369,6 +468,42 @@ const de: TranslationMap = {
   lightTheme: 'Hell',
   autoLanguage: 'Wie in Windows',
   appVersion: (v) => `QuickSnippets Version ${v}`,
+
+  // Keyboard shortcuts help
+  helpTitle: 'Tastenkürzel',
+  helpGroupGlobal: 'Global (aus jeder Anwendung)',
+  helpGroupMain: 'Hauptfenster',
+  helpGroupDialogs: 'Formulare und Dialoge',
+  close: 'Schließen',
+  helpShortcuts: {
+    global: [
+      { keys: 'Strg+Alt+Space', action: 'QuickSnippets-Fenster anzeigen' },
+    ],
+    main: [
+      { keys: 'Pfeil hoch / runter', action: 'Auswahl in der Schnipsel-Liste bewegen' },
+      { keys: 'Pos1 / Ende', action: 'Zum ersten / letzten Schnipsel springen' },
+      { keys: 'Enter', action: 'Ausgewählten Schnipsel in die Zwischenablage kopieren' },
+      { keys: 'Umschalt+Enter', action: 'Ausgewählten Schnipsel automatisch in die aktive Anwendung tippen' },
+      { keys: 'Strg+N oder Einfügen', action: 'Neuen Schnipsel erstellen' },
+      { keys: 'Strg+E', action: 'Ausgewählten Schnipsel bearbeiten' },
+      { keys: 'Entf oder Strg+D', action: 'Ausgewählten Schnipsel löschen' },
+      { keys: 'Strg+F oder /', spokenKeys: 'Strg+F oder Schrägstrich', action: 'Zum Suchfeld wechseln' },
+      { keys: 'Strg+,', spokenKeys: 'Strg+Komma', action: 'Einstellungen öffnen' },
+      { keys: 'Strg+Umschalt+T', action: 'Zwischen hellem und dunklem Design wechseln' },
+      { keys: 'Strg+Umschalt+1', action: 'Nach Erstellungsdatum sortieren; erneut drücken kehrt die Richtung um' },
+      { keys: 'Strg+Umschalt+2', action: 'Nach Änderungsdatum sortieren; erneut drücken kehrt die Richtung um' },
+      { keys: 'Strg+Umschalt+3', action: 'Alphabetisch sortieren; erneut drücken kehrt die Richtung um' },
+      { keys: 'Strg+Umschalt+4', action: 'Nach letzter Verwendung sortieren; erneut drücken kehrt die Richtung um' },
+      { keys: 'Strg+Umschalt+Space', action: 'Ausgewählten Schnipsel ansagen (Screenreader)' },
+      { keys: 'F1', action: 'Diese Liste der Tastenkürzel anzeigen' },
+      { keys: 'Esc', action: 'Suche leeren; ist sie leer, Fenster ausblenden' },
+      { keys: 'Alt+F4', action: 'Anwendung beenden' },
+    ],
+    dialogs: [
+      { keys: 'Strg+Enter', action: 'Bestätigen oder speichern, in jedem Dialog' },
+      { keys: 'Esc', action: 'Abbrechen und Dialog schließen' },
+    ],
+  },
 
   // Exit dialog
   exitConfirmTitle: 'QuickSnippets beenden?',
