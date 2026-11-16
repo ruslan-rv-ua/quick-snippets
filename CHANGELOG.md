@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.2.1 - 2026-11-16
+
 ### Added
 - `just smoke`: local smoke test of the release exe with NVDA. It drives the real app with the keyboard, checks each result, and reports what NVDA said at every step (`scripts/smoke-nvda.ps1`).
 
