@@ -4,7 +4,7 @@ title: Release v0.3.0
 status: To Do
 assignee: []
 created_date: '2026-11-15T23:33:00Z'
-updated_date: '2026-11-16T00:38:00Z'
+updated_date: '2026-11-16T12:39:00Z'
 labels:
   - release
   - model-sonnet
@@ -43,6 +43,7 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #3 `just smoke` passes on the release build (run only with the user's permission)
 - [ ] #4 git flow release finished: main and develop contain the release; tag v0.3.0 created by the Release workflow
 - [ ] #5 The GitHub release has the ZIP and its .sha256, and the Scoop manifest shows 0.3.0 after Excavator runs
+- [ ] #6 On the release build, run as a test copy with its own data folder, an encrypted snippet stored in the 0.2.1 format opens with its password, is then stored in the v2 format, and opens again (ask the user before any run that takes the keyboard)
 <!-- AC:END -->
 
 ## Definition of Done
