@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T00:34:00Z'
-updated_date: '2026-11-16T14:06:00Z'
+updated_date: '2026-11-16T14:11:00Z'
 labels:
   - accessibility
   - frontend
@@ -92,6 +92,8 @@ Verification:
 - Build copied to C:\5-quicksnippets\real_db\quick-snippets-TASK-10-e160cc5.exe.
 
 Possible tweak: NVDA says the title twice on opening (dialog name, then the list, which is labelled by the title).
+
+Follow-up at the user's request (commit 6b54193 on bugfix/help-title-once): the list no longer takes the dialog title as its name, so NVDA says the title once. On F1 NVDA now says "Гарячі клавіші, діалог | список | Глобальні (з будь-якої програми), групування | Ctrl+Alt+Space, Показати вікно QuickSnippets"; just smoke checks the title is said exactly once. test:all (379 frontend, 213 Rust) and lint pass; just smoke 35/35 steps, 105/105 NVDA checks. New build: C:\5-quicksnippets\real_db\quick-snippets-TASK-10-6b54193.exe.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
