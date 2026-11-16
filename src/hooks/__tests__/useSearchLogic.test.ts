@@ -22,7 +22,22 @@ describe('useSearchLogic', () => {
     expect(result.current.query).toBe('');
     expect(result.current.snippets).toEqual([]);
     expect(result.current.activeIndex).toBe(-1);
+    expect(result.current.listFocused).toBe(false);
     expect(result.current.refreshTick).toBe(0);
+  });
+
+  it('reset brings the screen reader back to the search box', () => {
+    const { result } = renderHook(() => useSearchLogic());
+
+    act(() => {
+      result.current.setListFocused(true);
+    });
+    expect(result.current.listFocused).toBe(true);
+
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.listFocused).toBe(false);
   });
 
   it('updates query on setQuery', () => {

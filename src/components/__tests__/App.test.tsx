@@ -200,7 +200,7 @@ describe('App: Delete in the search box', () => {
     search.focus();
     fireEvent.change(search, { target: { value: text } });
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('search_snippets', { query: text }));
-    await waitFor(() => expect(search).toHaveAttribute('aria-activedescendant', 'snippet-1'));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
     return search;
   }
 
@@ -218,5 +218,117 @@ describe('App: Delete in the search box', () => {
     expect(fireEvent.keyDown(search, { key: 'Delete', code: 'Delete' })).toBe(false);
     const dialog = await screen.findByRole('dialog', { name: 'Delete snippet' });
     expect(dialog).toHaveTextContent('Greeting');
+  });
+});
+
+// Screen readers are either on the selected snippet (the search box points at it with
+// aria-activedescendant) or in the search box, where NVDA reads caret movement and erasing.
+describe('App: where the screen reader is', () => {
+  const snippets = [
+    { id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false },
+    { id: 2, title: 'Goodbye', score: 0, matched_positions: [], is_encrypted: false },
+  ];
+
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      switch (cmd) {
+        case 'get_settings':
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language: 'en',
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 0,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets':
+        case 'get_sorted_snippets':
+          // A new array each time, as from IPC.
+          return snippets.map((s) => ({ ...s }));
+        default:
+          return null;
+      }
+    });
+  });
+
+  const resultsLiveText = () => document.querySelector('.snippet-list-wrapper [aria-live]')?.textContent ?? '';
+  const pointsAt = (search: HTMLElement) => search.getAttribute('aria-activedescendant') ?? '';
+
+  /** Opens the app with the search box focused and waits until the first snippet is selected. */
+  async function openApp(): Promise<HTMLInputElement> {
+    render(<App />);
+    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
+    search.focus();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    return search;
+  }
+
+  it('when the window opens, it is in the search box and the live region says the first snippet', async () => {
+    const search = await openApp();
+    expect(pointsAt(search)).toBe('');
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+  });
+
+  it('Down moves it onto the selected snippet; Left brings it back, and the snippet stays selected', async () => {
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    await waitFor(() => expect(pointsAt(search)).toBe('snippet-2'));
+
+    expect(fireEvent.keyDown(search, { key: 'ArrowLeft' })).toBe(true);
+    await waitFor(() => expect(pointsAt(search)).toBe(''));
+    expect(screen.getByRole('option', { name: 'Goodbye' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('after typing, it stays in the search box, the live region says the first result, and Enter copies it', async () => {
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    await waitFor(() => expect(pointsAt(search)).toBe('snippet-2'));
+
+    fireEvent.change(search, { target: { value: 'g' } });
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('search_snippets', { query: 'g' }));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    expect(pointsAt(search)).toBe('');
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+
+    fireEvent.keyDown(search, { key: 'Enter' });
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('activate_snippet', { id: 1, password: '' }));
+  });
+
+  it('coming back from a dialog, it is on the selected snippet', async () => {
+    const search = await openApp();
+    expect(pointsAt(search)).toBe('');
+    fireEvent.keyDown(search, { key: 'n', code: 'KeyN', ctrlKey: true });
+    const dialog = await screen.findByRole('dialog');
+
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(search).toHaveFocus();
+    expect(pointsAt(search)).toBe('snippet-1');
+  });
+
+  it('a sort shortcut moves it onto the first snippet; Ctrl+F brings it back to the search box', async () => {
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: '!', code: 'Digit1', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(pointsAt(search)).toBe('snippet-1'));
+
+    fireEvent.keyDown(search, { key: 'f', code: 'KeyF', ctrlKey: true });
+    await waitFor(() => expect(pointsAt(search)).toBe(''));
+  });
+
+  it('when the window is shown again, it is back in the search box', async () => {
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    await waitFor(() => expect(pointsAt(search)).toBe('snippet-2'));
+
+    fireEvent.blur(window);
+    fireEvent.focus(window);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    expect(pointsAt(search)).toBe('');
   });
 });

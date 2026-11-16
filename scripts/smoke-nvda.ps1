@@ -235,8 +235,9 @@ public static class QsSmokeNative {
 }
 
 $VK = @{ Ctrl = 0x11; Alt = 0x12; Shift = 0x10; Space = 0x20; Enter = 0x0D; Tab = 0x09; Esc = 0x1B
-         Comma = 0xBC; Down = 0x28; Up = 0x26; Left = 0x25; Home = 0x24; End = 0x23; Delete = 0x2E; F1 = 0x70; F4 = 0x73 }
-$ExtendedVK = @(0x28, 0x26, 0x25, 0x24, 0x23, 0x2E)
+         Comma = 0xBC; Down = 0x28; Up = 0x26; Left = 0x25; Right = 0x27; Home = 0x24; End = 0x23; Delete = 0x2E
+         Backspace = 0x08; F1 = 0x70; F4 = 0x73 }
+$ExtendedVK = @(0x28, 0x26, 0x25, 0x27, 0x24, 0x23, 0x2E)
 
 function Send-Keys([string[]]$Chords) {
     foreach ($chord in $Chords) {
@@ -530,6 +531,15 @@ function Test-SaidAny([string]$Haystack, [string]$Variants) {
     return $false
 }
 
+# True when any of the '|'-separated variants was said on its own, as a whole utterance
+# (a character or word read at the caret), ignoring case.
+function Test-SaidWhole([string[]]$Utterances, [string]$Variants) {
+    foreach ($v in $Variants.Split('|')) {
+        foreach ($u in $Utterances) { if ([string]::Equals($u, $v, [StringComparison]::OrdinalIgnoreCase)) { return $true } }
+    }
+    return $false
+}
+
 # ── Steps ────────────────────────────────────────────────────────────────────
 $Results = New-Object System.Collections.Generic.List[object]
 $Notes = New-Object System.Collections.Generic.List[string]
@@ -553,6 +563,8 @@ function Get-SaidText($Events) {
 # ExpectAny   - for each entry, one of its '|'-separated variants must be said
 #               (role and state words, which depend on NVDA's language)
 # ExpectCount - must be said exactly N times, e.g. @{ 'Збережено' = 2 }
+# ExpectSaid  - for each entry, one of its '|'-separated variants must be said on its own, as a
+#               whole utterance: a character or word NVDA reads at the caret, e.g. 'з'
 # Forbid      - must not be said
 # Hope        - nice to hear, reported but never a failure (speech that races with the window hiding)
 function Invoke-Step {
@@ -562,6 +574,7 @@ function Invoke-Step {
         [string[]]$Expect = @(),
         [string[]]$ExpectAny = @(),
         [hashtable]$ExpectCount = @{},
+        [string[]]$ExpectSaid = @(),
         [string[]]$Forbid = @(),
         [string[]]$Hope = @(),
         [string]$SkipReason
@@ -577,15 +590,17 @@ function Invoke-Step {
     catch { $r.Status = 'ПОМИЛКА'; $r.Detail = $_.Exception.Message; $script:Aborted = $true }
     if ($r.Status -eq 'OK' -and $script:SoftFail) { $r.Status = 'ПОМИЛКА'; $r.Detail = $script:SoftFail }
 
-    if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectAny.Count -or $ExpectCount.Count)) {
+    if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectAny.Count -or $ExpectCount.Count -or $ExpectSaid.Count)) {
         # NVDA can lag behind the app: wait until it has said what we expect.
         $deadline = (Get-Date).AddSeconds($SpeechWaitSec)
         do {
-            $said = Get-SaidText (Get-StepSpeech $from)
+            $utterances = @(Get-StepSpeech $from | Where-Object { $_.Kind -eq 'say' } | ForEach-Object { $_.Text })
+            $said = $utterances -join ' | '
             $done = $true
             foreach ($p in $Expect) { if ((Get-Count $said $p) -lt 1) { $done = $false } }
             foreach ($a in $ExpectAny) { if (-not (Test-SaidAny $said $a)) { $done = $false } }
             foreach ($k in $ExpectCount.Keys) { if ((Get-Count $said $k) -lt $ExpectCount[$k]) { $done = $false } }
+            foreach ($w in $ExpectSaid) { if (-not (Test-SaidWhole $utterances $w)) { $done = $false } }
             if ($done) { break }
             Start-Sleep -Milliseconds 200
         } while ((Get-Date) -lt $deadline)
@@ -608,6 +623,10 @@ function Invoke-Step {
         foreach ($k in $ExpectCount.Keys) {
             $c = Get-Count $all $k
             $checks += [pscustomobject]@{ Text = "«$k» звучить разів: $($ExpectCount[$k]) (прозвучало: $c)"; Ok = $c -eq $ExpectCount[$k]; Required = $true }
+        }
+        foreach ($w in $ExpectSaid) {
+            $variants = ($w.Split('|') | ForEach-Object { "«$_»" }) -join ' або '
+            $checks += [pscustomobject]@{ Text = "окремо звучить $variants"; Ok = (Test-SaidWhole $r.Speech $w); Required = $true }
         }
         foreach ($p in $Forbid) {
             $checks += [pscustomobject]@{ Text = "не звучить «$p»"; Ok = (Get-Count $all $p) -eq 0; Required = $true }
@@ -900,6 +919,16 @@ try {
         Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
     } -Hope $UI.Copied
 
+    # The window opens with NVDA in the search box, so a query typed at once is read as in any
+    # text field; the list then names the first snippet once (the secret one, changed last).
+    Invoke-Step 'Ctrl+Alt+Space: NVDA у полі пошуку, потім один раз читає перший сніпет' {
+        Show-App
+        Wait-Until 'фокус у полі пошуку, сніпети в списку' {
+            (Test-HasFocus (Get-SearchBox)) -and -not (Get-FocusedListItem) -and
+            (Find-Element (Get-AppWindow) -Type ([System.Windows.Automation.ControlType]::ListItem))
+        }
+    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.SecretTitle) = 1 }
+
     # Settings dialog: what NVDA says on opening and at every Tab stop, in the visual
     # order, and that Escape brings back the theme and language without saving.
     $settingsFile = Join-Path $dataDir 'settings.json'
@@ -1137,16 +1166,82 @@ try {
         & $assertSort 'last_used' 'asc' @($Data.PlainTitle, $secretName)
     } -ExpectCount @{ ($UI.SortPrefix + $UI.SortLastUsedDesc) = 1; ($UI.SortPrefix + $UI.SortLastUsedAsc) = 1 }
 
+    # NVDA is either on the selected snippet or in the search box. The arrow keys take it into
+    # the list; keys that move the caret or edit the query bring it back, and the search box is
+    # then read as any text field, while the snippet stays selected for Enter. The sort steps
+    # above left NVDA on the first snippet. The query "smoke зв" finds both snippets.
+    $inSearchBox = { (Test-HasFocus (Get-SearchBox)) -and -not (Get-FocusedListItem) }
+    $focusedName = { $f = Get-FocusedListItem; if ($f) { $f.Current.Name } else { '' } }
+    $isSelected = {
+        param($Item)
+        $Item -and $Item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Current.IsSelected
+    }
+
+    Invoke-Step 'Запит, поки NVDA на сніпеті: NVDA повертається в поле пошуку, потім читає перший знайдений сніпет' {
+        Send-Text 'smoke зв'
+        Wait-Until 'у списку обидва сніпети, спершу зашифрований' {
+            (& $searchValue) -eq 'smoke зв' -and (& $listIs @($secretName, $Data.PlainTitle))
+        }
+        Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
+    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.SecretTitle) = 1 }
+
+    Invoke-Step 'Стрілка вниз з поля пошуку: NVDA читає вибраний сніпет' {
+        Send-Keys 'Down'
+        Wait-Until 'фокус на сніпеті «smoke звичайний»' { Test-HasFocus (& $plainItem) }
+    } -Expect $Data.PlainTitle -ExpectAny $Role.List
+
+    # NVDA handles this key while it is still on the snippet, so it says the search box once.
+    Invoke-Step 'Стрілка вліво після стрілки вниз: NVDA у полі пошуку, сніпет лишається вибраним' {
+        Send-Keys 'Left'
+        Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
+        Wait-Until 'сніпет «smoke звичайний» лишився вибраним' { & $isSelected (& $plainItem) }
+    } -Expect $UI.SearchPlaceholder -Forbid $Data.PlainTitle, $Data.SecretTitle
+
+    # "smoke зв" with the caret before "в": Left reads "з", Right reads "в".
+    Invoke-Step 'Стрілки вліво й вправо в полі пошуку читають символ біля курсора' {
+        Send-Keys 'Left', 'Right'
+    } -ExpectSaid 'з', 'в' -Forbid $UI.SearchPlaceholder, $Data.PlainTitle, $Data.SecretTitle
+
+    Invoke-Step 'Ctrl+стрілки в полі пошуку читають слово біля курсора' {
+        Send-Keys 'Ctrl+Left', 'Ctrl+Left', 'Ctrl+Right'
+    } -ExpectSaid 'зв', 'smoke' -Forbid $UI.SearchPlaceholder, $Data.PlainTitle, $Data.SecretTitle
+
+    # The caret is before "зв": Backspace erases the space. "smokeзв" still finds both snippets.
+    Invoke-Step 'Backspace читає стертий пробіл, потім перший знайдений сніпет' {
+        Send-Keys 'Backspace'
+        Wait-Until 'пробіл стерто, у списку обидва сніпети' { (& $searchValue) -eq 'smokeзв' -and (& $listNames).Count -eq 2 }
+    } -ExpectSaid 'пробіл|space|Leerzeichen' -ExpectAny "$($Data.PlainTitle)|$($Data.SecretTitle)" -Forbid $UI.SearchPlaceholder
+
+    Invoke-Step 'Стрілки вгору й униз з поля пошуку читають вибрані сніпети' {
+        Send-Keys 'Up'
+        Wait-Until 'фокус на першому сніпеті' { (& $focusedName) -eq (& $listNames)[0] }
+        Send-Keys 'Down'
+        Wait-Until 'фокус на другому сніпеті' { (& $focusedName) -eq (& $listNames)[1] }
+    } -Expect $Data.PlainTitle, $Data.SecretTitle -ExpectAny $Role.List
+
+    Invoke-Step 'Escape очищає запит: NVDA у полі пошуку, потім читає перший сніпет' {
+        Send-Keys 'Esc'
+        Wait-Until 'поле пошуку порожнє, у списку обидва сніпети' {
+            (& $searchValue) -eq '' -and (& $listIs @($Data.PlainTitle, $secretName))
+        }
+        Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
+    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.PlainTitle) = 1 }
+
     # Delete in the search box erases text while there is text to erase; only with nothing to
     # erase does it ask to delete the selected snippet. "звч" and "зв" still find the plain snippet.
-    Invoke-Step 'Delete посеред запиту стирає символ, підтвердження немає' {
+    Invoke-Step 'Запит «звич»: стрілки вліво читають символи' {
         Send-Text 'звич'
         Wait-Until 'у списку лише знайдений сніпет' { & $listIs @($Data.PlainTitle) }
-        Send-Keys 'Left', 'Left', 'Delete'
+        Send-Keys 'Left', 'Left'
+    } -ExpectSaid 'ч', 'и'
+
+    # NVDA reads the character that is now after the caret.
+    Invoke-Step 'Delete посеред запиту стирає символ і читає наступний, підтвердження немає' {
+        Send-Keys 'Delete'
         Wait-Until 'символ після курсора стерто' { (& $searchValue) -eq 'звч' }
         Start-Sleep -Milliseconds 400
         if (& $cancelButton) { throw 'Delete відкрив підтвердження видалення' }
-    } -Forbid $UI.DeleteTitle
+    } -ExpectSaid 'ч' -Forbid $UI.DeleteTitle
 
     # With NVDA a held Delete reaches the app as separate presses: after erasing, more Delete
     # presses in a row only edit text, so at the end of the query nothing happens.
@@ -1155,7 +1250,7 @@ try {
         Wait-Until 'останній символ стерто' { (& $searchValue) -eq 'зв' }
         Start-Sleep -Milliseconds 400
         if (& $cancelButton) { throw 'Delete відкрив підтвердження видалення' }
-    } -Forbid $UI.DeleteTitle
+    } -ExpectSaid 'порожньо|blank|leer' -Forbid $UI.DeleteTitle
 
     Invoke-Step 'Після іншої клавіші Delete у кінці запиту питає підтвердження, фокус на «Скасувати»' {
         & $selectSnippet $Data.PlainTitle

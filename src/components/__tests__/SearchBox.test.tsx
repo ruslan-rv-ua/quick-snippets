@@ -18,6 +18,8 @@ function renderSearchBox(overrides: Partial<React.ComponentProps<typeof SearchBo
     activeIndex: -1,
     onActiveIndexChange: vi.fn(),
     onActivate: vi.fn(),
+    listFocused: true,
+    onListFocusChange: vi.fn(),
     ...overrides,
   };
   return render(<SearchBox {...defaults} />);
@@ -158,5 +160,77 @@ describe('SearchBox', () => {
     const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
     screen.getByRole('combobox').dispatchEvent(event);
     expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  // Screen readers are either on the selected snippet (aria-activedescendant) or in the search
+  // box. With aria-activedescendant set, NVDA treats the snippet as focused and says nothing
+  // when the caret moves, so keys that work on the text bring it back to the search box.
+  describe('where the screen reader is', () => {
+    it('in the search box, the search box does not point at the selected snippet', () => {
+      renderSearchBox({ snippets: mockSnippets, activeIndex: 1, listFocused: false });
+      expect(screen.getByRole('combobox').getAttribute('aria-activedescendant') ?? '').toBe('');
+    });
+
+    it.each(['ArrowDown', 'ArrowUp', 'Home', 'End'])('%s moves it onto the selected snippet', (key) => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ snippets: mockSnippets, activeIndex: 1, listFocused: false, onListFocusChange });
+      fireEvent.keyDown(screen.getByRole('combobox'), { key });
+      expect(onListFocusChange).toHaveBeenCalledWith(true);
+    });
+
+    it('list keys do not move it when the list is empty', () => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ snippets: [], listFocused: false, onListFocusChange });
+      for (const key of ['ArrowDown', 'ArrowUp', 'Home', 'End']) {
+        fireEvent.keyDown(screen.getByRole('combobox'), { key });
+      }
+      expect(onListFocusChange).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['Left', { key: 'ArrowLeft' }],
+      ['Right', { key: 'ArrowRight' }],
+      ['Ctrl+Left', { key: 'ArrowLeft', ctrlKey: true }],
+      ['Shift+Right', { key: 'ArrowRight', shiftKey: true }],
+      ['Backspace', { key: 'Backspace' }],
+      ['Ctrl+A in a Ukrainian layout', { key: 'ф', code: 'KeyA', ctrlKey: true }],
+    ])('%s brings it back to the search box and still works on the text', (_name, init) => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ value: 'hello', snippets: mockSnippets, activeIndex: 0, onListFocusChange });
+      // Not cancelled: the search box moves the caret or erases as usual.
+      expect(fireEvent.keyDown(screen.getByRole('combobox'), init)).toBe(true);
+      expect(onListFocusChange).toHaveBeenCalledWith(false);
+    });
+
+    it('Alt+Left leaves it where it is', () => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ value: 'hello', snippets: mockSnippets, activeIndex: 0, onListFocusChange });
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowLeft', altKey: true });
+      expect(onListFocusChange).not.toHaveBeenCalled();
+    });
+
+    it('typing, paste or erasing brings it back to the search box', () => {
+      const onListFocusChange = vi.fn();
+      const onChange = vi.fn();
+      renderSearchBox({ value: 'hello', snippets: mockSnippets, activeIndex: 0, onChange, onListFocusChange });
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'hell' } });
+      expect(onListFocusChange).toHaveBeenCalledWith(false);
+      expect(onChange).toHaveBeenCalledWith('hell');
+    });
+
+    it('Escape that clears the query brings it back to the search box', () => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ value: 'hello', snippets: mockSnippets, activeIndex: 0, onListFocusChange });
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(onListFocusChange).toHaveBeenCalledWith(false);
+    });
+
+    it('Escape on an empty query and Enter leave it where it is', () => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ value: '', snippets: mockSnippets, activeIndex: 0, onListFocusChange });
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onListFocusChange).not.toHaveBeenCalled();
+    });
   });
 });
