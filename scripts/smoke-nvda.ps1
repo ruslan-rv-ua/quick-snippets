@@ -21,7 +21,8 @@
       script, so NVDA does not describe your other programs into the report.
     - The autostart check is skipped if your own autostart entry exists.
 
-    Do not touch the keyboard or mouse while it runs (about a minute).
+    Do not touch the keyboard or mouse while it runs (about two and a half minutes).
+    Leave a minute or more between two runs (see DEVELOPMENT.md).
     NVDA may announce notifications from other apps during the run; they end up in
     the report like any other speech.
 
@@ -187,6 +188,54 @@ public static class QsSmokeNative {
     [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint mods, uint vk);
     [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr hWnd);
+    [DllImport("user32.dll")] static extern IntPtr GetFocus();
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder text, int max);
+    delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr lParam);
+
+    // The first window of this class anywhere inside the given window.
+    public static IntPtr FindDescendant(IntPtr parent, string className) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr h, IntPtr l) {
+            System.Text.StringBuilder name = new System.Text.StringBuilder(128);
+            GetClassName(h, name, 128);
+            if (name.ToString() == className) { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int left, top, right, bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct GUITHREADINFO {
+        public int cbSize; public int flags;
+        public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture;
+        public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret;
+        public RECT rcCaret;
+    }
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO info);
+
+    // The window that has the keyboard right now (in the thread of the foreground window).
+    public static IntPtr KeyboardWindow() {
+        GUITHREADINFO info = new GUITHREADINFO();
+        info.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
+        return GetGUIThreadInfo(0, ref info) ? info.hwndFocus : IntPtr.Zero;
+    }
+
+    // Puts the keyboard on a window of another process. A UI Automation action on a control
+    // leaves it on such an internal window of the app now and then; this does it every time.
+    public static bool FocusWindow(IntPtr hwnd) {
+        uint me = GetCurrentThreadId();
+        uint thread = GetWindowThreadProcessId(hwnd, IntPtr.Zero);
+        bool attached = thread != 0 && thread != me && AttachThreadInput(me, thread, true);
+        try {
+            SetFocus(hwnd);
+            return GetFocus() == hwnd;
+        } finally {
+            if (attached) AttachThreadInput(me, thread, false);
+        }
+    }
 
     // True when nobody holds Ctrl+Alt+Space: register it for a moment and release it at once.
     public static bool HotkeyFree() {
@@ -364,11 +413,17 @@ function Wait-Until([string]$What, [scriptblock]$Condition, [int]$Seconds = $Tim
     throw "не дочекався: $What"
 }
 
+# A toggle through UI Automation makes WebView2 move the keyboard between its internal windows.
+# It is back in the content within 20 ms, or, when WebView2 leaves it on an internal window,
+# 0.2 s later, when the app takes it back. Keys sent before that go nowhere, so wait for it.
 function Set-Toggle($Element, [bool]$On) {
     $tp = $Element.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
     $want = if ($On) { 'On' } else { 'Off' }
+    $keyboard = [QsSmokeNative]::KeyboardWindow()
     if ($tp.Current.ToggleState.ToString() -ne $want) { $tp.Toggle() }
     $null = Wait-Until "перемикач у стані $want" { $tp.Current.ToggleState.ToString() -eq $want } 3
+    # No error here if it does not come back: the step then fails on what it checks next.
+    try { $null = Wait-Until 'клавіатура знову у вмісті програми' { [QsSmokeNative]::KeyboardWindow() -eq $keyboard } 2 } catch { }
 }
 
 function Get-RunValue {
@@ -674,7 +729,7 @@ if (-not $script:LogPath) { Write-Host 'NVDA не запущено або лог
 if (Get-Process quick-snippets -ErrorAction SilentlyContinue) {
     Write-Host 'Вашу копію QuickSnippets буде закрито: тест запускає лише свою копію.'
 }
-Write-Host 'Тест триває близько хвилини. Не торкайтеся клавіатури й миші, доки не прозвучить «Готово».'
+Write-Host 'Тест триває близько двох з половиною хвилин. Не торкайтеся клавіатури й миші, доки не прозвучить «Готово».'
 Start-Sleep -Seconds 4
 
 # Closed before the test and not started again: the test runs only its own copy.
@@ -1050,6 +1105,17 @@ try {
     $autostartSkip = ''
     if ($UserRunValue) { $autostartSkip = 'у вас увімкнено автозапуск QuickSnippets, тест його не чіпає' }
 
+    # A check box toggled through UI Automation (Set-Toggle) makes WebView2 move the keyboard
+    # between its internal windows, and now and then it does not come back to the content.
+    # The app must then keep its window open (it is still the active one) and take the
+    # keyboard back, so that Ctrl+Enter saves. Where things were if a save did not happen:
+    $whereThingsAre = {
+        $w = Get-AppWindow
+        $state = if ($null -eq $w) { 'вікно програми сховане' } else { 'вікно програми видно' }
+        if (Find-Element $w -Id 'settings-theme') { $state += ', налаштування ще відкрито' }
+        return "$state, клавіатура в процесі $(Get-ForegroundProcessName)"
+    }
+
     Invoke-Step 'Автозапуск вмикається в налаштуваннях' {
         Show-App
         Send-Keys 'Ctrl+Comma'
@@ -1062,11 +1128,7 @@ try {
                 $v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0
             }
         } catch {
-            # Where things were when it failed (this step has failed now and then).
-            $w = Get-AppWindow
-            $state = if ($null -eq $w) { 'вікно програми сховане' } else { 'вікно програми видно' }
-            if (Find-Element $w -Id 'settings-autostart') { $state += ', налаштування ще відкрито' }
-            throw "$($_.Exception.Message) ($state, клавіатура в процесі $(Get-ForegroundProcessName))"
+            throw "$($_.Exception.Message) ($(& $whereThingsAre))"
         }
         # What the next start reads: the new value, and the other settings unchanged.
         $null = Wait-Until 'автозапуск у settings.json' { (& $readSettings).autostart -eq $true } 3
@@ -1084,6 +1146,86 @@ try {
         Wait-Until 'запис автозапуску зник' { -not (Get-RunValue) }
         $null = Wait-Until 'автозапуск вимкнено в settings.json' { (& $readSettings).autostart -eq $false } 3
     } -SkipReason $autostartSkip
+
+    # The same sequence as in the autostart steps, repeated, because the keyboard stays away
+    # from the content only now and then (before the fix: in 2 of 7 repeats). An even number
+    # of repeats leaves «Запускати згорнутим у трей» off for the restart near the end.
+    Invoke-Step 'Вікно відкрите, Ctrl+Alt+Space, Ctrl+кома, зміна через UI Automation, Ctrl+Enter: шість разів поспіль зміну збережено' {
+        for ($i = 1; $i -le 6; $i++) {
+            $want = -not [bool](& $readSettings).start_in_tray
+            Show-App
+            Send-Keys 'Ctrl+Comma'
+            $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-tray' }
+            Set-Toggle $box $want
+            Send-Keys 'Ctrl+Enter'
+            try {
+                $null = Wait-Until 'зміну збережено в settings.json' { ([bool](& $readSettings).start_in_tray) -eq $want } 4
+            } catch {
+                throw "повтор $i з 6: $($_.Exception.Message) ($(& $whereThingsAre))"
+            }
+            $null = Wait-Until "повтор $i з 6: діалог закрито, фокус у головному вікні" {
+                -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady)
+            }
+        }
+        & $assertSaved 'dark' 'uk'
+        $s = & $readSettings
+        if ($s.start_in_tray -ne $false -or $s.autotype_delay_ms -ne 7) { throw 'після шести змін інші налаштування не такі, як були' }
+    } -Expect $UI.Settings, $UI.StartInTray
+
+    # The same failure, made to happen every time: the keyboard is put on the internal WebView2
+    # window that holds the accessibility tree, where a UI Automation action leaves it now and
+    # then. Before the fix the app hid its window 0.2 s later, every time. Twice, so that
+    # «Запускати згорнутим у трей» ends up off again.
+    Invoke-Step 'Клавіатура на внутрішньому вікні WebView2, налаштування відкриті: вікно лишається, Ctrl+Enter зберігає' {
+        foreach ($want in $true, $false) {
+            Show-App
+            Send-Keys 'Ctrl+Comma'
+            $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-tray' }
+            Set-Toggle $box $want
+            $top = [IntPtr](Get-AppWindow).Current.NativeWindowHandle
+            $inner = [QsSmokeNative]::FindDescendant($top, 'Chrome_RenderWidgetHostHWND')
+            if ($inner -eq [IntPtr]::Zero) { throw 'не знайдено внутрішнє вікно WebView2 (Chrome_RenderWidgetHostHWND)' }
+            if (-not [QsSmokeNative]::FocusWindow($inner)) { throw 'не вдалося перевести клавіатуру на внутрішнє вікно WebView2' }
+            Start-Sleep -Milliseconds 500
+            if (-not [QsSmokeNative]::IsWindowVisible($top)) { throw 'вікно програми сховалося, хоча лишалося активним' }
+            Send-Keys 'Ctrl+Enter'
+            try {
+                $null = Wait-Until 'зміну збережено в settings.json' { ([bool](& $readSettings).start_in_tray) -eq $want } 4
+            } catch {
+                throw "$($_.Exception.Message) ($(& $whereThingsAre))"
+            }
+            $null = Wait-Until 'діалог закрито, фокус у головному вікні' {
+                -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady)
+            }
+        }
+        & $assertSaved 'dark' 'uk'
+    } -Expect $UI.Settings, $UI.StartInTray
+
+    # The other half of the same rule: the window does hide once another window is the active
+    # one, also with a dialog open, and the dialog is there again when the window comes back.
+    $leaveApp = {
+        $null = [QsSmokeNative]::Activate($script:TargetSync.Handle)
+        $null = Wait-Until 'вікно програми сховалось' { -not (Get-AppWindow) }
+        Enter-Target
+    }
+
+    Invoke-Step 'Інше вікно стає активним: вікно програми ховається, Ctrl+Alt+Space повертає його' {
+        & $leaveApp
+        Show-App
+    } -Expect $UI.SearchPlaceholder
+
+    Invoke-Step 'Те саме з відкритими налаштуваннями: після повернення діалог на місці, фокус у ньому' {
+        Send-Keys 'Ctrl+Comma'
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        & $leaveApp
+        if ($script:HotkeyBroken) { Start-Process $TestExe } else { Send-Keys 'Ctrl+Alt+Space' }
+        Wait-Until 'вікно з діалогом, фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито, фокус у головному вікні' {
+            -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady)
+        }
+        & $assertSaved 'dark' 'uk'
+    } -Expect $UI.Settings, $UI.Theme
 
     # ── Search, delete, sorting, quitting, theme after a restart ────────────────
     $secretName = '{0} ({1})' -f $Data.SecretTitle, $UI.Encrypted
