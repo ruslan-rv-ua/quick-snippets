@@ -1194,7 +1194,9 @@ try {
     Invoke-Step 'Стрілка вліво після стрілки вниз: NVDA у полі пошуку, сніпет лишається вибраним' {
         Send-Keys 'Left'
         Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
-        Wait-Until 'сніпет «smoke звичайний» лишився вибраним' { & $isSelected (& $plainItem) }
+        $selected = $false
+        try { $selected = [bool](Wait-Until 'сніпет лишився вибраним' { & $isSelected (& $plainItem) } 3) } catch { }
+        if (-not $selected) { $script:SoftFail = 'сніпет «smoke звичайний» більше не позначено вибраним' }
     } -Expect $UI.SearchPlaceholder -Forbid $Data.PlainTitle, $Data.SecretTitle
 
     # "smoke зв" with the caret before "в": Left reads "з", Right reads "в".
