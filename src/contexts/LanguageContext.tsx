@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { translations, type TranslationMap } from '../i18n/translations';
 import type { LangCode } from '../types';
-import { getSettings } from '../hooks/useIpc';
+import { getSettings, getSystemLanguage } from '../hooks/useIpc';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -19,6 +19,8 @@ type StaticKey = {
 interface LanguageContextValue {
   language: LangCode;
   setLanguage: (lang: LangCode) => void;
+  /** The language "Same as Windows" stands for (asked from the backend). */
+  systemLanguage: LangCode;
   /** Lookup a static (non-parametrized) translation string. */
   t: (key: StaticKey) => string;
   /** Full translation map — use for parametrized strings. */
@@ -30,23 +32,24 @@ interface LanguageContextValue {
 export const LanguageContext = createContext<LanguageContextValue>({
   language: 'en',
   setLanguage: () => void 0,
+  systemLanguage: 'en',
   t: (key) => key as string,
   tf: translations.en,
 });
 
 // ── Helper ────────────────────────────────────────────────────────────────
 
+function isLangCode(value: unknown): value is LangCode {
+  return value === 'en' || value === 'uk' || value === 'de';
+}
+
 /**
  * Turns the saved language setting into the language to show. An empty or
- * unknown value means "Same as Windows": the WebView's language is used.
+ * unknown value means "Same as Windows": `systemLanguage` is used, which the
+ * backend detects with the same function it uses for the tray menu.
  */
-export function resolveLanguage(raw: string): LangCode {
-  if (raw === 'en' || raw === 'uk' || raw === 'de') return raw;
-  // Auto-detect from browser locale
-  const browserLang = navigator.language.slice(0, 2);
-  if (browserLang === 'uk') return 'uk';
-  if (browserLang === 'de') return 'de';
-  return 'en';
+export function resolveLanguage(raw: string, systemLanguage: LangCode): LangCode {
+  return isLangCode(raw) ? raw : systemLanguage;
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────
@@ -57,14 +60,25 @@ export function LanguageProvider({
   children: React.ReactNode;
 }): React.ReactElement {
   const [language, setLanguageState] = useState<LangCode>('en');
+  const [systemLanguage, setSystemLanguage] = useState<LangCode>('en');
 
   // Load persisted language on mount
   useEffect(() => {
     (async () => {
+      // Asked at once, so the dialog can show "Same as Windows" correctly
+      // later. If it fails, English is used, as the tray menu does.
+      const systemPromise = Promise.resolve()
+        .then(getSystemLanguage)
+        .then((code): LangCode => (isLangCode(code) ? code : 'en'))
+        .catch((): LangCode => 'en');
       try {
-        const s = await Promise.resolve(getSettings());
+        const [s, system] = await Promise.all([
+          Promise.resolve(getSettings()),
+          systemPromise,
+        ]);
+        setSystemLanguage(system);
         if (s && typeof s.language === 'string') {
-          const lang = resolveLanguage(s.language);
+          const lang = resolveLanguage(s.language, system);
           setLanguageState(lang);
           document.documentElement.lang = lang;
         }
@@ -87,8 +101,8 @@ export function LanguageProvider({
   );
 
   const value = useMemo<LanguageContextValue>(
-    () => ({ language, setLanguage, t, tf }),
-    [language, setLanguage, t, tf],
+    () => ({ language, setLanguage, systemLanguage, t, tf }),
+    [language, setLanguage, systemLanguage, t, tf],
   );
 
   return React.createElement(LanguageContext.Provider, { value }, children);

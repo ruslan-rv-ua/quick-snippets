@@ -26,11 +26,12 @@ const defaultSettings: Settings = {
  * A backend in memory: get_settings returns the stored settings and
  * save_settings replaces them. Returns every saved settings object.
  */
-function mockBackend(initial: Partial<Settings> = {}): Settings[] {
+function mockBackend(initial: Partial<Settings> = {}, systemLanguage = 'en'): Settings[] {
   let stored: Settings = { ...defaultSettings, ...initial };
   const saved: Settings[] = [];
   mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
     if (cmd === 'get_settings') return { ...stored };
+    if (cmd === 'get_system_language') return systemLanguage;
     if (cmd === 'save_settings') {
       stored = (args as { settings: Settings }).settings;
       saved.push(stored);
@@ -63,8 +64,8 @@ function Harness({
  * Renders the app's providers, lets them load the saved theme and language
  * (as at app start), then opens the dialog, like Ctrl+, does.
  */
-async function openSettings(initial: Partial<Settings> = {}) {
-  const saved = mockBackend(initial);
+async function openSettings(initial: Partial<Settings> = {}, systemLanguage = 'en') {
+  const saved = mockBackend(initial, systemLanguage);
   const onClose = vi.fn();
   const onError = vi.fn();
   const utils = render(<Harness open={false} onClose={onClose} onError={onError} />);
@@ -237,12 +238,19 @@ describe('SettingsModal', () => {
   });
 
   it('"Same as Windows" shows the Windows language and keeps the dialog working', async () => {
-    // jsdom reports the browser language as en-US.
-    await openSettings({ language: 'uk' });
+    await openSettings({ language: 'uk' }, 'en');
     fireEvent.change(screen.getByRole('combobox', { name: 'Мова' }), { target: { value: '' } });
     expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Language' })).toHaveValue('');
     expect(document.documentElement.lang).toBe('en');
+  });
+
+  it('"Same as Windows" uses the language the backend detects, also German', async () => {
+    // The tray menu gets its language from the same backend function.
+    await openSettings({ language: 'uk' }, 'de');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Мова' }), { target: { value: '' } });
+    expect(screen.getByRole('dialog', { name: 'Einstellungen' })).toBeInTheDocument();
+    expect(document.documentElement.lang).toBe('de');
   });
 
   // ── Cancel ──────────────────────────────────────────────────────────────

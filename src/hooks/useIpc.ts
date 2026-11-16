@@ -73,6 +73,14 @@ export function getSettings(): Promise<Settings> {
   return invoke<Settings>('get_settings');
 }
 
+/**
+ * The language "Same as Windows" stands for. The tray menu uses the same
+ * answer, so the window and the tray always speak one language.
+ */
+export function getSystemLanguage(): Promise<string> {
+  return invoke<string>('get_system_language');
+}
+
 export function saveSettings(settings: Settings): Promise<void> {
   return invoke<void>('save_settings', { settings });
 }
