@@ -21,11 +21,22 @@ QuickSnippets prioritizes the security and privacy of your snippets. This docume
 Sensitive snippets can be encrypted with AES-256-GCM using PBKDF2-HMAC-SHA256:
 
 - **Cipher**: AES-256 in Galois/Counter Mode (GCM) with 128-bit authentication tag
-- **Key derivation**: PBKDF2-HMAC-SHA256 with 100,000 iterations
-- **Salt**: 16 random bytes (unique per snippet password)
+- **Key derivation**: PBKDF2-HMAC-SHA256 with 600,000 iterations, the [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) minimum for this algorithm (checked in November 2026)
+- **Salt**: 16 random bytes (unique per encryption)
 - **Nonce**: 12 random bytes (unique per encryption)
 
 Each encryption produces a unique ciphertext even with the same plaintext and password, due to random salt and nonce.
+
+### Stored Format and Older Versions
+
+Since version 0.3.0 an encrypted snippet is stored as the text `v2:` followed by base64 of `salt || nonce || ciphertext + tag`. The marker `v2:` stands for the parameters above. It is also passed to AES-GCM as associated data, so the authentication tag covers it. The iteration count is fixed by the marker and is not read from the database.
+
+Versions 0.1.0 to 0.2.1 stored the same base64 data without a marker and derived the key with 100,000 iterations.
+
+- **Old snippets still open.** Data without the marker is decrypted with the old parameters. The marker contains `:`, which is not a base64 character, so old and new data cannot be confused.
+- **Old snippets are upgraded when you use them.** The first time you copy or auto-type an old snippet with its password, it is re-encrypted in the new format. The new data is decrypted again and compared before it replaces the old data; if anything fails, the old data stays as it is. A snippet you never open stays in the old format, because re-encryption needs your password. Renaming a snippet does not re-encrypt it.
+- **Going back to a version before 0.3.0.** Those versions cannot read the new format: a re-encrypted or newly created encrypted snippet shows "Wrong password" there, even with the right password. Nothing is damaged, and version 0.3.0 or later opens it again. Snippets still in the old format, and all unencrypted snippets, keep working in older versions. If you might go back, back up the `quick-snippets-data` folder before upgrading.
+- **Time per password check.** One key derivation takes roughly 0.1 second on a recent desktop CPU and up to about half a second on old ones. This delay is what slows down password guessing.
 
 ### What Is Encrypted
 
@@ -144,7 +155,7 @@ All cryptographic dependencies are from the `RustCrypto` ecosystem, which is wel
 
 - **NIST SP 800-38D** — GCM mode specification
 - **NIST SP 800-132** — PBKDF2 specification and recommendations
-- **OWASP** — secure coding practices applied
+- **OWASP** — secure coding practices applied; the PBKDF2 iteration count follows the OWASP Password Storage Cheat Sheet
 
 ---
 
@@ -158,6 +169,13 @@ For security inquiries:
 ---
 
 ## Changelog
+
+### Version 0.3.0
+
+- PBKDF2-HMAC-SHA256 raised from 100,000 to 600,000 iterations (OWASP minimum)
+- New stored format with a `v2:` marker; the marker is authenticated by AES-GCM
+- Snippets encrypted by 0.1.0 to 0.2.1 still open and are re-encrypted in the new format when used
+- Versions before 0.3.0 cannot open snippets stored in the new format
 
 ### Version 0.1.0 (Initial Release)
 

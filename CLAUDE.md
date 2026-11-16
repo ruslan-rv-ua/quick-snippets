@@ -67,7 +67,7 @@ App-level state lives in [src/App.tsx](src/App.tsx) via `useSnippets`, `useSearc
 |------|---------------|
 | [src-tauri/src/commands.rs](src-tauri/src/commands.rs) | `AppState` definition + all `#[tauri::command]` IPC handlers |
 | [src-tauri/src/db.rs](src-tauri/src/db.rs) | SQLite CRUD (`snippets` table; `title` has UNIQUE constraint); `last_used_at` column with migration via `PRAGMA user_version` |
-| [src-tauri/src/crypto.rs](src-tauri/src/crypto.rs) | AES-256-GCM + PBKDF2 (100k iterations); keys are `zeroize`d |
+| [src-tauri/src/crypto.rs](src-tauri/src/crypto.rs) | AES-256-GCM + PBKDF2-HMAC-SHA256; writes the `v2:` format (600k iterations), still reads the legacy format of 0.1.0–0.2.1 (100k, no marker); keys are `zeroize`d |
 | [src-tauri/src/search.rs](src-tauri/src/search.rs) | Fuzzy match: sequential char search, multi-term AND logic |
 | [src-tauri/src/paths.rs](src-tauri/src/paths.rs) | Data directory path helpers (`quick-snippets-data/` next to `.exe`) |
 | [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file in data directory (not AppData); includes `autotype_delay_ms`, `sort_mode`, `sort_direction` |
@@ -100,11 +100,12 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - CI (`ci.yml`) runs build, lint, and both test suites on push to `develop`/`main` and on pull requests.
 - Scoop: the manifest lives in the `ruslan-rv-ua/scoop-bucket` repo and is updated there by its Excavator workflow (`checkver` + `autoupdate` from the `.sha256` asset). Keep release asset names `quick-snippets-{version}-windows-x64.zip[.sha256]` unchanged.
 - Release exe size: keep `removeUnusedCommands` in `tauri.conf.json`, generate `icons/icon.ico` with `npx tauri icon` (PNG-compressed layers), and check for unused crates with `cargo machete`.
-- Release profile: `strip = true`, `lto = true`, `codegen-units = 1`, `opt-level = "z"`, `panic = "abort"`.
+- Release profile: `strip = true`, `lto = true`, `codegen-units = 1`, `opt-level = "z"`, `panic = "abort"`. Only the `sha2` crate is built with `opt-level = 3`: it halves the PBKDF2 wait on every use of an encrypted snippet.
 
 ### Key Design Constraints
 
 - **Portable**: No installer, no registry, no AppData — all data stays in `quick-snippets-data/` next to the `.exe`. Handles Scoop `persist` directory stubs.
+- **Encrypted blob formats are permanent**: users' snippets exist in both the legacy and the `v2:` format, so the iteration constants, the marker and the blob layout in `crypto.rs` must never change. A new key derivation setting needs a new marker (`v3:`) and the old ones must stay readable. Legacy blobs are re-encrypted in `activate_snippet_get_content` after a successful decrypt (the only place the password is known); versions before 0.3.0 cannot read `v2:` blobs.
 - **Rust tests must run single-threaded** (`--test-threads=1`) because SQLite connections are not `Send`-safe across threads in the test setup.
 - **Screen reader support**: WebView2 accessibility tree is pre-initialized via `--force-renderer-accessibility` browser argument. Keep semantic HTML and ARIA labels on all interactive elements. After changes to capabilities, focus handling, dialogs or announcements, rebuild and run `just smoke` (drives the real exe and checks what NVDA says).
 - **i18n**: All user-facing strings must be added to [src/i18n/translations.ts](src/i18n/translations.ts) for English (`en`), Ukrainian (`uk`), and German (`de`). Tray menu labels are also localized in Rust.

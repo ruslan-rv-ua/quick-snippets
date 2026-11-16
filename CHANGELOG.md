@@ -2,7 +2,18 @@
 
 ## [Unreleased]
 
+### Security
+- Encrypted snippets: the encryption key is now derived from the password with PBKDF2-HMAC-SHA256 at 600,000 iterations instead of 100,000. This is the current OWASP minimum for this algorithm and makes password guessing six times more expensive.
+- New stored format for encrypted snippets: the text `v2:` followed by the same base64 data as before (salt, nonce, ciphertext and tag). The marker is covered by the AES-GCM authentication tag.
+- Snippets encrypted by 0.2.1 or earlier still open with their password. Each one is re-encrypted in the new format the first time it is copied or auto-typed. The new data is decrypted and compared before it replaces the old data; if anything fails, the old data stays. A snippet that is never opened stays in the old format, because re-encryption needs the password.
+- The buffer that holds the derived key is now wiped also when the password is wrong.
+
 ### Changed
+- **Going back to a version before 0.3.0**: older versions cannot read the new format. An encrypted snippet that was created or re-encrypted by this version shows "Wrong password" there, even with the right password. Nothing is damaged, and 0.3.0 or later opens it again. Unencrypted snippets, and encrypted snippets not yet opened in this version, keep working in older versions. If you might go back, back up the `quick-snippets-data` folder before upgrading.
+- Checking the password of an encrypted snippet takes longer, by design: about 0.1 s on a recent desktop CPU (was about 0.03 s) and up to about half a second on old ones. The first use of a snippet from an older version takes about twice as long, once.
+- The largest content an encrypted snippet can hold is 3 bytes smaller: 49,105 bytes instead of 49,108. The format marker takes that room in the database field.
+- Release build: the `sha2` crate is compiled with `opt-level = 3` while everything else stays at `"z"`. This halves the key derivation time and adds 8 KB to the executable.
+- Rust tests: the `sha2` crate in debug builds and this crate in test builds are compiled with optimization, so the test suite still runs in seconds with the higher iteration count.
 - Development tooling: Vitest 5, Vite 8 (Rolldown and the Oxc minifier), `@vitejs/plugin-react` 6 and jsdom 31. `npm audit` now reports no vulnerabilities. Node.js 22.22+, 24.15+ or 26+ is needed to run the tests.
 
 ## v0.2.1 - 2026-11-16

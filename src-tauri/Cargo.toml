@@ -44,6 +44,21 @@ codegen-units = 1
 opt-level = "z"
 panic = "abort"
 
+# Every copy or auto-type of an encrypted snippet runs 600,000 rounds of PBKDF2-HMAC-SHA256.
+# Optimising only the SHA-256 crate for speed halves that wait (about 150 ms -> 70 ms on a
+# 2024 desktop CPU) and costs a few KB of exe size.
+[profile.release.package.sha2]
+opt-level = 3
+
+# Debug and test builds: without these two overrides the Rust test suite needs minutes
+# instead of seconds, because every encrypt or decrypt in a test runs the full 600,000 rounds.
+# The second one optimises only this crate, and only when it is built for tests.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.test.package.quick-snippets]
+opt-level = 3
+
 [profile.release-fast]
 inherits = "release"
 opt-level = 1

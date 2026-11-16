@@ -24,7 +24,7 @@ Vertrauliche Schnipsel können lokal mit AES-256-GCM verschlüsselt werden, soda
 
 - **Sofortiger Zugriff** — globaler Hotkey zeigt das Fenster aus jeder Anwendung
 - **Schnelle Suche** — unscharfe Suche (Fuzzy Search) filtert Ihre Schnipsel während der Eingabe
-- **Verschlüsselte Schnipsel** — schützen Sie vertrauliche Inhalte mit einem Passwort (AES-256-GCM-Verschlüsselung, Schlüssel verlassen nie Ihr Gerät)
+- **Verschlüsselte Schnipsel** — schützen Sie vertrauliche Inhalte mit einem Passwort (AES-256-GCM-Verschlüsselung; der Schlüssel wird mit PBKDF2-HMAC-SHA256 und 600.000 Iterationen aus dem Passwort abgeleitet; Schlüssel verlassen nie Ihr Gerät)
 - **Vollständige Tastatursteuerung** — jede Aktion hat ein Tastenkürzel; die Maus ist optional
 - **Screenreader-Unterstützung** — entwickelt für NVDA, JAWS und Windows Narrator
 - **Portabel** — kein Installer, keine Registry, kein `AppData`; die gesamte App befindet sich in einem Ordner
@@ -59,6 +59,8 @@ scoop install quick-snippets
 Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im Ordner `quick-snippets-data` neben der ausführbaren Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
 
 Bei Scoop bleibt dieser Ordner über Updates hinweg in `~\scoop\persist\quick-snippets\quick-snippets-data` erhalten — sichern Sie diesen Ordner.
+
+> **Update von Version 0.2.1 oder älter** — Ihre verschlüsselten Schnipsel lassen sich weiterhin öffnen. Jeder von ihnen wird mit stärkeren Parametern (PBKDF2-HMAC-SHA256, 600.000 statt 100.000 Iterationen) neu verschlüsselt, sobald Sie ihn zum ersten Mal mit seinem Passwort kopieren oder automatisch tippen lassen. Danach können Versionen vor 0.3.0 diesen Schnipsel nicht mehr öffnen (sie melden „Falsches Passwort“); die Daten werden dabei nicht beschädigt, und Version 0.3.0 oder neuer öffnet ihn wieder. Falls Sie zu einer älteren Version zurückkehren könnten, sichern Sie vor dem Update den Ordner `quick-snippets-data`.
 
 > **SHA-256-Prüfsumme** — eine `.sha256`-Datei ist jedem Release zur Überprüfung beigefügt.
 
