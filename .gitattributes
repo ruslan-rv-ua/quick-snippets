@@ -1,0 +1,3 @@
+# The Tauri CLI rewrites Cargo.toml with LF line endings on every build.
+# Keep it LF in the working tree too, so git does not report a change after each build.
+src-tauri/Cargo.toml text eol=lf
