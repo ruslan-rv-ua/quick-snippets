@@ -1,4 +1,4 @@
-/// <reference types="vitest" />
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -34,7 +34,8 @@ export default defineConfig(async () => ({
     // @ts-expect-error process is a nodejs global
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
     // @ts-expect-error process is a nodejs global
-    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+    // Vite 8 minifies with Oxc by default; "esbuild" would need esbuild installed separately.
+    minify: !process.env.TAURI_ENV_DEBUG,
     // @ts-expect-error process is a nodejs global
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
   },

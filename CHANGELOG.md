@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Development tooling: Vitest 5, Vite 8 (Rolldown and the Oxc minifier), `@vitejs/plugin-react` 6 and jsdom 31. `npm audit` now reports no vulnerabilities. Node.js 22.22+, 24.15+ or 26+ is needed to run the tests.
+
 ## v0.2.1 - 2026-11-16
 
 ### Added
