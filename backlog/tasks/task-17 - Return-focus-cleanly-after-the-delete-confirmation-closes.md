@@ -4,6 +4,7 @@ title: Return focus cleanly after the delete confirmation closes
 status: To Do
 assignee: []
 created_date: '2026-11-16T18:13:00Z'
+updated_date: '2026-11-16T19:17:00Z'
 labels:
   - bug
   - frontend
@@ -25,6 +26,8 @@ ordinal: 11000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 After a snippet is deleted with Ctrl+D and Ctrl+Enter, NVDA says "QuickSnippets - Snippet Manager, document | unknown" before it returns to the search box and the list (just smoke step 47 in the TASK-15 run; in the TASK-14 run the same place said "blank"). Focus most likely passes through the document while the dialog closes and the deleted snippet leaves the list. A screen reader user hears noise, and the first thing said after deleting is not where they are. TASK-15 noticed it; it was so before.
+
+Update after TASK-16 (2026-11-16): focus now returns to the search box, which points at the selected snippet, and the TASK-16 just smoke run heard "Видалено | список | елемент списку | smoke зашифрований (зашифровано)" instead of "document | unknown". Check first what is left of the problem: "список | елемент списку" before the snippet name may still be worth removing.
 
 Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort high (`/effort high`). A focus fix in existing dialog code, checked with NVDA.
 <!-- SECTION:DESCRIPTION:END -->
