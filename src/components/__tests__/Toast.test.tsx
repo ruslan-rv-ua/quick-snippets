@@ -58,9 +58,10 @@ describe('ToastContainer', () => {
     expect(document.querySelector('[aria-live="polite"]')).toBeInTheDocument();
   });
 
-  it('has aria-atomic="true"', () => {
+  it('is not atomic, so only a newly added toast is announced', () => {
     render(<ToastContainer toasts={[]} onRemove={vi.fn()} />);
-    expect(document.querySelector('[aria-atomic="true"]')).toBeInTheDocument();
+    expect(document.querySelector('[aria-atomic="true"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-relevant="additions"]')).toBeInTheDocument();
   });
 
   it('positions at bottom-right (fixed)', () => {

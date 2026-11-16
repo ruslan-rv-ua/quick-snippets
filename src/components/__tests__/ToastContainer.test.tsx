@@ -33,10 +33,13 @@ describe('ToastContainer', () => {
     expect(container).toBeInTheDocument();
   });
 
-  it('has aria-atomic="true" on the container', () => {
+  // An atomic region makes screen readers re-read every toast still on screen,
+  // e.g. NVDA said "Saved Copied" after copying right after a save.
+  it('announces only newly added toasts, not the whole container', () => {
     render(<ToastContainer toasts={[]} onRemove={vi.fn()} />);
-    const container = document.querySelector('[aria-atomic="true"]');
-    expect(container).toBeInTheDocument();
+    const container = document.querySelector('.toast-container');
+    expect(container).not.toHaveAttribute('aria-atomic', 'true');
+    expect(container).toHaveAttribute('aria-relevant', 'additions');
   });
 
   // ----- Single toast -----

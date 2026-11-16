@@ -165,7 +165,8 @@ button {
   user-select: none;
 }
 
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -520,6 +521,13 @@ input[type='checkbox'] {
   font-size: 12px;
   color: var(--color-destructive);
   font-weight: 500;
+}
+
+/* The live region stays in the page while empty (see FieldError.tsx); cancel the
+   form-field gap so it takes no space. Not display: none, which would hide it from
+   screen readers and stop the announcement. */
+.form-field .field-error:empty {
+  margin-top: -6px;
 }
 
 /* ── Modal actions row ─────────────────────────────────────────────────────── */

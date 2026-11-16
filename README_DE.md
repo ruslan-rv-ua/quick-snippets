@@ -43,13 +43,13 @@ Vertrauliche Schnipsel können lokal mit AES-256-GCM verschlüsselt werden, soda
 QuickSnippets ist eine portable Anwendung — kein Installer erforderlich.
 
 1. Gehen Sie zur [Releases-Seite](https://github.com/ruslan-rv-ua/quick-snippets/releases).
-2. Laden Sie die neueste `quick-snippets-windows-x64-vX.Y.Z.zip` herunter.
+2. Laden Sie die neueste `quick-snippets-X.Y.Z-windows-x64.zip` herunter.
 3. Entpacken Sie die ZIP-Datei in einen beliebigen Ordner (z. B. `C:\Tools\QuickSnippets\`).
 4. Starten Sie `quick-snippets.exe`.
 
 ### Installation über Scoop
 
-Wenn Sie [Scoop](https://scoop.sh/) verwenden, können Sie QuickSnippets aus dem offiziellen Bucket installieren:
+Wenn Sie [Scoop](https://scoop.sh/) verwenden, können Sie QuickSnippets aus dem Bucket des Autors installieren:
 
 ```powershell
 scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
@@ -57,6 +57,8 @@ scoop install quick-snippets
 ```
 
 Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im Ordner `quick-snippets-data` neben der ausführbaren Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
+
+Bei Scoop bleibt dieser Ordner über Updates hinweg in `~\scoop\persist\quick-snippets\quick-snippets-data` erhalten — sichern Sie diesen Ordner.
 
 > **SHA-256-Prüfsumme** — eine `.sha256`-Datei ist jedem Release zur Überprüfung beigefügt.
 
@@ -94,7 +96,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 
 | Kürzel | Aktion |
 |---|---|
-| Strg+Alt+Space | QuickSnippets-Fenster anzeigen / ausblenden |
+| Strg+Alt+Space | QuickSnippets-Fenster anzeigen |
 
 ### Im Hauptfenster
 

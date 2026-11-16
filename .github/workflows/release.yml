@@ -14,8 +14,9 @@
 #   Якщо позначено прапорець prerelease — реліз маркується як pre-release.
 #
 # SCOOP BUCKET
-#   Оновлюється ОКРЕМИМ workflow (update-scoop.yml) вручну після перевірки
-#   релізу. Цей workflow НЕ відправляє repository_dispatch.
+#   Маніфест оновлює Excavator у репозиторії ruslan-rv-ua/scoop-bucket
+#   (вручну після перевірки релізу або щодня за розкладом). Він шукає файли
+#   з іменами нижче, тому їх не можна змінювати.
 #
 # BUILD STRATEGY
 #   `npx tauri build --no-bundle`:
@@ -110,7 +111,7 @@ jobs:
       # `none` value in Tauri v2.
       #
       # Release profile (defined in Cargo.toml) applies:
-      #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "s"
+      #   strip = true  |  lto = true  |  codegen-units = 1  |  opt-level = "z"  |  panic = "abort"
       - name: Build Tauri app (release, no installer bundle)
         run: npx tauri build --no-bundle
 

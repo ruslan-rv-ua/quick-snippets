@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## v0.2.1 - 2026-11-16
+
+### Added
+- `just smoke`: local smoke test of the release exe with NVDA. It drives the real app with the keyboard, checks each result, and reports what NVDA said at every step (`scripts/smoke-nvda.ps1`).
+
+### Changed
+- Smaller release executable (5.3 MB → 3.8 MB): PNG-compressed app icon, unused Tauri plugin commands no longer compiled in, an unused dependency removed, and `opt-level = "z"`.
+- The main window no longer has direct access to the clipboard, global-shortcut, and autostart plugins; these features run in the Rust backend.
+- CI: lint and all tests now run on every push to `develop`/`main` and on pull requests.
+- Scoop: the manifest is now updated by Excavator in the `scoop-bucket` repository; `update-scoop.yml` was removed from this repository.
+
+### Fixed
+- Screen readers: validation errors in the create and edit dialogs (title length, empty content, passwords do not match) are now always announced with their text, once. Before, the first error in a dialog could be read as just "alert", and every message was followed by the word "alert".
+- Screen readers: the "Wrong password" message is now announced. The password field is no longer disabled while checking, so focus stays in it (NVDA no longer says "unavailable").
+- Screen readers: a new notification no longer re-reads older ones still on screen (NVDA said "Saved Copied" after copying right after a save).
+- READMEs: correct release ZIP name and the Scoop data folder location.
+- READMEs: Ctrl+Alt+Space shows the window; it does not hide it.
+
 ## v0.2.0 - 2026-04-19
 
 ### Added

@@ -1,0 +1,16 @@
+project_name: "QuickSnippets"
+default_status: "To Do"
+statuses: ["To Do", "In Progress", "Done"]
+labels: []
+date_format: yyyy-mm-dd
+max_column_width: 20
+auto_open_browser: true
+default_port: 6420
+remote_operations: true
+auto_commit: false
+filesystem_only: false
+bypass_git_hooks: false
+check_active_branches: true
+active_branch_days: 30
+task_prefix: "task"
+definition_of_done: ["`npm run test:all` passes", "`npm run lint` passes", "CHANGELOG.md [Unreleased] updated for user-visible changes", "New user-facing strings exist in en, uk and de (src/i18n/translations.ts)", "After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)"]

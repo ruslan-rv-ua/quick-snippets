@@ -43,13 +43,13 @@ QuickSnippets — це невелика портативна програма д
 QuickSnippets — це портативна програма, інсталятор не потрібен.
 
 1. Перейдіть на [сторінку релізів](https://github.com/ruslan-rv-ua/quick-snippets/releases).
-2. Завантажте останній `quick-snippets-windows-x64-vX.Y.Z.zip`.
+2. Завантажте останній `quick-snippets-X.Y.Z-windows-x64.zip`.
 3. Розпакуйте ZIP у будь-яку папку (наприклад, `C:\Tools\QuickSnippets\`).
 4. Запустіть `quick-snippets.exe`.
 
 ### Встановлення через Scoop
 
-Якщо ви використовуєте [Scoop](https://scoop.sh/), ви можете встановити QuickSnippets з офіційного бакета:
+Якщо ви використовуєте [Scoop](https://scoop.sh/), ви можете встановити QuickSnippets з бакета автора:
 
 ```powershell
 scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
@@ -57,6 +57,8 @@ scoop install quick-snippets
 ```
 
 Ваша база даних сніпетів (`snippets.db`) і налаштування (`settings.json`) зберігаються в папці `quick-snippets-data` поряд з виконуваним файлом. Щоб перемістити або створити резервну копію програми, скопіюйте всю папку.
+
+Під Scoop ця папка зберігається між оновленнями в `~\scoop\persist\quick-snippets\quick-snippets-data` — резервну копію робіть саме з неї.
 
 > **Контрольна сума SHA-256** — файл `.sha256` додається до кожного релізу для перевірки.
 
@@ -94,7 +96,7 @@ scoop install quick-snippets
 
 | Комбінація | Дія |
 |---|---|
-| Ctrl+Alt+Space | Показати / приховати вікно QuickSnippets |
+| Ctrl+Alt+Space | Показати вікно QuickSnippets |
 
 ### У головному вікні
 

@@ -1,235 +1,181 @@
-# DEV.md — Developer guide (Windows)
+# DEVELOPMENT.md — Developer guide (Windows)
 
-Коротко: цей репозиторій — Tauri (Rust) backend + React/TypeScript frontend. Використовуйте `just` (PowerShell) або наведені нижче команди вручну.
+Коротко: цей репозиторій — Tauri 2 (Rust) backend + React/TypeScript frontend. Використовуйте `just` (PowerShell) або наведені нижче команди вручну.
 
-**Prerequisites (Windows)**
-- Node.js (LTS). Рекомендація:
-  - Scoop: `iwr -useb get.scoop.sh | iex; scoop install nodejs-lts`
-  - або Chocolatey: `choco install nodejs-lts`
-  - або nvm-windows: https://github.com/coreybutler/nvm-windows
-- npm (поставляється з Node).
-- Rust (rustup): `winget install --id RustLang.Rustup` або вручну з https://rustup.rs
-  - Встановіть MSVC toolchain: `rustup default stable-x86_64-pc-windows-msvc`
-- Visual Studio Build Tools (C++): встановіть "Desktop development with C++" workload.
-- OpenSSL (за потреби для деяких crate): `scoop install openssl` або `choco install openssl`.
-- Tauri CLI (optional): `cargo install tauri-cli` або використовуйте `npx tauri`.
-- just (recommended): `scoop install just` або `choco install just`. Якщо відсутні пакети — скачайте реліз з https://github.com/casey/just/releases і додайте до PATH.
+## Prerequisites (Windows)
 
-Якщо щось відсутнє — дотримуйтесь офіційних інструкцій на відповідних сайтах.
+- Node.js (LTS):
+  - Scoop: `scoop install nodejs-lts`
+  - або winget: `winget install OpenJS.NodeJS.LTS`
+- Rust (rustup): `winget install --id Rustlang.Rustup` або з https://rustup.rs
+  - MSVC toolchain: `rustup default stable-x86_64-pc-windows-msvc`
+- Visual Studio Build Tools: workload "Desktop development with C++".
+- WebView2 Runtime — уже є в Windows 10/11.
+- just (рекомендовано): `scoop install just`.
+- Tauri CLI окремо ставити не треба: він є в devDependencies, запускається через `npx tauri`.
 
-Як користуватись just
-- Ініціалізація (встановлення deps + rust toolchain checks):
-  ```powershell
-  just setup
-  ```
-- Розробка (створити dev процес — Tauri часто запускає фронтенд автоматично):
-  ```powershell
-  just dev
-  ```
-- Локальна збірка + пакування:
-  ```powershell
-  just build
-  just build-fast           # швидка збірка (release-fast профіль, більший exe)
-  ```
-- Тести:
-  ```powershell
-  just test              # frontend + backend
-  just test-watch        # watch mode для frontend
-  just test-coverage     # coverage для frontend
-  just test-all          # всі тести (npm run test:all)
-  ```
-- Лінт/перевірка:
-  ```powershell
-  just lint              # tsc + cargo clippy
-  just check             # швидкі статичні перевірки
-  ```
-- Форматування:
-  ```powershell
-  just format
-  ```
-- Випуск (production):
-  ```powershell
-  just release           # build + package в release режимі
-  just package           # створити інсталятор/бінарні артефакти
-  ```
-- Фінальні перевірки:
-  ```powershell
-  just final-checks      # фінальний pipeline: version sync + tsc + clippy + tests + build
-  ```
-- Утиліти:
-  ```powershell
-  just clean             # видалити node_modules та cargo artifacts
-  just db-reset          # скидання БД
-  just open              - відкрити папку з фронтенд збіркою або Rust релізом
-  ```
+## Команди just
 
-Генерація demo бази даних
-- Для швидкого створення demo SQLite бази (заповненої >40 сніпетів) використайте:
-  ```powershell
-  just gdb
-  # або запустити скрипт напряму
-  python .\generate_demo_db.py
-  ```
-  Скрипт створює `src-tauri/target/release/snippets_demo.db`.
+`just` або `just help` показує всі рецепти. Основні:
 
-Передати змінні:
-- Змінити профіль/архітектуру, наприклад:
-  ```powershell
-  just build PROFILE=release ARCH=x64
-  ```
+```powershell
+just setup             # npm install + перевірка Node/Rust
+just dev               # Tauri dev: фронтенд + backend з hot-reload
+just vite              # лише фронтенд (Vite dev server)
 
-Примітка щодо `PROFILE` і `just build`:
-- Для `PROFILE=release` рецепт викликає упаковку через Tauri (`npm run tauri build`) і створює релізні бінарі/інсталятори у `src-tauri/target/release/bundle`.
-- Для інших профілів (наприклад `debug`) `Justfile` тепер викликає `cargo build --profile <PROFILE>` у `src-tauri`, тобто `just build PROFILE=debug` зробить `cargo build --profile debug` (з fallback на `cargo build` при помилці).
-- Якщо потрібно точніше керувати збіркою Rust — відкрийте `src-tauri` і запускайте `cargo build` / `cargo build --release` вручну.
+just test              # усі тести: Vitest + cargo test (однопотоково)
+just test-front        # лише Vitest
+just test-back         # лише cargo test
+just test-mod db::tests  # один модуль Rust
+just test-watch        # Vitest у watch-режимі
+just test-cov          # Vitest з coverage
 
-Приклади запуску окремо
-- Frontend only:
-  ```powershell
-  npm install
-  npm run build
-  ```
-- Backend only:
-  ```powershell
-  cd src-tauri
-  cargo build
-  ```
+just check             # швидко: tsc --noEmit + cargo check
+just lint              # tsc --noEmit + cargo clippy -D warnings
+just format            # cargo fmt
 
-Ручні (PowerShell) еквіваленти основних задач
-- Встановити залежності:
-  ```powershell
-  npm install
-  ```
-- TypeScript перевірка:
-  ```powershell
-  npx tsc --noEmit
-  ```
-- Запустити фронтенд тести (Vitest):
-  ```powershell
-  npx vitest run              # одноразовий запуск
-  npx vitest                  # watch mode
-  npx vitest run --coverage   # з coverage
-  ```
-- Запустити всі тести (frontend + backend):
-  ```powershell
-  npm run test:all
-  ```
-- Побудувати фронтенд:
-  ```powershell
-  npm run build
-  ```
-- Побудувати Rust backend:
-  ```powershell
-  cd src-tauri
-  cargo build
-  cargo check                 # швидка перевірка компіляції
-  cargo clippy -- -D warnings # lint (нульова толерантність)
-  ```
-- Запустити Rust тести:
-  ```powershell
-  cd src-tauri
-  cargo test -- --test-threads=1
-  cargo test db::tests       # конкретний модуль
-  ```
-- Зібрати пакет Tauri (можна двома способами):
-  ```powershell
-  # from project root
-  npm run tauri -- build
-  # or from src-tauri
-  cd src-tauri
-  npx tauri build
-  ```
-- Фінальна перевірка pipeline:
-  ```powershell
-  powershell -File scripts/final-checks.ps1
-  ```
+just build             # debug-збірка (npm run build + cargo build)
+just build release     # release-збірка через Tauri
+just build-fast        # release-fast профіль: швидка компіляція, більший exe
+just release           # tsc + release-збірка через Tauri
 
-Release Process
----------------
+just final-checks      # version sync + tsc + clippy + тести + збірка
+just db-reset          # видалити локальну quick-snippets-data\snippets.db
+just clean             # видалити dist/ та src-tauri/target/
+```
+
+## Ручні (PowerShell) еквіваленти
+
+```powershell
+npm install                     # залежності
+npx tsc --noEmit                # перевірка TypeScript
+npx vitest run                  # тести фронтенду (одноразово)
+npx vitest run src/hooks/__tests__/useSearchLogic.test.ts   # один файл
+npm run test:rust               # тести Rust (--test-threads=1, через SQLite)
+npm run test:all                # усі тести
+npm run lint                    # tsc + clippy
+npx tauri build --no-bundle     # портативний exe, як у релізі
+```
+
+Готовий exe: `src-tauri/target/release/quick-snippets.exe`.
+
+## Перевірка з NVDA (smoke)
+
+`just smoke` — приблизно хвилинна перевірка зібраного exe разом з NVDA. Скрипт
+`scripts/smoke-nvda.ps1` натискає клавіші замість користувача, перевіряє результат кожного кроку
+(через UI Automation, буфер обміну й реєстр) і показує, що NVDA сказав на кожному кроці.
+
+- Спершу зберіть exe: `npx tauri build --no-bundle`.
+- NVDA має бути запущений, рівень журналювання — «введення/виведення»
+  (Налаштування NVDA → Загальні). Без NVDA перевіряється лише сама програма.
+- Під час тесту не торкайтеся клавіатури й миші.
+- Ваші дані не зачіпаються: тест запускає лише свою копію exe з тимчасової папки з порожньою
+  базою. Запущену QuickSnippets скрипт закриває й назад не запускає; буфер обміну відновлює.
+- Поки програма схована, фокус стоїть у маленькому тестовому вікні скрипта, тож NVDA
+  не читає ваших інших програм у звіт. З логу NVDA береться лише те, що записано під час тесту.
+- Звіт друкується в консоль і зберігається в `%TEMP%\quick-snippets-smoke-report.txt`.
+  Код виходу 0 — усе гаразд, 1 — є помилки.
+- Перевірки «бажано» (наприклад, «Скопійовано») на результат не впливають: вікно ховається
+  одразу після копіювання, і NVDA не завжди встигає це прочитати.
+
+Запускайте після змін у capabilities, плагінах, фокусі, діалогах чи оголошеннях для екранного диктора.
+
+## Розмір exe
+
+Release-профіль у `src-tauri/Cargo.toml` налаштований на мінімальний розмір:
+`opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `strip = true`.
+У `src-tauri/tauri.conf.json` увімкнено `build.removeUnusedCommands`: Tauri не вбудовує
+команди плагінів, які не дозволені в `capabilities/`. Тому не додавайте туди дозволи
+плагінів, яких фронтенд не викликає: глобальна клавіша, буфер обміну й автозапуск
+працюють з Rust.
+
+Також на розмір впливають:
+- `src-tauri/icons/icon.ico` вбудовується в exe. Генеруйте його через
+  `npx tauri icon <png 1024×1024>` — так шари зберігаються стисненими (PNG).
+- Кожна залежність у `Cargo.toml`. Перевірка невикористаних: `cargo machete` у `src-tauri`.
+
+## Release Process
 
 ### Version management
 
-Single source of truth: **`src-tauri/Cargo.toml`** (`[package].version`).
-When cutting a release, bump the version in all three places and keep them in sync:
+Версія записана в трьох місцях, їх треба тримати однаковими
+(`just final-checks` це перевіряє):
 
 ```
-src-tauri/Cargo.toml   ← authoritative source (binary embeds this)
-tauri.conf.json         ← "version" field
-package.json            ← "version" field
+src-tauri/Cargo.toml        ← [package].version (вбудовується в exe)
+src-tauri/tauri.conf.json   ← "version"
+package.json                ← "version"
 ```
 
 ### Git Flow release procedure
 
 ```powershell
-# 1. Start a release branch from develop
+# 1. Гілка релізу від develop
 git flow release start 1.2.3
 
-# 2. Bump version in all three files (see above), commit
-git add src-tauri/Cargo.toml tauri.conf.json package.json
+# 2. Підняти версію в трьох файлах, оновити CHANGELOG.md, закомітити
+git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json package.json package-lock.json CHANGELOG.md
 git commit -m "chore: bump version to 1.2.3"
 
-# 3. Finish the release (merges to main + develop, creates tag v1.2.3)
+# 3. Завершити реліз (злиття в main і develop)
 git flow release finish 1.2.3
 
-# 4. Push main and develop
+# 4. Запушити гілки (теги не пушити: тег створює release workflow)
 git push origin main develop
 ```
 
-### Creating a GitHub Release
+### Створення GitHub Release
 
-Release створюється вручну через GitHub Actions UI:
+Реліз створюється вручну через GitHub Actions:
 
-1. **Actions → Release → Run workflow**
-2. Вказати версію (формат: `1.2.3`, без `v`)
+1. **Actions → Release → Run workflow** (гілка `main`)
+2. Вказати версію (формат `1.2.3`, без `v`)
 3. За потреби позначити як pre-release
 
 Workflow автоматично:
-1. Створює тег `v{version}` та пушить його
-2. Запускає `npx tauri build --no-bundle` (збірка фронтенду + Rust binary)
-3. Пакує `quick-snippets.exe`, `LICENSE`, `README.md` у ZIP:
+1. Створює і пушить тег `v{version}`
+2. Запускає `npx tauri build --no-bundle` (фронтенд + Rust binary)
+3. Пакує `quick-snippets.exe`, `LICENSE`, `README.md` у ZIP
    `quick-snippets-{version}-windows-x64.zip`
-4. Генерує SHA-256 checksum файл
-5. Створює GitHub Release з обома файлами
+4. Створює файл `quick-snippets-{version}-windows-x64.zip.sha256`
+5. Публікує GitHub Release з обома файлами
 
-### Оновлення Scoop маніфесту
+### Оновлення Scoop
 
-Після створення релізу вручну запустіть **Actions → Update Scoop manifest**:
-1. Вказати версію (або залишити порожнім для останньої)
-2. Workflow завантажить ZIP, перевірить SHA256, та відправить dispatch до scoop-bucket
+Маніфест `bucket/quick-snippets.json` живе в репозиторії
+[ruslan-rv-ua/scoop-bucket](https://github.com/ruslan-rv-ua/scoop-bucket) і оновлюється
+там воркфлоу **Excavator**. Він сам знаходить новий реліз (`checkver`), бере хеш з
+`.sha256`-файлу (`autoupdate`) і комітить маніфест.
+
+Після релізу:
+- або запустіть **Actions → Excavator → Run workflow** у scoop-bucket, щоб оновити одразу;
+- або нічого не робіть: Excavator щодня запускається за розкладом.
+
+Тому імена файлів релізу мають залишатися саме такими:
 
 ```
-https://github.com/{owner}/{repo}/releases/download/v{version}/quick-snippets-{version}-windows-x64.zip
+https://github.com/ruslan-rv-ua/quick-snippets/releases/download/v{version}/quick-snippets-{version}-windows-x64.zip
+https://github.com/ruslan-rv-ua/quick-snippets/releases/download/v{version}/quick-snippets-{version}-windows-x64.zip.sha256
 ```
 
-TDD та безпека
-- Проєкт дотримується TDD: пишіть тести перед фічами.
-- Rust тести для DB використовують in-memory DB (`Connection::open_in_memory()`).
-- Критичний інваріант безпеки (AGENTS.md): розшифровані/plaintext сніпети НІКОЛИ не передаються у frontend. Усі операції з буфером обміну — виключно в Rust-процесі. Поважайте цей інваріант при розробці і тестуванні.
+Дані користувача (`quick-snippets-data/`) Scoop зберігає між оновленнями через `persist`.
 
-Troubleshooting (Windows)
-- Visual Studio Build Tools: помилки під час `cargo build` зазвичай означають, що workload не встановлено.
-- Long path / MAX_PATH: за потреби ввімкніть long paths або використовуйте коротші шляхи.
-- `cargo`/`rustup` не в PATH: закрийте/відкрийте PowerShell після інсталяції або перезапустіть систему.
-- antivirus / SmartScreen може блокувати NSIS/makensis — дозволіть у вірусі або перевірте logs.
-- Git LF/CRLF warnings: стандартне попередження; налаштуйте `.gitattributes` або `core.autocrlf`.
-- Tauri / Node / Rust version mismatches: тримайте Node LTS та stable Rust; якщо з'являються проблеми, оновіть локальні пакети: `npm ci` і `rustup update`.
-- Якщо `npx tauri build` падає, спробуйте `npm run tauri -- build` (передає аргументи скрипту).
+## CI
 
-Рекомендовані just-змінні (в justfile)
-- `PROFILE` (debug|release) - профіль збірки
-- `ARCH` (x64|arm64) - цільова архітектура
-- `NODE_VERSION` (інформаційно) - версія Node.js
+`.github/workflows/ci.yml` на кожен push у `develop`/`main` і на pull request запускає
+`npm run build`, `npm run lint`, `npm run test`, `npm run test:rust`.
 
-Приклади використання змінних:
-```powershell
-just build PROFILE=release
-just build PROFILE=release ARCH=x64
-just release ARCH=arm64
-```
+## TDD та безпека
 
-Зверніть увагу на безпеку: ніколи не виводьте/логгируйте plaintext сніпетів у фронтенд або CI-логи. Дотримуйтесь інваріанту з AGENTS.md.
+- Пишіть тести перед фічами.
+- Rust-тести для БД використовують in-memory SQLite (`Connection::open_in_memory()`).
+- Критичний інваріант безпеки: розшифрований текст сніпетів НІКОЛИ не передається у фронтенд
+  і не потрапляє в логи (зокрема CI). Розшифрування і копіювання в буфер обміну відбуваються
+  лише в Rust (`activate_snippet`).
 
-Додаткова інформація
-- Повний список команд: `just help`
-- Justfile вже налаштований для Windows (PowerShell)
-- Всі команди автоматично виконують `npm install` перед основними операціями (dev, build, test-all, final-checks, package)
+## Troubleshooting (Windows)
+
+- Помилки лінкера під час `cargo build` — зазвичай не встановлено workload "Desktop development with C++".
+- `cargo`/`rustup` не в PATH — перезапустіть PowerShell після встановлення.
+- Попередження Git про LF/CRLF — нормальні; за потреби налаштуйте `core.autocrlf`.
+- Розбіжності версій Tauri/Node/Rust — `npm ci` і `rustup update`.
