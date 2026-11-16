@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T23:33:00Z'
-updated_date: '2026-11-16T14:41:00Z'
+updated_date: '2026-11-16T14:46:00Z'
 labels:
   - release
   - model-sonnet
@@ -70,3 +70,15 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 8. Run Excavator in scoop-bucket; check the manifest shows 0.3.0.
 9. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-8-<commit>.exe.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checks on release/0.3.0 (commit 040b934, version bump f29c84a):
+- CI for develop a56043e passed before the release started.
+- just final-checks: versions match (0.3.0), tsc, clippy, 217 Rust tests, 386 Vitest tests, build OK; exe 3,849,728 bytes.
+- npm run lint and npm run test:all: pass.
+- just smoke on the release exe: 35 of 35 steps OK, NVDA checks 105 of 105.
+- 0.2.1 format check (script outside the repo): a test copy of the release exe with its own temp data folder created its database; the pinned v0.2.1 sample blob from crypto.rs was inserted as is_encrypted=1. First open with the password copied the right text and the stored content changed from the legacy format (116 bytes) to v2: (119 bytes); the second open with the same password copied the right text again.
+- CHANGELOG: [Unreleased] moved into v0.3.0; the note on going back to 0.2.x moved to a new first subsection "Before you upgrade" with the advice to back up quick-snippets-data.
+<!-- SECTION:NOTES:END -->
