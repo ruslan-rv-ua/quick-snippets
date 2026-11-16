@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T21:47:00Z'
-updated_date: '2026-11-16T22:58:00Z'
+updated_date: '2026-11-16T23:06:00Z'
 labels:
   - release
   - model-sonnet
@@ -33,9 +33,9 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Version 0.3.1 in src-tauri/Cargo.toml, src-tauri/tauri.conf.json and package.json; `just final-checks` passes
+- [x] #1 Version 0.3.1 in src-tauri/Cargo.toml, src-tauri/tauri.conf.json and package.json; `just final-checks` passes
 - [ ] #2 CHANGELOG.md has a v0.3.1 section with user-facing notes only, and the GitHub release notes are that section
-- [ ] #3 `just smoke` passes on the release build (run only with the user's permission)
+- [x] #3 `just smoke` passes on the release build (run only with the user's permission)
 - [ ] #4 git flow release finished with --no-ff: main and develop contain the release and main has a release merge commit; tag v0.3.1 created by the Release workflow
 - [ ] #5 The GitHub release has the ZIP and its .sha256, and the Scoop manifest shows 0.3.1 after Excavator runs
 - [ ] #6 The release build is copied to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-21-<short commit>.exe
@@ -43,11 +43,11 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 `npm run test:all` passes
-- [ ] #2 `npm run lint` passes
-- [ ] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
-- [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
-- [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
+- [x] #1 `npm run test:all` passes
+- [x] #2 `npm run lint` passes
+- [x] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
+- [x] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
+- [x] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -62,3 +62,14 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 7. Run Excavator in scoop-bucket; check the manifest shows 0.3.1.
 8. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-21-<commit>.exe.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checks on release/0.3.1 (version bump 4c81e87):
+- CI for develop 280d32f: the first attempt failed in one Vitest test (App.test.tsx, "F1 opens the help with focus on the first shortcut": focus was still on the search box). The test is unchanged since v0.3.0 and passes locally every time (5 runs of App.test.tsx, plus final-checks and test:all); the rerun of the failed job passed (run 43975084408, attempt 2). Likely a timing race in slow CI, possibly the 60 ms initial-focus timer in useWindowEvents firing after F1. Not a product bug; worth a follow-up to make the test wait for the initial focus.
+- just final-checks: versions match (0.3.1), tsc, clippy, Rust and Vitest tests, build OK; exe 3,851,776 bytes.
+- npm run lint: pass. npm run test:all: 432 Vitest tests in 24 files, 230 Rust tests (1 ignored), all pass.
+- just smoke on the release exe: 70 of 70 steps OK, NVDA checks 181 of 181. The NVDA log has 2 errors of NVDA's own script_caret_newLine (known since TASK-18, no effect on speech checks).
+- CHANGELOG: [Unreleased] moved into v0.3.1 unchanged; all five entries are user-facing. No new user-facing strings in this task.
+<!-- SECTION:NOTES:END -->
