@@ -199,7 +199,7 @@ fn watch_blur(
     use commands::AppState;
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
-    use tauri::Manager;
+    use tauri::{Emitter, Manager};
     use window_blur::{next_blur_step, poll_interval_ms, probe_window, BlurState, BlurStep};
 
     let hwnd = win.hwnd().map(|h| h.0 as isize).unwrap_or(0);
@@ -244,6 +244,9 @@ fn watch_blur(
                 let _ = webview.set_focus();
             }
             BlurStep::Hide => {
+                // The web content clears the search and closes the password dialog only now,
+                // not on every blur: the keyboard may only have moved inside the window.
+                let _ = win.emit("window:hidden", ());
                 let _ = win.hide();
                 return;
             }

@@ -4,8 +4,12 @@ import { listen } from '@tauri-apps/api/event';
 export interface WindowEventHandlers {
   /** Called on native window focus and Tauri `window:show` event. */
   onShow?: () => void;
-  /** Called on native window blur. */
-  onBlur?: () => void;
+  /**
+   * Called on the Tauri `window:hidden` event: the backend hides the window because the user
+   * switched to another window. Not called on a DOM blur, which also happens while the keyboard
+   * only moves between WebView2's internal windows and the window stays the active one.
+   */
+  onHidden?: () => void;
   /** Called once on mount (delayed 60 ms for webview activation). */
   onInitialFocus?: () => void;
   /** Called on Tauri `tray:create-snippet` event. */
@@ -17,7 +21,7 @@ export interface WindowEventHandlers {
 }
 
 /**
- * Sets up all window-level event listeners: native focus/blur,
+ * Sets up all window-level event listeners: native focus,
  * Tauri events from tray/hotkey, and an initial focus timer.
  *
  * Uses refs internally so subscriptions are created once and always
@@ -27,14 +31,14 @@ export interface WindowEventHandlers {
 export function useWindowEvents(handlers: WindowEventHandlers): void {
   // Keep refs up-to-date without recreating any subscriptions.
   const showRef = useRef(handlers.onShow);
-  const blurRef = useRef(handlers.onBlur);
+  const hiddenRef = useRef(handlers.onHidden);
   const initialRef = useRef(handlers.onInitialFocus);
   const trayCreateRef = useRef(handlers.onTrayCreate);
   const traySettingsRef = useRef(handlers.onTraySettings);
   const closeRequestRef = useRef(handlers.onCloseRequest);
 
   useEffect(() => { showRef.current = handlers.onShow; });
-  useEffect(() => { blurRef.current = handlers.onBlur; });
+  useEffect(() => { hiddenRef.current = handlers.onHidden; });
   useEffect(() => { initialRef.current = handlers.onInitialFocus; });
   useEffect(() => { trayCreateRef.current = handlers.onTrayCreate; });
   useEffect(() => { traySettingsRef.current = handlers.onTraySettings; });
@@ -46,16 +50,11 @@ export function useWindowEvents(handlers: WindowEventHandlers): void {
     return () => clearTimeout(focusTimer);
   }, []);
 
-  // Native window focus / blur
+  // Native window focus
   useEffect(() => {
     const handleFocus = (): void => showRef.current?.();
-    const handleBlur = (): void => blurRef.current?.();
     window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
-    };
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Tauri events (subscribed once, always call latest refs)
@@ -64,11 +63,13 @@ export function useWindowEvents(handlers: WindowEventHandlers): void {
     const u2 = listen('tray:open-settings', () => traySettingsRef.current?.());
     const u3 = listen('window:close-request', () => closeRequestRef.current?.());
     const u4 = listen('window:show', () => showRef.current?.());
+    const u5 = listen('window:hidden', () => hiddenRef.current?.());
     return () => {
       void u1.then((fn) => fn());
       void u2.then((fn) => fn());
       void u3.then((fn) => fn());
       void u4.then((fn) => fn());
+      void u5.then((fn) => fn());
     };
   }, []);
 }

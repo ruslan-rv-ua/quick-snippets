@@ -1271,6 +1271,25 @@ try {
         Wait-Until 'запит у полі пошуку' { (& $searchValue) -eq 'звич' }
     } -ExpectCount @{ ($Data.PlainTitle) = 1 } -Forbid $UI.NoResults
 
+    # The keyboard is put on the internal WebView2 window, as an action through UI Automation now
+    # and then leaves it. The window stays the active one, so nothing is reset: before the fix
+    # the query was cleared at once and the list showed every snippet again.
+    $keyboardToInnerWindow = {
+        $top = [IntPtr](Get-AppWindow).Current.NativeWindowHandle
+        $inner = [QsSmokeNative]::FindDescendant($top, 'Chrome_RenderWidgetHostHWND')
+        if ($inner -eq [IntPtr]::Zero) { throw 'не знайдено внутрішнє вікно WebView2 (Chrome_RenderWidgetHostHWND)' }
+        if (-not [QsSmokeNative]::FocusWindow($inner)) { throw 'не вдалося перевести клавіатуру на внутрішнє вікно WebView2' }
+        Start-Sleep -Milliseconds 500
+        if (-not [QsSmokeNative]::IsWindowVisible($top)) { throw 'вікно програми сховалося, хоча лишалося активним' }
+    }
+
+    Invoke-Step 'Клавіатура на внутрішньому вікні WebView2 із запитом: запит і знайдений сніпет лишаються' {
+        & $keyboardToInnerWindow
+        Wait-Until 'клавіатура знову в полі пошуку' { Test-AppReady }
+        if ((& $searchValue) -ne 'звич') { throw "запит у полі пошуку «$(& $searchValue)», а мав лишитися «звич»" }
+        if (-not (& $listIs @($Data.PlainTitle))) { throw "у списку «$((& $listNames) -join ' | ')», а мав лишитися лише знайдений сніпет" }
+    } -Forbid $UI.NoResults
+
     Invoke-Step 'Пошук без збігів: список порожній, «Нічого не знайдено»' {
         Send-Keys 'Ctrl+A'
         Send-Text 'щщщ'
@@ -1286,6 +1305,22 @@ try {
         Start-Sleep -Milliseconds 400
         if (-not (Test-AppReady)) { throw 'після Escape вікно сховалося або фокус пішов з нього' }
     } -ExpectCount @{ ($Data.SecretTitle) = 1 } -Forbid $UI.NoResults
+
+    # The same with the password dialog open and the password typed: before the fix the dialog
+    # closed at once. Enter afterwards proves the typed password is still there.
+    Invoke-Step 'Клавіатура на внутрішньому вікні WebView2 з діалогом пароля: діалог і пароль лишаються, Enter копіює' {
+        Wait-Until 'вибрано зашифрований сніпет' { $f = Get-FocusedListItem; $f -and $f.Current.Name -eq $secretName }
+        Set-ClipText $Data.Sentinel
+        Send-Keys 'Enter'
+        Wait-Until 'фокус у полі пароля' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input') }
+        Send-Text $Data.Password
+        & $keyboardToInnerWindow
+        Wait-Until 'діалог пароля на місці, фокус знову в полі' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input') }
+        Send-Keys 'Enter'
+        Wait-Until 'розшифрований текст у буфері обміну' { (Get-ClipText) -eq $Data.SecretText }
+        Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
+        Show-App
+    } -Expect $UI.EnterPassword -Forbid $UI.WrongPassword
 
     # Each press is announced once; the second press of the same shortcut reverses the order.
     # The secret snippet was created, changed and used after the plain one.

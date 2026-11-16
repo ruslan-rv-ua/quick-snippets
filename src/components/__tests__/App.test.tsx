@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import App from '../../App';
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
+
+/** The handler the app registered last for the backend's `window:hidden` event. */
+function hiddenListener(): (() => void) | undefined {
+  const calls = mockListen.mock.calls.filter(([event]) => event === 'window:hidden');
+  const call = calls[calls.length - 1];
+  const handler = call?.[1] as ((e: unknown) => void) | undefined;
+  return handler ? () => handler({ event: 'window:hidden', id: 0, payload: null }) : undefined;
+}
 
 describe('App', () => {
   beforeEach(() => {
@@ -62,14 +70,6 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByRole('application')).toBeInTheDocument();
     });
-  });
-
-  it('blur event triggers partial state reset', async () => {
-    render(<App />);
-    await waitFor(() => screen.getByRole('application'));
-    fireEvent.blur(window);
-    // No crash = partial reset happened
-    expect(screen.getByRole('application')).toBeInTheDocument();
   });
 
   it('Escape on empty query hides window (full reset)', async () => {
@@ -340,9 +340,102 @@ describe('App: where the screen reader is', () => {
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     await waitFor(() => expect(pointsAt(search)).toBe('snippet-2'));
 
-    fireEvent.blur(window);
+    // The backend hides the window after the user left it, then shows it again.
+    act(() => hiddenListener()?.());
     fireEvent.focus(window);
     await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
     expect(pointsAt(search)).toBe('');
+  });
+});
+
+describe('App: the keyboard moves inside the window, or the window hides', () => {
+  const snippets = [
+    { id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false },
+    { id: 2, title: 'Secret', score: 0, matched_positions: [], is_encrypted: true },
+  ];
+
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      switch (cmd) {
+        case 'get_settings':
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language: 'en',
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 0,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets': {
+          const query = (args as { query: string }).query.toLowerCase();
+          return snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s }));
+        }
+        case 'get_sorted_snippets':
+          return snippets.map((s) => ({ ...s }));
+        default:
+          return null;
+      }
+    });
+  });
+
+  /** Opens the app and types a query that finds only the secret snippet. */
+  async function searchSecret(): Promise<HTMLInputElement> {
+    render(<App />);
+    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
+    search.focus();
+    fireEvent.change(search, { target: { value: 'sec' } });
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Greeting' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('option', { name: /Secret/ })).toHaveAttribute('aria-selected', 'true'));
+    return search;
+  }
+
+  async function openPasswordDialog(search: HTMLInputElement): Promise<HTMLInputElement> {
+    fireEvent.keyDown(search, { key: 'Enter' });
+    await screen.findByRole('dialog');
+    const input = document.getElementById('pwd-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'typed' } });
+    return input;
+  }
+
+  it('a blur alone keeps the query and the selection', async () => {
+    const search = await searchSecret();
+    fireEvent.blur(window);
+    fireEvent.focus(window);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(search.value).toBe('sec');
+    expect(screen.queryByRole('option', { name: 'Greeting' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Secret/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('a blur alone keeps the password dialog and what was typed in it', async () => {
+    const search = await searchSecret();
+    const input = await openPasswordDialog(search);
+    fireEvent.blur(window);
+    fireEvent.focus(window);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(input.value).toBe('typed');
+    expect(search.value).toBe('sec');
+  });
+
+  it('when the window hides, the query is cleared and the whole list is back', async () => {
+    const search = await searchSecret();
+    act(() => hiddenListener()?.());
+    await waitFor(() => expect(search.value).toBe(''));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toBeInTheDocument());
+  });
+
+  it('when the window hides, the password dialog closes', async () => {
+    const search = await searchSecret();
+    await openPasswordDialog(search);
+    act(() => hiddenListener()?.());
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(search.value).toBe('');
   });
 });
