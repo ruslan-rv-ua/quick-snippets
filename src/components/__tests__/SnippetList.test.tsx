@@ -148,4 +148,80 @@ describe('SnippetList', () => {
     expect(secondAnnounce).toContain('Alpha');
     vi.useRealTimers();
   });
+  // The app changes the query at once and the results about 100 ms later (debounce + IPC).
+  describe('when results arrive after the query', () => {
+    function list(snippets: SearchResult[], query: string, activeIndex: number) {
+      return (
+        <LanguageProvider>
+          <SnippetList
+            snippets={snippets}
+            activeIndex={activeIndex}
+            query={query}
+            onActiveIndexChange={vi.fn()}
+            onActivate={vi.fn()}
+          />
+        </LanguageProvider>
+      );
+    }
+    const liveText = () => document.querySelector('[aria-live="polite"]')?.textContent ?? '';
+
+    function search(query: string, results: SearchResult[]) {
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list(mockSnippets, query, 0));
+      act(() => { vi.advanceTimersByTime(120); });
+      view.rerender(list(results, query, results.length > 0 ? 0 : -1));
+      act(() => { vi.advanceTimersByTime(200); });
+      return view;
+    }
+
+    it('announces "no results" when nothing matches', () => {
+      vi.useFakeTimers();
+      search('zzz', []);
+      expect(liveText()).toMatch(/no results|нічого не знайдено/i);
+      vi.useRealTimers();
+    });
+
+    // NVDA reads it through aria-activedescendant on the list, and as the newly selected
+    // option of the controlled list while it is in the search box.
+    it('stays silent when the selected snippet changes (NVDA reads it itself)', () => {
+      vi.useFakeTimers();
+      search('be', [mockSnippets[1]]);
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+
+    it('announces the first result when the active snippet stays the same', () => {
+      vi.useFakeTimers();
+      search('al', [mockSnippets[0]]);
+      expect(liveText()).toContain('Alpha');
+      vi.useRealTimers();
+    });
+
+    it('says nothing when the window hides and the search is reset', () => {
+      vi.useFakeTimers();
+      const view = search('al', [mockSnippets[0]]);
+      view.rerender(list([], '', -1));
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+
+    it('says nothing for results that arrive while the window is hidden', () => {
+      vi.useFakeTimers();
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      search('al', [mockSnippets[0]]);
+      expect(liveText()).toBe('');
+      hasFocus.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('says nothing when the same list arrives again for the same query (the window is shown)', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list([...mockSnippets], '', 0));
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+  });
 });

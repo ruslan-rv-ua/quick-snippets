@@ -4,7 +4,7 @@ title: Check NVDA on the first show after starting in tray
 status: To Do
 assignee: []
 created_date: '2026-11-15T23:03:00Z'
-updated_date: '2026-11-15T23:33:00Z'
+updated_date: '2026-11-16T21:47:00Z'
 labels:
   - accessibility
   - investigation
@@ -26,7 +26,9 @@ ordinal: 4000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 With "Start in tray" on, the window is hidden from launch. In just smoke runs on 2026-11-15 the first Ctrl+Alt+Space show was sometimes announced by NVDA and sometimes not: NVDA stayed silent until the next key press, then read the window. Later shows were always announced, and with the window opened at launch (the default, now used by just smoke) the first show is announced. Users who start in tray may hear nothing on their first hotkey press after login. Possible cause: the accessibility tree of a never-shown WebView2 window is not ready when it is first shown.
 
-This is an investigation first: no code change until the behaviour is reproduced. Use just smoke runs (a switch that starts the test copy in tray mode would help), and ask the user before every run, since the keyboard and mouse must stay untouched for about a minute. Read NVDA speech only through just smoke: it reads only what NVDA writes during the run, while nvda.log also holds private speech from other programs and other days.
+Related finding from TASK-18 (2026-11-16): a test copy started within about 30 s after the previous copy was killed is now and then read by NVDA through UI Automation instead of IAccessible2 ("QuickSnippets - Snippet Manager – веб-вміст, регіон | ... документ ... | за кліком, додаток"), and Escape then does not hide the window, because NVDA takes the key. In 24 quick starts it happened 4 of 8 times for each of three builds; starts after a longer pause were read normally. Both problems concern how NVDA first sees the window, so look at them together (details in TASK-18's notes).
+
+This is an investigation first: no code change until the behaviour is reproduced. Use just smoke runs (a switch that starts the test copy in tray mode would help), and ask the user before every run, since the keyboard and mouse must stay untouched for about two and a half minutes. Read NVDA speech only through just smoke: it reads only what NVDA writes during the run, while nvda.log also holds private speech from other programs and other days.
 
 Recommended setup: Claude Fable 5.2 (`/model fable`), effort medium (`/effort medium`, the Fable default in Claude Code). A root-cause investigation across WebView2 and NVDA timing, the kind of ambiguous work Fable is meant for: describe the outcome, not the steps. If Fable usage is limited, Claude Opus 5.5 at effort xhigh is the alternative.
 <!-- SECTION:DESCRIPTION:END -->

@@ -4,7 +4,7 @@ title: Add end-to-end UI tests with tauri-driver
 status: To Do
 assignee: []
 created_date: '2026-11-15T23:33:00Z'
-updated_date: '2026-11-15T23:33:00Z'
+updated_date: '2026-11-16T16:28:00Z'
 labels:
   - testing
   - accessibility
@@ -48,3 +48,9 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort high (`/effort hi
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Archived on 2026-11-16 with the user's approval: TASK-3 decided not to add tauri-driver end-to-end tests. The findings and reasons are in the TASK-3 notes (WebDriver cannot hear NVDA; the app replaces WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, which msedgedriver needs; WebView2 150+ ignores that variable on elevated GitHub runners; the driver must follow a WebView2 that updates every two weeks). Instead, just smoke gets the missing flows in TASK-14.
+<!-- SECTION:NOTES:END -->

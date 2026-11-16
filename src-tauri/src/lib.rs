@@ -5,6 +5,7 @@ pub mod db;
 pub mod paths;
 pub mod search;
 pub mod settings;
+pub mod window_blur;
 
 // ---------------------------------------------------------------------------
 // Tray helper types — public and testable (no Tauri runtime needed)
@@ -184,20 +185,89 @@ fn setup_hotkey(app: &mut tauri::App, win: tauri::WebviewWindow) {
     }
 }
 
+/// Watches the window from the moment its web content loses the keyboard: hides it once the
+/// user has left it, and gives the keyboard back while it is still the active window (see
+/// `window_blur`). Ends when focus returns or a newer blur starts its own watcher: both
+/// change `current`.
+#[cfg(not(test))]
+fn watch_blur(
+    win: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    current: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    generation: u64,
+) {
+    use commands::AppState;
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+    use tauri::{Emitter, Manager};
+    use window_blur::{next_blur_step, poll_interval_ms, probe_window, BlurState, BlurStep};
+
+    let hwnd = win.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let blurred_at = Instant::now();
+    // Most blurs are the user leaving: the delay then counts from the blur itself.
+    let mut inactive_since = Some(blurred_at);
+    let mut restore_attempts = 0u32;
+    let mut last_restore: Option<Instant> = None;
+    let ms = |t: Instant| t.elapsed().as_millis() as u64;
+
+    loop {
+        std::thread::sleep(Duration::from_millis(poll_interval_ms(ms(blurred_at))));
+        if current.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        let probe = probe_window(hwnd);
+        if probe.active {
+            inactive_since = None;
+        } else if inactive_since.is_none() {
+            inactive_since = Some(Instant::now());
+        }
+        // While the exit-confirmation dialog is showing, the window does not hide.
+        let close_pending = app_handle
+            .try_state::<AppState>()
+            .map(|s| s.is_close_pending())
+            .unwrap_or(false);
+        let state = BlurState {
+            since_blur_ms: ms(blurred_at),
+            inactive_ms: inactive_since.map(ms),
+            keyboard_elsewhere: probe.keyboard_elsewhere,
+            menu_or_move: probe.menu_or_move,
+            hide_allowed: !close_pending,
+            restore_attempts,
+            since_restore_ms: last_restore.map(ms),
+        };
+        match next_blur_step(state) {
+            BlurStep::Wait => {}
+            BlurStep::RestoreFocus => {
+                restore_attempts += 1;
+                last_restore = Some(Instant::now());
+                let webview: &tauri::Webview<tauri::Wry> = win.as_ref();
+                let _ = webview.set_focus();
+            }
+            BlurStep::Hide => {
+                // The web content clears the search and closes the password dialog only now,
+                // not on every blur: the keyboard may only have moved inside the window.
+                let _ = win.emit("window:hidden", ());
+                let _ = win.hide();
+                return;
+            }
+            BlurStep::Stop => return,
+        }
+    }
+}
+
 /// Attach window event handlers: close-request, focus/blur hide, move/resize save.
 #[cfg(not(test))]
 fn setup_window_events(win: tauri::WebviewWindow, app_handle: tauri::AppHandle) {
     use commands::AppState;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
     use tauri::{Emitter, Manager};
 
     // Debounce tracker for Moved / Resized saves.
     let last_save: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
-    // Debounce flag for blur→hide: when the window briefly loses
-    // focus (resize grab, Alt+Space system menu) we must NOT hide
-    // immediately — schedule a delayed hide, cancelled if focus returns.
-    let hide_scheduled: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    // Counts focus changes of the web content. A blur starts a watcher that hides the
+    // window after a delay; any later focus change makes that watcher stop.
+    let blur_generation: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
     let win_ev = win.clone();
 
     win.on_window_event(move |event| match event {
@@ -219,26 +289,13 @@ fn setup_window_events(win: tauri::WebviewWindow, app_handle: tauri::AppHandle) 
             }
         }
         tauri::WindowEvent::Focused(focused) => {
-            if *focused {
-                // Window regained focus — cancel any pending hide.
-                hide_scheduled.store(false, Ordering::SeqCst);
-            } else {
-                // If the exit-confirmation dialog is showing, do NOT hide.
-                let pending = app_handle
-                    .try_state::<AppState>()
-                    .map(|s| s.is_close_pending())
-                    .unwrap_or(false);
-                if !pending {
-                    hide_scheduled.store(true, Ordering::SeqCst);
-                    let flag = hide_scheduled.clone();
-                    let w = win_ev.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(200));
-                        if flag.load(Ordering::SeqCst) {
-                            let _ = w.hide();
-                        }
-                    });
-                }
+            // Focus is back, or lost again: a watcher from an earlier blur stops.
+            let generation = blur_generation.fetch_add(1, Ordering::SeqCst) + 1;
+            if !*focused {
+                let current = blur_generation.clone();
+                let w = win_ev.clone();
+                let app = app_handle.clone();
+                std::thread::spawn(move || watch_blur(w, app, current, generation));
             }
         }
         tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {

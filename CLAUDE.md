@@ -36,7 +36,8 @@ npm run test:all         # Both frontend and backend tests
 # Run a single frontend test file
 npx vitest run src/hooks/__tests__/useSearchLogic.test.ts
 
-# NVDA smoke test of the built release exe (~1 min, hands off; NVDA log level "input/output")
+# NVDA smoke test of the built release exe (~2.5 min, hands off; NVDA log level "input/output";
+# leave a minute between two runs, see DEVELOPMENT.md)
 just smoke               # scripts/smoke-nvda.ps1; report also in %TEMP%\quick-snippets-smoke-report.txt
 
 # Lint
@@ -72,6 +73,7 @@ App-level state lives in [src/App.tsx](src/App.tsx) via `useSnippets`, `useSearc
 | [src-tauri/src/paths.rs](src-tauri/src/paths.rs) | Data directory path helpers (`quick-snippets-data/` next to `.exe`) |
 | [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file in data directory (not AppData); includes `autotype_delay_ms`, `sort_mode`, `sort_direction` |
 | [src-tauri/src/autotype.rs](src-tauri/src/autotype.rs) | Windows keyboard input simulation (PostMessage primary, SendInput fallback) |
+| [src-tauri/src/window_blur.rs](src-tauri/src/window_blur.rs) | Decides what happens after the web content loses the keyboard: hide once the window is no longer the active one, or give the keyboard back while it still is |
 | [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events, Ctrl+Alt+Space global hotkey (shows the window; it never hides it) |
 | [src-tauri/src/main.rs](src-tauri/src/main.rs) | App entry (calls `quick_snippets_lib::run`) |
 
@@ -112,4 +114,4 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - **i18n**: All user-facing strings must be added to [src/i18n/translations.ts](src/i18n/translations.ts) for English (`en`), Ukrainian (`uk`), and German (`de`). Tray menu labels are also localized in Rust.
 - **Windows-only target**: The build and some APIs (tray, global hotkey, autostart, autotype) are Windows-specific. Do not abstract for cross-platform unless explicitly requested.
 - **Single instance**: `tauri-plugin-single-instance` prevents multiple app instances.
-- **Window behavior**: blur → hide with 200ms delay; move/resize → debounced settings save (500ms); close requires confirmation dialog.
+- **Window behavior**: blur → hide with 200ms delay, but only once the window is no longer the foreground window; move/resize → debounced settings save (500ms); close requires confirmation dialog. On Windows, Tauri's `Focused(false)` means "the WebView2 control lost focus", which also happens while the window stays active (a UI Automation Invoke or Toggle moves the keyboard between WebView2's internal windows); the window then stays and the keyboard is given back to the web content. The frontend clears the search and closes the password dialog only on the `window:hidden` event the backend emits right before such a hide, never on a DOM `blur`.

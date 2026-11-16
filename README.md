@@ -159,7 +159,7 @@ For complete details on the security model, threat assessment, and responsible d
 | Shift+Enter | Auto-type selected snippet into the active application |
 | Ctrl+N or Insert | Create new snippet |
 | Ctrl+E | Edit selected snippet |
-| Delete or Ctrl+D | Delete selected snippet |
+| Ctrl+D or Delete | Delete selected snippet (Delete only when no text follows the cursor in the search box) |
 | Ctrl+F or / | Focus the search box |
 | Ctrl+, | Open Settings |
 | Ctrl+Shift+T | Toggle light / dark theme |
@@ -171,6 +171,11 @@ For complete details on the security model, threat assessment, and responsible d
 | F1 | Show the keyboard shortcuts help |
 | Escape | Close modal / clear search |
 | Alt+F4 | Quit the application |
+
+> In the search box, Delete erases text as in any text field while there is text after the
+> cursor or selected text. When no text follows the cursor, Delete asks to delete the selected
+> snippet. Right after Delete has erased text, press another key first, for example an arrow key:
+> this way, holding Delete down never opens the delete confirmation.
 
 ### In forms and modals
 
