@@ -1,9 +1,11 @@
 ---
 id: TASK-21
 title: Release v0.3.1
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-16T21:47:00Z'
+updated_date: '2026-11-16T22:58:00Z'
 labels:
   - release
   - model-sonnet
@@ -47,3 +49,16 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Push develop (280d32f) and check that CI passes.
+2. git flow release start 0.3.1; bump the version in Cargo.toml, tauri.conf.json, package.json (and lock files); move [Unreleased] into a v0.3.1 section; commit.
+3. just final-checks; npm run lint; npm run test:all.
+4. npx tauri build --no-bundle; just smoke on the release exe.
+5. git flow release finish 0.3.1 --no-ff --notag; push main and develop (no tags); wait for CI.
+6. Run the Release workflow for 0.3.1 on main; check ZIP and .sha256; replace the generated release notes with the v0.3.1 CHANGELOG section.
+7. Run Excavator in scoop-bucket; check the manifest shows 0.3.1.
+8. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-21-<commit>.exe.
+<!-- SECTION:PLAN:END -->
