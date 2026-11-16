@@ -14,6 +14,14 @@ export interface SearchLogicState {
   snippets: SearchResult[];
   activeIndex: number;
   setActiveIndex: (index: number) => void;
+  /**
+   * True while screen readers are on the selected snippet (the search box points at it with
+   * aria-activedescendant), false while they are in the search box itself. The arrow keys move
+   * them into the list; keys that edit the query or move the caret bring them back. The selected
+   * snippet (activeIndex) is the same either way.
+   */
+  listFocused: boolean;
+  setListFocused: (listFocused: boolean) => void;
   refreshTick: number;
   setRefreshTick: (tick: number | ((prev: number) => number)) => void;
   reset: () => void;
@@ -26,6 +34,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
   const [query, setQuery] = useState<string>('');
   const [snippets, setSnippets] = useState<SearchResult[]>([]);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const [listFocused, setListFocused] = useState<boolean>(false);
   const [refreshTick, setRefreshTick] = useState<number>(0);
   const debouncedQuery = useDebounce(query, 100);
 
@@ -50,6 +59,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
     setQuery('');
     setSnippets([]);
     setActiveIndex(-1);
+    setListFocused(false);
   }, []);
 
   return {
@@ -58,6 +68,8 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
     snippets,
     activeIndex,
     setActiveIndex,
+    listFocused,
+    setListFocused,
     refreshTick,
     setRefreshTick,
     reset,

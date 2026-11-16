@@ -12,6 +12,13 @@ export interface SearchBoxProps {
   onActivate: (snippet: SearchResult) => void;
   onAutotype?: (snippet: SearchResult) => void;
   sortLabel?: string;
+  /**
+   * True while screen readers should be on the selected snippet: only then does the search box
+   * point at it with aria-activedescendant. While it is false they stay in the search box and
+   * read caret movement and erasing as in any text field; the snippet stays selected.
+   */
+  listFocused: boolean;
+  onListFocusChange: (listFocused: boolean) => void;
 }
 
 export interface SearchBoxHandle {
@@ -28,6 +35,8 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     onActivate,
     onAutotype,
     sortLabel,
+    listFocused,
+    onListFocusChange,
   },
   ref,
 ) {
@@ -38,8 +47,10 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     focus: () => inputRef.current?.focus(),
   }));
 
+  // With aria-activedescendant set, Chromium reports the snippet as the focused object, and
+  // NVDA then treats the keys that move the caret as keys for the snippet and says nothing.
   const activeSnippetId =
-    activeIndex >= 0 && snippets[activeIndex]
+    listFocused && activeIndex >= 0 && snippets[activeIndex]
       ? `snippet-${snippets[activeIndex].id}`
       : '';
 
@@ -52,6 +63,7 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
     onAutotype,
     onEscape: () => {}, // not used in current logic, but kept for interface completeness
     onSetValue: onChange,
+    onListFocus: onListFocusChange,
   });
 
   return (
@@ -82,7 +94,18 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
         autoComplete="off"
         spellCheck={false}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          // Typing, paste and erasing keep the screen reader in the search box.
+          onListFocusChange(false);
+          onChange(e.target.value);
+        }}
+        onBlur={(e) => {
+          // Focus moves to a dialog: when it comes back, the screen reader goes to the selected
+          // snippet, as before the dialog. Set only once focus has left, so the search box does
+          // not point at the snippet while it still has focus. (No related target: the window
+          // itself lost focus.)
+          if (e.relatedTarget) onListFocusChange(true);
+        }}
         onKeyDown={handleKeyDown}
         placeholder={t('searchPlaceholder')}
       />

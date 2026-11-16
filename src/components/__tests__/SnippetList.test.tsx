@@ -181,7 +181,9 @@ describe('SnippetList', () => {
       vi.useRealTimers();
     });
 
-    it('stays silent when the active snippet changes (NVDA reads it through aria-activedescendant)', () => {
+    // NVDA reads it through aria-activedescendant on the list, and as the newly selected
+    // option of the controlled list while it is in the search box.
+    it('stays silent when the selected snippet changes (NVDA reads it itself)', () => {
       vi.useFakeTimers();
       search('be', [mockSnippets[1]]);
       expect(liveText()).toBe('');
@@ -199,6 +201,24 @@ describe('SnippetList', () => {
       vi.useFakeTimers();
       const view = search('al', [mockSnippets[0]]);
       view.rerender(list([], '', -1));
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+
+    it('says nothing for results that arrive while the window is hidden', () => {
+      vi.useFakeTimers();
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      search('al', [mockSnippets[0]]);
+      expect(liveText()).toBe('');
+      hasFocus.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('says nothing when the same list arrives again for the same query (the window is shown)', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list([...mockSnippets], '', 0));
       act(() => { vi.advanceTimersByTime(400); });
       expect(liveText()).toBe('');
       vi.useRealTimers();

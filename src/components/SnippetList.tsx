@@ -25,7 +25,7 @@ export function SnippetList({
   const prevSnippetsRef = useRef(snippets);
   // Results for a changed query have not arrived yet.
   const pendingRef = useRef(false);
-  // The snippet the search box pointed at (aria-activedescendant) before the query changed.
+  // The snippet that was selected before the query changed.
   const activeIdBeforeRef = useRef<number | undefined>(undefined);
   const activeId = activeIndex >= 0 ? snippets[activeIndex]?.id : undefined;
   const lastActiveIdRef = useRef(activeId);
@@ -41,9 +41,10 @@ export function SnippetList({
 
   // Search results are announced once they arrive. The app changes the query at once and
   // the results about 100 ms later (debounce + IPC), so the announcement waits for them.
-  // A changed active snippet is already read by NVDA through aria-activedescendant on the
-  // search box, so the live region speaks only what nothing else does: "no results", or
-  // the first result when the active snippet stayed the same.
+  // NVDA already reads a newly selected snippet: through aria-activedescendant on the search
+  // box while it is on the list, and as the newly selected option of the list the search box
+  // controls while it is in the search box. So the live region speaks only what nothing else
+  // does: "no results", or the first result when the selected snippet stayed the same.
   // Sort/refresh changes are already covered by aria-activedescendant + toast.
   useEffect(() => {
     const queryChanged = query !== prevQueryRef.current;
@@ -70,7 +71,10 @@ export function SnippetList({
       text = tf.snippetLabel(snippets[0].title, snippets[0].is_encrypted);
     }
     if (!text) return;
-    const id = setTimeout(() => setLiveText(text), 200);
+    const id = setTimeout(() => {
+      // Results that arrive while the window is hidden (the reset on blur) are not announced.
+      if (document.hasFocus()) setLiveText(text);
+    }, 200);
     return () => clearTimeout(id);
   }, [snippets, query, activeId, t, tf]);
 

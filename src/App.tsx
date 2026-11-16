@@ -91,6 +91,8 @@ function AppInner(): React.ReactElement {
     snippets,
     activeIndex,
     setActiveIndex,
+    listFocused,
+    setListFocused,
     setRefreshTick,
     reset,
   } = useSearchLogic({ sortMode, sortDirection });
@@ -149,6 +151,7 @@ function AppInner(): React.ReactElement {
     setRefreshTick,
     setQuery,
     setActiveIndex,
+    setListFocused,
     setShowPassword,
     setShowCreate,
     setShowSettings,
@@ -221,6 +224,8 @@ function AppInner(): React.ReactElement {
       }
       setSortMode(mode);
       setSortDirection(newDirection);
+      // The screen reader reads the first snippet of the sorted list.
+      setListFocused(true);
 
       // Persist to settings
       updateSettings({ sort_mode: mode, sort_direction: newDirection }).catch(() => void 0);
@@ -231,7 +236,7 @@ function AppInner(): React.ReactElement {
       const toastMsg = tf.sortToast(label);
       addToast(toastMsg, 'info', 2000);
     },
-    [sortMode, sortDirection, tf, addToast],
+    [sortMode, sortDirection, tf, addToast, setListFocused],
   );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────
@@ -243,7 +248,10 @@ function AppInner(): React.ReactElement {
     onOpenDelete: openDelete,
     onOpenSettings: () => setShowSettings(true),
     onOpenHelp: () => setShowHelp(true),
-    onFocusSearch: () => searchRef.current?.focus(),
+    onFocusSearch: () => {
+      setListFocused(false);
+      searchRef.current?.focus();
+    },
     onAnnounce: handleAnnounce,
     onSelectFirst: () => setActiveIndex(snippets.length > 0 ? 0 : -1),
     onSelectLast: () => setActiveIndex(snippets.length > 0 ? snippets.length - 1 : -1),
@@ -262,6 +270,8 @@ function AppInner(): React.ReactElement {
         onActivate={handleActivate}
         onAutotype={handleAutotype}
         sortLabel={query ? undefined : `\u2195 ${tf[getSortLabelKey(sortMode, sortDirection) as keyof typeof tf] as string}`}
+        listFocused={listFocused}
+        onListFocusChange={setListFocused}
       />
       <SnippetList
         snippets={snippets}
