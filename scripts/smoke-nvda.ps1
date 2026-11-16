@@ -1050,6 +1050,17 @@ try {
     $autostartSkip = ''
     if ($UserRunValue) { $autostartSkip = 'у вас увімкнено автозапуск QuickSnippets, тест його не чіпає' }
 
+    # A check box toggled through UI Automation (Set-Toggle) makes WebView2 move the keyboard
+    # between its internal windows, and now and then it does not come back to the content.
+    # The app must then keep its window open (it is still the active one) and take the
+    # keyboard back, so that Ctrl+Enter saves. Where things were if a save did not happen:
+    $whereThingsAre = {
+        $w = Get-AppWindow
+        $state = if ($null -eq $w) { 'вікно програми сховане' } else { 'вікно програми видно' }
+        if (Find-Element $w -Id 'settings-theme') { $state += ', налаштування ще відкрито' }
+        return "$state, клавіатура в процесі $(Get-ForegroundProcessName)"
+    }
+
     Invoke-Step 'Автозапуск вмикається в налаштуваннях' {
         Show-App
         Send-Keys 'Ctrl+Comma'
@@ -1062,11 +1073,7 @@ try {
                 $v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0
             }
         } catch {
-            # Where things were when it failed (this step has failed now and then).
-            $w = Get-AppWindow
-            $state = if ($null -eq $w) { 'вікно програми сховане' } else { 'вікно програми видно' }
-            if (Find-Element $w -Id 'settings-autostart') { $state += ', налаштування ще відкрито' }
-            throw "$($_.Exception.Message) ($state, клавіатура в процесі $(Get-ForegroundProcessName))"
+            throw "$($_.Exception.Message) ($(& $whereThingsAre))"
         }
         # What the next start reads: the new value, and the other settings unchanged.
         $null = Wait-Until 'автозапуск у settings.json' { (& $readSettings).autostart -eq $true } 3
@@ -1084,6 +1091,31 @@ try {
         Wait-Until 'запис автозапуску зник' { -not (Get-RunValue) }
         $null = Wait-Until 'автозапуск вимкнено в settings.json' { (& $readSettings).autostart -eq $false } 3
     } -SkipReason $autostartSkip
+
+    # The same sequence as in the autostart steps, repeated, because the keyboard stays away
+    # from the content only now and then (before the fix: in 2 of 7 repeats). An even number
+    # of repeats leaves «Запускати згорнутим у трей» off for the restart near the end.
+    Invoke-Step 'Вікно відкрите, Ctrl+Alt+Space, Ctrl+кома, зміна через UI Automation, Ctrl+Enter: шість разів поспіль зміну збережено' {
+        for ($i = 1; $i -le 6; $i++) {
+            $want = -not [bool](& $readSettings).start_in_tray
+            Show-App
+            Send-Keys 'Ctrl+Comma'
+            $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-tray' }
+            Set-Toggle $box $want
+            Send-Keys 'Ctrl+Enter'
+            try {
+                $null = Wait-Until 'зміну збережено в settings.json' { ([bool](& $readSettings).start_in_tray) -eq $want } 4
+            } catch {
+                throw "повтор $i з 6: $($_.Exception.Message) ($(& $whereThingsAre))"
+            }
+            $null = Wait-Until "повтор $i з 6: діалог закрито, фокус у головному вікні" {
+                -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady)
+            }
+        }
+        & $assertSaved 'dark' 'uk'
+        $s = & $readSettings
+        if ($s.start_in_tray -ne $false -or $s.autotype_delay_ms -ne 7) { throw 'після шести змін інші налаштування не такі, як були' }
+    } -Expect $UI.Settings, $UI.StartInTray
 
     # ── Search, delete, sorting, quitting, theme after a restart ────────────────
     $secretName = '{0} ({1})' -f $Data.SecretTitle, $UI.Encrypted
