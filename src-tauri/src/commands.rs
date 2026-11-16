@@ -144,18 +144,65 @@ pub fn create_snippet_inner(
 
 /// Returns the plaintext bytes for clipboard use, wrapped in Zeroizing for secure memory erasure.
 /// SECURITY: this function is not exposed to the frontend — only used internally.
+///
+/// A snippet still stored in the legacy encryption format is re-encrypted in the current
+/// one here, because this is the only moment the password is known.
 pub fn activate_snippet_get_content(
     conn: &Connection,
     id: i64,
     password: &str,
 ) -> Result<Zeroizing<Vec<u8>>, String> {
     let row = db::get_snippet_by_id(conn, id).map_err(|e| e.to_string())?;
-    let plaintext = if row.is_encrypted {
-        crypto::decrypt(&row.content, password).map_err(|e| e.to_string())?
-    } else {
-        row.content
+    if !row.is_encrypted {
+        return Ok(Zeroizing::new(row.content));
+    }
+
+    let plaintext =
+        Zeroizing::new(crypto::decrypt(&row.content, password).map_err(|e| e.to_string())?);
+    if !crypto::is_current_format(&row.content) {
+        // Best effort: the snippet is already decrypted, and the old blob stays valid.
+        upgrade_encrypted_blob(conn, id, &row.content, &plaintext, password);
+    }
+    Ok(plaintext)
+}
+
+/// Re-encrypts a snippet from the legacy format in the current one and stores it.
+///
+/// On any failure the old blob stays in place and `false` is returned; the snippet then
+/// keeps working as before.
+fn upgrade_encrypted_blob(
+    conn: &Connection,
+    id: i64,
+    old_blob: &[u8],
+    plaintext: &[u8],
+    password: &str,
+) -> bool {
+    match crypto::encrypt(plaintext, password) {
+        Ok(new_blob) => {
+            replace_blob_if_it_decrypts(conn, id, old_blob, &new_blob, plaintext, password)
+        }
+        Err(_) => false,
+    }
+}
+
+/// Stores `new_blob` in place of `old_blob`, but only if `new_blob` decrypts with
+/// `password` to exactly `plaintext`.
+///
+/// The stored blob is the only copy of the user's data, so nothing is written before the
+/// replacement has been proven readable. Returns whether the row was changed.
+fn replace_blob_if_it_decrypts(
+    conn: &Connection,
+    id: i64,
+    old_blob: &[u8],
+    new_blob: &[u8],
+    plaintext: &[u8],
+    password: &str,
+) -> bool {
+    let verified = match crypto::decrypt(new_blob, password) {
+        Ok(check) => Zeroizing::new(check).as_slice() == plaintext,
+        Err(_) => false,
     };
-    Ok(Zeroizing::new(plaintext))
+    verified && db::replace_encrypted_blob(conn, id, old_blob, new_blob).unwrap_or(false)
 }
 
 pub fn update_snippet_inner(
@@ -458,6 +505,9 @@ pub mod tauri_commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::test_vectors::{
+        LEGACY_BLOB, LEGACY_PASSWORD, LEGACY_PLAINTEXT, V2_BLOB, V2_PASSWORD, V2_PLAINTEXT,
+    };
     use crate::{crypto, db};
     use rusqlite::Connection;
 
@@ -589,6 +639,260 @@ mod tests {
         let id = db::create_snippet(&conn, "encrypted", encrypted, true).unwrap();
         let result = activate_snippet_get_content(&conn, id, "wrongpass");
         assert!(result.is_err());
+    }
+
+    // === activate_snippet: snippets in the legacy encryption format (0.1.0 to 0.2.1) ===
+
+    #[test]
+    fn test_activate_legacy_blob_made_by_v0_2_1_returns_content() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+        let content = activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+        assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
+    }
+
+    #[test]
+    fn test_activate_legacy_blob_reencrypts_in_current_format() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+
+        activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+
+        let row = db::get_snippet_by_id(&conn, id).unwrap();
+        assert!(row.is_encrypted);
+        assert_ne!(row.content, LEGACY_BLOB, "the stored blob must have been replaced");
+        assert!(crypto::is_current_format(&row.content));
+        let decrypted = crypto::decrypt(&row.content, LEGACY_PASSWORD).unwrap();
+        assert_eq!(decrypted, LEGACY_PLAINTEXT.as_bytes());
+    }
+
+    #[test]
+    fn test_activate_reencrypted_snippet_again_keeps_blob_and_content() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+
+        activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+        let after_first = db::get_snippet_by_id(&conn, id).unwrap().content;
+        let content = activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+        let after_second = db::get_snippet_by_id(&conn, id).unwrap().content;
+
+        assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
+        assert_eq!(after_first, after_second, "a current-format blob is not rewritten");
+    }
+
+    #[test]
+    fn test_activate_legacy_blob_wrong_password_leaves_blob_unchanged() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+
+        let result = activate_snippet_get_content(&conn, id, "wrong password");
+
+        assert_eq!(result.unwrap_err(), "Wrong password");
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, LEGACY_BLOB);
+        // The right password still works afterwards.
+        let content = activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+        assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
+    }
+
+    #[test]
+    fn test_activate_legacy_blob_reencryption_keeps_other_columns() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+        let other = db::create_snippet(&conn, "other old", LEGACY_BLOB.to_vec(), true).unwrap();
+        conn.execute(
+            "UPDATE snippets SET created_at = '2026-01-02T03:04:05.000',
+                                 updated_at = '2026-02-03T04:05:06.000'",
+            [],
+        )
+        .unwrap();
+        let before = db::get_snippet_by_id(&conn, id).unwrap();
+
+        activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+
+        let after = db::get_snippet_by_id(&conn, id).unwrap();
+        assert_eq!(after.title, before.title);
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(after.updated_at, before.updated_at, "re-encryption is not an edit");
+        assert!(after.is_encrypted);
+        // Only the activated snippet is re-encrypted.
+        assert_eq!(db::get_snippet_by_id(&conn, other).unwrap().content, LEGACY_BLOB);
+    }
+
+    #[test]
+    fn test_activate_current_format_blob_is_not_rewritten() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "new secret", V2_BLOB.to_vec(), true).unwrap();
+
+        let content = activate_snippet_get_content(&conn, id, V2_PASSWORD).unwrap();
+
+        assert_eq!(*content, V2_PLAINTEXT.as_bytes());
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, V2_BLOB);
+    }
+
+    #[test]
+    fn test_activate_legacy_blob_survives_failed_reencryption() {
+        // The largest plaintext the legacy format could store: its base64 text is exactly
+        // 65,536 bytes, the limit of the content column. The current format is three bytes
+        // longer, so the database refuses the new blob. The snippet must still be returned
+        // and must stay readable in the legacy format.
+        let conn = setup();
+        let plaintext = vec![b'x'; 49_108];
+        let legacy = crypto::encrypt_legacy(&plaintext, "pass");
+        assert_eq!(legacy.len(), 65_536);
+        let id = db::create_snippet(&conn, "largest old", legacy.clone(), true).unwrap();
+
+        let content = activate_snippet_get_content(&conn, id, "pass").unwrap();
+
+        assert_eq!(*content, plaintext);
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, legacy);
+        let again = activate_snippet_get_content(&conn, id, "pass").unwrap();
+        assert_eq!(*again, plaintext);
+    }
+
+    #[test]
+    fn test_upgrade_encrypted_blob_refuses_when_stored_blob_differs() {
+        // The stored blob is no longer the one that was decrypted: nothing may be overwritten.
+        let conn = setup();
+        let id = db::create_snippet(&conn, "new secret", V2_BLOB.to_vec(), true).unwrap();
+
+        let upgraded = upgrade_encrypted_blob(
+            &conn,
+            id,
+            LEGACY_BLOB,
+            LEGACY_PLAINTEXT.as_bytes(),
+            LEGACY_PASSWORD,
+        );
+
+        assert!(!upgraded);
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, V2_BLOB);
+    }
+
+    #[test]
+    fn test_replace_blob_if_it_decrypts_stores_a_verified_blob() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+        let new_blob = crypto::encrypt(LEGACY_PLAINTEXT.as_bytes(), LEGACY_PASSWORD).unwrap();
+
+        let replaced = replace_blob_if_it_decrypts(
+            &conn,
+            id,
+            LEGACY_BLOB,
+            &new_blob,
+            LEGACY_PLAINTEXT.as_bytes(),
+            LEGACY_PASSWORD,
+        );
+
+        assert!(replaced);
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, new_blob);
+    }
+
+    #[test]
+    fn test_replace_blob_if_it_decrypts_refuses_blob_with_other_content() {
+        // The new blob decrypts with the password, but not to the snippet's content.
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+        let other = crypto::encrypt(b"something else", LEGACY_PASSWORD).unwrap();
+
+        let replaced = replace_blob_if_it_decrypts(
+            &conn,
+            id,
+            LEGACY_BLOB,
+            &other,
+            LEGACY_PLAINTEXT.as_bytes(),
+            LEGACY_PASSWORD,
+        );
+
+        assert!(!replaced);
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, LEGACY_BLOB);
+    }
+
+    #[test]
+    fn test_replace_blob_if_it_decrypts_refuses_blob_that_does_not_decrypt() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+
+        // V2_BLOB is a valid blob, but for another password; the second one is damaged.
+        for unreadable in [V2_BLOB, b"v2:not-a-real-blob".as_slice()] {
+            let replaced = replace_blob_if_it_decrypts(
+                &conn,
+                id,
+                LEGACY_BLOB,
+                unreadable,
+                LEGACY_PLAINTEXT.as_bytes(),
+                LEGACY_PASSWORD,
+            );
+            assert!(!replaced);
+            assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, LEGACY_BLOB);
+        }
+    }
+
+    #[test]
+    fn test_activate_reencrypts_largest_snippet_that_fits_current_format() {
+        // 49,105 bytes of content: 65,532 bytes stored in the legacy format and 65,535 in
+        // the current one, just inside the 65,536-byte limit of the content column.
+        let conn = setup();
+        let plaintext = vec![b'x'; 49_105];
+        let legacy = crypto::encrypt_legacy(&plaintext, "pass");
+        assert_eq!(legacy.len(), 65_532);
+        let id = db::create_snippet(&conn, "large old", legacy, true).unwrap();
+
+        let content = activate_snippet_get_content(&conn, id, "pass").unwrap();
+
+        assert_eq!(*content, plaintext);
+        let stored = db::get_snippet_by_id(&conn, id).unwrap().content;
+        assert_eq!(stored.len(), 65_535);
+        assert!(crypto::is_current_format(&stored));
+        assert_eq!(crypto::decrypt(&stored, "pass").unwrap(), plaintext);
+    }
+
+    #[test]
+    fn test_activate_legacy_blob_in_database_file_survives_reopen() {
+        // Same flow against a database file on disk, closed and opened again between the
+        // steps, as it happens when the app is updated and restarted. The schema is the one
+        // QuickSnippets 0.2.1 creates (db.rs did not change it).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snippets.db");
+
+        let id = {
+            let conn = Connection::open(&path).unwrap();
+            db::init_db(&conn).unwrap();
+            db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap()
+        };
+        {
+            let conn = Connection::open(&path).unwrap();
+            db::init_db(&conn).unwrap();
+            let content = activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+            assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
+        }
+        let conn = Connection::open(&path).unwrap();
+        db::init_db(&conn).unwrap();
+        let row = db::get_snippet_by_id(&conn, id).unwrap();
+        assert!(row.is_encrypted);
+        assert!(crypto::is_current_format(&row.content));
+        let content = activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
+        assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
+        assert!(activate_snippet_get_content(&conn, id, "wrong password").is_err());
+    }
+
+    #[test]
+    fn test_create_encrypted_snippet_uses_current_format() {
+        let conn = setup();
+        let id = create_snippet_inner(&conn, "my secret", "secret data", "password123").unwrap();
+        let row = db::get_snippet_by_id(&conn, id).unwrap();
+        assert!(crypto::is_current_format(&row.content));
+        let content = activate_snippet_get_content(&conn, id, "password123").unwrap();
+        assert_eq!(*content, b"secret data");
+    }
+
+    #[test]
+    fn test_update_legacy_encrypted_preserves_content_blob() {
+        // Renaming does not know the password, so it must not touch the blob.
+        let conn = setup();
+        let id = db::create_snippet(&conn, "old secret", LEGACY_BLOB.to_vec(), true).unwrap();
+        update_snippet_inner(&conn, id, "renamed secret", "ignored content").unwrap();
+        let row = db::get_snippet_by_id(&conn, id).unwrap();
+        assert_eq!(row.title, "renamed secret");
+        assert_eq!(row.content, LEGACY_BLOB);
     }
 
     #[test]

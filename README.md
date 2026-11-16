@@ -66,6 +66,8 @@ Your snippets database (`snippets.db`) and settings (`settings.json`) are saved 
 
 With Scoop, that folder is kept across updates in `~\scoop\persist\quick-snippets\quick-snippets-data` — back up that folder instead.
 
+> **Upgrading from 0.2.1 or earlier** — your encrypted snippets still open. Each one is re-encrypted with stronger settings (PBKDF2-HMAC-SHA256 at 600,000 iterations instead of 100,000) the first time you copy or auto-type it with its password. After that, versions before 0.3.0 can no longer open that snippet (they report "Wrong password"); the data is not damaged, and version 0.3.0 or later opens it again. If you might go back to an older version, back up the `quick-snippets-data` folder before you upgrade.
+
 > **SHA-256 checksum** — a `.sha256` file is attached to every release for verification.
 
 ---
@@ -103,7 +105,8 @@ Your privacy is paramount. QuickSnippets is designed to keep your snippets on yo
 ### How Your Data Is Protected
 
 - **AES-256-GCM encryption** — sensitive snippets can be password-protected with military-grade encryption
-- **PBKDF2 key derivation** — passwords are stretched with 100,000 iterations to resist brute-force attacks
+- **PBKDF2 key derivation** — passwords are stretched with PBKDF2-HMAC-SHA256 at 600,000 iterations (the current OWASP minimum for this algorithm) to resist brute-force attacks
+- **Snippets from older versions keep working** — snippets encrypted by version 0.2.1 or earlier (100,000 iterations) still open, and each one is re-encrypted with the stronger setting the first time you copy or auto-type it with its password
 - **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
 - **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the `quick-snippets-data` folder next to the executable; no cloud, no telemetry, no sync
 - **No registry** — QuickSnippets does not touch Windows registry or AppData directories

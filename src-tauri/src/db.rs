@@ -180,6 +180,24 @@ pub fn update_snippet(
     Ok(())
 }
 
+/// Replace the stored blob of an encrypted snippet with the same content re-encrypted
+/// in a newer format.
+///
+/// The row changes only if it still holds exactly `old_blob`; returns whether it changed.
+/// `updated_at` is left alone: re-encryption is not an edit by the user.
+pub fn replace_encrypted_blob(
+    conn: &Connection,
+    id: i64,
+    old_blob: &[u8],
+    new_blob: &[u8],
+) -> Result<bool> {
+    let affected = conn.execute(
+        "UPDATE snippets SET content = ?1 WHERE id = ?2 AND is_encrypted = 1 AND content = ?3",
+        params![new_blob, id, old_blob],
+    )?;
+    Ok(affected == 1)
+}
+
 pub fn delete_snippet(conn: &Connection, id: i64) -> Result<()> {
     let affected = conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])?;
     if affected == 0 {
@@ -457,6 +475,75 @@ mod tests {
         let row = get_snippet_by_id(&conn, id).unwrap();
         assert_eq!(row.title, "New title");
         assert_eq!(row.content, original_blob, "encrypted content must not change");
+    }
+
+    // --- replace_encrypted_blob ---
+
+    #[test]
+    fn test_replace_encrypted_blob_swaps_matching_blob() {
+        let conn = setup_test_db();
+        let id = create_snippet(&conn, "Enc title", b"old-blob".to_vec(), true).unwrap();
+        conn.execute(
+            "UPDATE snippets SET updated_at = '2026-02-03T04:05:06.000' WHERE id = ?1",
+            params![id],
+        )
+        .unwrap();
+
+        let replaced = replace_encrypted_blob(&conn, id, b"old-blob", b"new-blob").unwrap();
+
+        assert!(replaced);
+        let row = get_snippet_by_id(&conn, id).unwrap();
+        assert_eq!(row.content, b"new-blob");
+        assert!(row.is_encrypted);
+        assert_eq!(row.title, "Enc title");
+        assert_eq!(row.updated_at, "2026-02-03T04:05:06.000", "updated_at must not change");
+    }
+
+    #[test]
+    fn test_replace_encrypted_blob_refuses_when_stored_blob_differs() {
+        let conn = setup_test_db();
+        let id = create_snippet(&conn, "Enc title", b"current-blob".to_vec(), true).unwrap();
+
+        let replaced = replace_encrypted_blob(&conn, id, b"stale-blob", b"new-blob").unwrap();
+
+        assert!(!replaced);
+        assert_eq!(get_snippet_by_id(&conn, id).unwrap().content, b"current-blob");
+    }
+
+    #[test]
+    fn test_replace_encrypted_blob_ignores_plain_snippets() {
+        let conn = setup_test_db();
+        let id = create_snippet(&conn, "Plain title", b"plain text".to_vec(), false).unwrap();
+
+        let replaced = replace_encrypted_blob(&conn, id, b"plain text", b"new-blob").unwrap();
+
+        assert!(!replaced);
+        assert_eq!(get_snippet_by_id(&conn, id).unwrap().content, b"plain text");
+    }
+
+    #[test]
+    fn test_replace_encrypted_blob_touches_only_the_given_snippet() {
+        let conn = setup_test_db();
+        let first = create_snippet(&conn, "First enc", b"same-blob".to_vec(), true).unwrap();
+        let second = create_snippet(&conn, "Second enc", b"same-blob".to_vec(), true).unwrap();
+
+        assert!(replace_encrypted_blob(&conn, first, b"same-blob", b"new-blob").unwrap());
+
+        assert_eq!(get_snippet_by_id(&conn, first).unwrap().content, b"new-blob");
+        assert_eq!(get_snippet_by_id(&conn, second).unwrap().content, b"same-blob");
+        assert!(!replace_encrypted_blob(&conn, 9999, b"same-blob", b"new-blob").unwrap());
+    }
+
+    #[test]
+    fn test_replace_encrypted_blob_too_long_is_an_error_and_keeps_old_blob() {
+        let conn = setup_test_db();
+        let id = create_snippet(&conn, "Enc title", b"old-blob".to_vec(), true).unwrap();
+        let too_long = vec![b'A'; 65_537];
+
+        let result = replace_encrypted_blob(&conn, id, b"old-blob", &too_long);
+
+        assert!(result.is_err(), "the content length CHECK must reject the new blob");
+        assert_eq!(get_snippet_by_id(&conn, id).unwrap().content, b"old-blob");
     }
 
     #[test]
