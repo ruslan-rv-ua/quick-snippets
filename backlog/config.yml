@@ -13,4 +13,4 @@ bypass_git_hooks: false
 check_active_branches: true
 active_branch_days: 30
 task_prefix: "task"
-definition_of_done: ["`npm run test:all` passes", "`npm run lint` passes", "CHANGELOG.md [Unreleased] updated for user-visible changes", "New user-facing strings exist in en, uk and de (src/i18n/translations.ts)", "After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)"]
+definition_of_done: ["`npm run test:all` passes", "`npm run lint` passes", "CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)", "New user-facing strings exist in en, uk and de (src/i18n/translations.ts)", "After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)"]

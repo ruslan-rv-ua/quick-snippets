@@ -4,7 +4,7 @@
 
 ## Prerequisites (Windows)
 
-- Node.js (LTS):
+- Node.js (LTS; для тестів потрібна 22.22+, 24.15+ або 26+):
   - Scoop: `scoop install nodejs-lts`
   - або winget: `winget install OpenJS.NodeJS.LTS`
 - Rust (rustup): `winget install --id Rustlang.Rustup` або з https://rustup.rs

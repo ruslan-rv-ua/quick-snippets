@@ -101,6 +101,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - Scoop: the manifest lives in the `ruslan-rv-ua/scoop-bucket` repo and is updated there by its Excavator workflow (`checkver` + `autoupdate` from the `.sha256` asset). Keep release asset names `quick-snippets-{version}-windows-x64.zip[.sha256]` unchanged.
 - Release exe size: keep `removeUnusedCommands` in `tauri.conf.json`, generate `icons/icon.ico` with `npx tauri icon` (PNG-compressed layers), and check for unused crates with `cargo machete`.
 - Release profile: `strip = true`, `lto = true`, `codegen-units = 1`, `opt-level = "z"`, `panic = "abort"`. Only the `sha2` crate is built with `opt-level = 3`: it halves the PBKDF2 wait on every use of an encrypted snippet.
+- CHANGELOG.md is for users: list only changes a user can notice (features, fixes, behaviour, security impact, upgrade and downgrade notes). Tooling and dependency upgrades, tests, `just smoke`, CI, build settings and other internal details go to commit messages, Backlog task notes or DEVELOPMENT.md instead.
 
 ### Key Design Constraints
 
