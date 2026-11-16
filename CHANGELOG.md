@@ -4,6 +4,7 @@
 
 ### Fixed
 - Search: screen readers now say "No results found" when a search finds nothing. Before, they stayed silent, because the announcement was cancelled when the results arrived. When the found snippet is the same one that was selected before, its name is now read too; a newly selected snippet is still read once, as before.
+- Search box: Delete now erases the character after the cursor, or the selected text, as in any text field. Before, it asked to delete the selected snippet instead whenever the list was not empty. Delete still asks to delete the selected snippet when no text follows the cursor, for example in an empty search box, and Ctrl+D does so wherever the cursor is. Right after Delete has erased text, press another key first, for example an arrow key: this way, holding Delete down never opens the delete confirmation, also with a screen reader. The keyboard shortcuts help (F1) and the READMEs describe this.
 
 ## v0.3.0 - 2026-11-16
 

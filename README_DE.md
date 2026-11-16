@@ -112,7 +112,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | Umschalt+Enter | Ausgewählten Schnipsel automatisch in die aktive Anwendung tippen |
 | Strg+N oder Einfügen | Neuen Schnipsel erstellen |
 | Strg+E | Ausgewählten Schnipsel bearbeiten |
-| Entf oder Strg+D | Ausgewählten Schnipsel löschen |
+| Strg+D oder Entf | Ausgewählten Schnipsel löschen (Entf nur, wenn im Suchfeld kein Text nach dem Cursor steht) |
 | Strg+F oder / | Suchfeld fokussieren |
 | Strg+, | Einstellungen öffnen |
 | Strg+Umschalt+T | Helles / dunkles Design umschalten |
@@ -124,6 +124,11 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 | F1 | Hilfe zu den Tastenkürzeln anzeigen |
 | Esc | Modal schließen / Suche leeren |
 | Alt+F4 | Anwendung beenden |
+
+> Im Suchfeld löscht Entf wie in jedem Textfeld Text, solange nach dem Cursor Text steht oder
+> Text markiert ist. Steht nach dem Cursor kein Text, fragt Entf, ob der ausgewählte Schnipsel
+> gelöscht werden soll. Hat Entf gerade Text gelöscht, drücken Sie zuerst eine andere Taste, zum
+> Beispiel eine Pfeiltaste: So öffnet ein gedrücktes Entf nie die Löschbestätigung.
 
 ### In Formularen und Dialogen
 
