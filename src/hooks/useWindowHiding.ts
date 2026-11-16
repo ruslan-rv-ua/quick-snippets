@@ -61,11 +61,12 @@ export function useWindowHiding(params: UseWindowHidingParams): UseWindowHidingR
   const partialReset = useCallback(() => {
     setQuery('');
     setActiveIndex(-1);
-    setListFocused?.(false);
+    // With a dialog open, the screen reader still returns to the selected snippet when it closes.
+    if (!anyModalOpen) setListFocused?.(false);
     setShowPassword(false);
     setAutotypeMode?.(false); // RC-1: reset autotype mode on blur
     // Other modals stay open
-  }, [setQuery, setActiveIndex, setListFocused, setShowPassword, setAutotypeMode]);
+  }, [setQuery, setActiveIndex, setListFocused, setShowPassword, setAutotypeMode, anyModalOpen]);
 
   // ── Focus search box when no modal is open ────────────────────────────
   const focusSearch = useCallback(() => {

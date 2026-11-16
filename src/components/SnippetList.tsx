@@ -3,6 +3,9 @@ import { useLanguage } from '../hooks/useLanguage';
 import { SnippetItem } from './SnippetItem';
 import type { SearchResult } from '../types';
 
+/** A new list that would repeat the last announcement for the same query within this time stays silent. */
+const REPEAT_MS = 1500;
+
 export interface SnippetListProps {
   snippets: SearchResult[];
   activeIndex: number;
@@ -28,6 +31,8 @@ export function SnippetList({
   const listRef = useRef<HTMLDivElement>(null);
   const [liveText, setLiveText] = useState('');
   const prevSnippetsRef = useRef(snippets);
+  // What the live region said last, for which query, and when.
+  const lastAnnouncedRef = useRef<{ text: string; query: string; at: number } | null>(null);
 
   // Scroll active item into view
   useEffect(() => {
@@ -48,7 +53,6 @@ export function SnippetList({
     if (snippets === prevSnippetsRef.current) return;
     prevSnippetsRef.current = snippets;
     if (listFocused) return;
-    setLiveText('');
 
     let text = '';
     if (snippets.length > 0) {
@@ -56,11 +60,19 @@ export function SnippetList({
     } else if (query.trim() !== '') {
       text = t('noResults');
     }
+    // The same list delivered again for the same query is not announced twice: the window is
+    // shown by two events (window focus and the show event), and each one reloads the list.
+    const last = lastAnnouncedRef.current;
+    if (text && last && last.text === text && last.query === query && Date.now() - last.at < REPEAT_MS) return;
+
+    setLiveText('');
     // An empty query with no list is the reset when the window hides, not a search.
     if (!text) return;
     const id = setTimeout(() => {
       // Results that arrive while the window is hidden (the reset on blur) are not announced.
-      if (document.hasFocus()) setLiveText(text);
+      if (!document.hasFocus()) return;
+      lastAnnouncedRef.current = { text, query, at: Date.now() };
+      setLiveText(text);
     }, 200);
     return () => clearTimeout(id);
   }, [snippets, query, listFocused, t, tf]);

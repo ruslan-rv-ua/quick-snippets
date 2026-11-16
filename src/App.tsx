@@ -141,13 +141,6 @@ function AppInner(): React.ReactElement {
     addToast,
   });
 
-  // A dialog returns focus to the search box when it closes. The screen reader then goes to
-  // the selected snippet, as it did before the dialog opened: set while the dialog is open,
-  // so the search box already points at the snippet when focus comes back.
-  useEffect(() => {
-    if (anyModalOpen && !listFocused) setListFocused(true);
-  }, [anyModalOpen, listFocused, setListFocused]);
-
   // ── Full reset + hide window ──────────────────────────────────────────
   const { hideWindow } = useWindowHiding({
     reset,

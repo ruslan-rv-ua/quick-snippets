@@ -305,6 +305,9 @@ describe('App: where the screen reader is', () => {
     expect(pointsAt(search)).toBe('');
     fireEvent.keyDown(search, { key: 'n', code: 'KeyN', ctrlKey: true });
     const dialog = await screen.findByRole('dialog');
+    // Set only after focus has left the search box, so it is not announced on the way.
+    await waitFor(() => expect(search).not.toHaveFocus());
+    await waitFor(() => expect(pointsAt(search)).toBe('snippet-1'));
 
     fireEvent.keyDown(document.activeElement ?? dialog, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

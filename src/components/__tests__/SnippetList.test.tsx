@@ -150,6 +150,35 @@ describe('SnippetList', () => {
       expect(liveText()).toContain('Alpha');
     });
 
+    // The window is shown by two events (window focus and the show event), and each reloads the list.
+    it('announces the same list for the same query once when it arrives twice in a row', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list([...mockSnippets], '', 0));
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(liveText()).toBe('Alpha');
+
+      view.rerender(list([...mockSnippets], '', 0));
+      // Not cleared, so the screen reader does not hear it again.
+      expect(liveText()).toBe('Alpha');
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(liveText()).toBe('Alpha');
+    });
+
+    it('announces the same list again when the window is shown again later', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list([...mockSnippets], '', 0));
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(liveText()).toBe('Alpha');
+
+      act(() => { vi.advanceTimersByTime(5000); });
+      view.rerender(list([...mockSnippets], '', 0));
+      expect(liveText()).toBe('');
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(liveText()).toBe('Alpha');
+    });
+
     it('says nothing while the screen reader is on a snippet: aria-activedescendant reads it', () => {
       vi.useFakeTimers();
       search('be', [mockSnippets[1]], true);

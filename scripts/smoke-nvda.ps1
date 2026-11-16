@@ -1055,9 +1055,17 @@ try {
         $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-autostart' }
         Set-Toggle $box $true
         Send-Keys 'Ctrl+Enter'
-        Wait-Until 'запис автозапуску в реєстрі' {
-            $v = Get-RunValue
-            $v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        try {
+            $null = Wait-Until 'запис автозапуску в реєстрі' {
+                $v = Get-RunValue
+                $v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0
+            }
+        } catch {
+            # Where things were when it failed (this step has failed now and then).
+            $w = Get-AppWindow
+            $state = if ($null -eq $w) { 'вікно програми сховане' } else { 'вікно програми видно' }
+            if (Find-Element $w -Id 'settings-autostart') { $state += ', налаштування ще відкрито' }
+            throw "$($_.Exception.Message) ($state, клавіатура в процесі $(Get-ForegroundProcessName))"
         }
         # What the next start reads: the new value, and the other settings unchanged.
         $null = Wait-Until 'автозапуск у settings.json' { (& $readSettings).autostart -eq $true } 3

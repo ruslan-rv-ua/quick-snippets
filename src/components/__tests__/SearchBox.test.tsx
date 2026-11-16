@@ -225,6 +225,23 @@ describe('SearchBox', () => {
       expect(onListFocusChange).toHaveBeenCalledWith(false);
     });
 
+    it('focus moving to another element (a dialog) sends it to the selected snippet for when focus comes back', () => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ snippets: mockSnippets, activeIndex: 0, listFocused: false, onListFocusChange });
+      const other = document.createElement('button');
+      document.body.appendChild(other);
+      fireEvent.blur(screen.getByRole('combobox'), { relatedTarget: other });
+      expect(onListFocusChange).toHaveBeenCalledWith(true);
+      other.remove();
+    });
+
+    it('the window losing focus leaves it where it is', () => {
+      const onListFocusChange = vi.fn();
+      renderSearchBox({ snippets: mockSnippets, activeIndex: 0, listFocused: false, onListFocusChange });
+      fireEvent.blur(screen.getByRole('combobox'), { relatedTarget: null });
+      expect(onListFocusChange).not.toHaveBeenCalled();
+    });
+
     it('Escape on an empty query and Enter leave it where it is', () => {
       const onListFocusChange = vi.fn();
       renderSearchBox({ value: '', snippets: mockSnippets, activeIndex: 0, onListFocusChange });

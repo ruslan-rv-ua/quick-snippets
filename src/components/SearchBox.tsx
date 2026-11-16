@@ -99,6 +99,13 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
           onListFocusChange(false);
           onChange(e.target.value);
         }}
+        onBlur={(e) => {
+          // Focus moves to a dialog: when it comes back, the screen reader goes to the selected
+          // snippet, as before the dialog. Set only once focus has left, so the search box does
+          // not point at the snippet while it still has focus. (No related target: the window
+          // itself lost focus.)
+          if (e.relatedTarget) onListFocusChange(true);
+        }}
         onKeyDown={handleKeyDown}
         placeholder={t('searchPlaceholder')}
       />
