@@ -135,16 +135,22 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 
 ## Einstellungen
 
-Öffnen Sie die Einstellungen mit **Strg+,** oder über das Tray-Menü.
+Öffnen Sie die Einstellungen mit **Strg+,** oder über das Tray-Menü. Die Einstellungen sind in drei Gruppen aufgeteilt; unten stehen sie in derselben Reihenfolge wie im Dialog. Design und Sprache ändern sich sofort bei der Auswahl, sodass Sie sie ausprobieren können. **Speichern** (oder **Strg+Enter**) übernimmt alle Änderungen; **Abbrechen**, **Esc** oder ein Klick neben den Dialog stellt das vorherige Design und die vorherige Sprache wieder her und verwirft die übrigen Änderungen. Unten im Dialog steht die Programmversion; Screenreader lesen sie nach dem Dialogtitel vor.
 
-| Einstellung | Beschreibung |
-|---|---|
-| Design | Helle oder dunkle Benutzeroberfläche |
-| Sprache | Englisch, Ukrainisch, Deutsch oder automatisch vom System erkennen |
-| Im Tray starten | Fenster beim Start ausblenden; nur das Tray-Icon ist sichtbar |
-| Beim Start ausführen | QuickSnippets automatisch beim Windows-Start starten |
-| Beim Schließen bestätigen | Bestätigungsdialog vor dem Beenden anzeigen |
-| Autotipp-Verzögerung (ms) | Zeichenverzögerung beim automatischen Tippen (Standard: 1 ms). Auf `0` setzen für maximale Geschwindigkeit. Erhöhen Sie den Wert auf 10–50 ms, wenn Zeichen fehlen oder in falscher Reihenfolge erscheinen. **Hinweis:** Automatisches Tippen funktioniert nicht in Anwendungen mit erhöhten Berechtigungen (Als Administrator ausführen). |
+### Darstellung und Sprache
+
+- **Design**: Dunkel oder Hell.
+- **Sprache**: Wie in Windows, English, Українська oder Deutsch.
+
+### Start und Beenden
+
+- **Mit Windows starten**: QuickSnippets startet bei der Anmeldung bei Windows. Gilt ab der nächsten Anmeldung.
+- **Minimiert im Infobereich starten**: Beim Start ist nur das Symbol im Infobereich zu sehen. Gilt ab dem nächsten Start; das Fenster öffnet sich mit **Strg+Alt+Space**.
+- **Vor dem Beenden nachfragen**: Alt+F4 und die Schließen-Schaltfläche des Fensters fragen zuerst nach. **Esc** blendet das Fenster nur aus, und **Beenden** im Tray-Menü schließt die App ohne Nachfrage.
+
+### Automatisch tippen
+
+- **Verzögerung zwischen Zeichen, ms**: von 0 bis 1000 (Standard: 1). `0` ist am schnellsten. Wenn Zeichen im Zielprogramm fehlen oder in falscher Reihenfolge erscheinen, versuchen Sie 10–50. **Hinweis:** Automatisches Tippen funktioniert nicht in Anwendungen mit erhöhten Berechtigungen (Als Administrator ausführen).
 
 ---
 

@@ -36,6 +36,27 @@ describe('ModalOverlay', () => {
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-labelledby', 'modal-title');
   });
 
+  it('has no description unless describedBy is given', () => {
+    renderModal();
+    expect(screen.getByRole('dialog')).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('describedBy sets the dialog description', () => {
+    render(
+      <ModalOverlay isOpen={true} onClose={vi.fn()} titleId="t" describedBy="d">
+        <h2 id="t">Title</h2>
+        <p id="d">Version 1.2.3</p>
+        <button>OK</button>
+      </ModalOverlay>,
+    );
+    expect(screen.getByRole('dialog', { name: 'Title' })).toHaveAccessibleDescription('Version 1.2.3');
+  });
+
+  it('className is added to the dialog classes', () => {
+    renderModal({ className: 'settings-dialog' });
+    expect(screen.getByRole('dialog')).toHaveClass('modal-dialog', 'settings-dialog');
+  });
+
   it('click on overlay (outside dialog) calls onClose', () => {
     const onClose = vi.fn();
     const { container } = renderModal({ onClose });

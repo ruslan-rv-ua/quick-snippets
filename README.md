@@ -182,16 +182,22 @@ For complete details on the security model, threat assessment, and responsible d
 
 ## Settings
 
-Open Settings with **Ctrl+,** or via the tray menu.
+Open Settings with **Ctrl+,** or via the tray menu. The settings are in three groups, listed below in the order of the dialog. Theme and language change as soon as you pick them, so you can try them out. **Save** (or **Ctrl+Enter**) keeps all changes; **Cancel**, **Esc** or a click outside the dialog brings back the theme and language you had and drops the other changes. The app version is shown at the bottom of the dialog, and screen readers read it after the dialog title.
 
-| Setting | Description |
-|---|---|
-| Theme | Light or dark interface |
-| Language | English, Ukrainian, German, or auto-detect from system |
-| Start in tray | Hide the window on launch; only the tray icon is visible |
-| Launch on startup | Start QuickSnippets automatically when Windows starts |
-| Confirm on close | Show a confirmation dialog before quitting |
-| Autotype delay (ms) | Inter-character delay for auto-type (default: 1 ms). Set to `0` for maximum speed. Increase to 10–50 ms if characters are dropped or appear out of order in the target app. **Note:** Auto-type does not work into applications running with elevated privileges (Run as administrator). |
+### Appearance and language
+
+- **Theme**: Dark or Light.
+- **Language**: Same as Windows, English, Українська or Deutsch.
+
+### Startup and closing
+
+- **Start with Windows**: start QuickSnippets when you sign in to Windows. Takes effect the next time you sign in.
+- **Start minimized to the tray**: at startup only the tray icon appears. Takes effect at the next start; open the window with **Ctrl+Alt+Space**.
+- **Ask before closing the app**: Alt+F4 and the window's close button ask for confirmation first. **Esc** only hides the window, and **Quit** in the tray menu closes the app without asking.
+
+### Auto-type
+
+- **Delay between characters, ms**: from 0 to 1000 (default: 1). `0` is the fastest. If characters go missing or appear out of order in the target app, try 10–50. **Note:** Auto-type does not work into applications running with elevated privileges (Run as administrator).
 
 ---
 

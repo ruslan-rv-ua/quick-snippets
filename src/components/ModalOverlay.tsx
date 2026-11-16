@@ -10,8 +10,13 @@ export interface ModalOverlayProps {
   onClose: () => void;
   titleId: string;
   children: React.ReactNode;
-  /** When true, sets aria-busy="true" on the dialog element. */
-  busy?: boolean;
+  /**
+   * Id of an element that describes the dialog. Screen readers read it right
+   * after the dialog title when focus enters the dialog.
+   */
+  describedBy?: string;
+  /** Extra class for the dialog element, e.g. a wider layout. */
+  className?: string;
 }
 
 export function ModalOverlay({
@@ -19,7 +24,8 @@ export function ModalOverlay({
   onClose,
   titleId,
   children,
-  busy,
+  describedBy,
+  className,
 }: ModalOverlayProps): React.ReactElement | null {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -114,8 +120,8 @@ export function ModalOverlay({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-busy={busy ? 'true' : undefined}
-        className="modal-dialog"
+        aria-describedby={describedBy}
+        className={className ? `modal-dialog ${className}` : 'modal-dialog'}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
         // Stop clicks inside dialog from closing the overlay

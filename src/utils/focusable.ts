@@ -1,6 +1,6 @@
 /**
  * CSS selector that matches all focusable/interactive elements.
- * Single source of truth — imported by ModalOverlay and SettingsModal.
+ * Single source of truth for the focus handling in ModalOverlay.
  */
 export const FOCUSABLE_SELECTORS =
   'a[href], button:not([disabled]), textarea:not([disabled]), ' +

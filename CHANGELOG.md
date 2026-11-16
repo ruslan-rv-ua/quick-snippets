@@ -15,10 +15,20 @@
 - Release build: the `sha2` crate is compiled with `opt-level = 3` while everything else stays at `"z"`. This halves the key derivation time and adds 8 KB to the executable.
 - Rust tests: the `sha2` crate in debug builds and this crate in test builds are compiled with optimization, so the test suite still runs in seconds with the higher iteration count.
 - Development tooling: Vitest 5, Vite 8 (Rolldown and the Oxc minifier), `@vitejs/plugin-react` 6 and jsdom 31. `npm audit` now reports no vulnerabilities. Node.js 22.22+, 24.15+ or 26+ is needed to run the tests.
+- **Settings dialog reworked.** The settings are in three groups: "Appearance and language", "Startup and closing" and "Auto-type". Screen readers say the group name when focus enters a group. Each setting is one row with its label, a short hint where it helps, and the control; the hint is read right after the setting. The theme is now a list, like the language. The dialog fits the default 680×520 window without scrolling, and every control shows a clear focus outline in both themes.
+- Settings: the general hint "Some settings take effect after restart" is gone. Instead, "Start with Windows" and "Start minimized to the tray" say when they take effect; every other setting applies on Save.
+- Settings: screen readers read the app version right after the dialog title. It is still shown at the bottom of the dialog.
+- Settings: clearer names. "Auto (system)" is now "Same as Windows"; "Start in system tray" is "Start minimized to the tray"; "Confirm before closing" is "Ask before closing the app"; "Autotype delay (ms)" is "Delay between characters, ms".
+- Settings: Save changes only the settings shown in the dialog; other saved settings, such as the sort order, stay as they are.
+- `just smoke` checks what NVDA says in the settings dialog: the group, label, role, state or value and hint of every control in Tab order, and that Esc brings back the theme and language.
 
 ### Fixed
 - The theme chosen with Ctrl+Shift+T is now saved and stays after a restart. Before, it lasted only until the app closed, unless Settings was saved in between. Only the theme is changed in the settings file. In the Settings dialog the theme is still saved only by Save.
 - Settings changed by shortcuts (theme and sort order) are now saved one after another, so two quick shortcuts can no longer undo each other's change.
+- Settings: Cancel, Esc and a click outside the dialog now bring back the theme and language that were shown when the dialog opened. Before, a theme or language picked in the dialog stayed on screen until the next start, although it was not saved.
+- Settings: choosing "Auto (system)" in the language list no longer turns the window blank. Save now keeps this choice; before, it replaced it with the language detected at that moment.
+- Settings: the language list shows its drop-down arrow. The arrow was an embedded image, which the app's content security policy blocked.
+- Screen readers: the Save button in Settings stays available while it saves, so focus no longer drops out of the dialog.
 
 ## v0.2.1 - 2026-11-16
 

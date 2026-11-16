@@ -78,8 +78,9 @@ describe('translations', () => {
     'exitConfirmTitle', 'exitConfirmMessage',
     'nothingSelected', 'hotkeyWarning',
     'decrypting', 'corruptedDb', 'corruptedSettings',
-    'darkTheme', 'lightTheme', 'autoLanguage',
-    'restartHint', 'cannotUndo',
+    'darkTheme', 'lightTheme', 'autoLanguage', 'cannotUndo',
+    'settingsAppearanceGroup', 'settingsStartupGroup', 'settingsAutotypeGroup',
+    'autostartHint', 'startInTrayHint', 'confirmOnCloseHint', 'autotypeDelayHint',
   ] as const;
 
   for (const key of requiredKeys) {

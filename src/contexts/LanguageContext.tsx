@@ -36,7 +36,11 @@ export const LanguageContext = createContext<LanguageContextValue>({
 
 // ── Helper ────────────────────────────────────────────────────────────────
 
-function resolveLanguage(raw: string): LangCode {
+/**
+ * Turns the saved language setting into the language to show. An empty or
+ * unknown value means "Same as Windows": the WebView's language is used.
+ */
+export function resolveLanguage(raw: string): LangCode {
   if (raw === 'en' || raw === 'uk' || raw === 'de') return raw;
   // Auto-detect from browser locale
   const browserLang = navigator.language.slice(0, 2);
