@@ -1309,7 +1309,10 @@ try {
     # The same with the password dialog open and the password typed: before the fix the dialog
     # closed at once. Enter afterwards proves the typed password is still there.
     Invoke-Step 'Клавіатура на внутрішньому вікні WebView2 з діалогом пароля: діалог і пароль лишаються, Enter копіює' {
-        Wait-Until 'вибрано зашифрований сніпет' { $f = Get-FocusedListItem; $f -and $f.Current.Name -eq $secretName }
+        Wait-Until 'вибрано зашифрований сніпет' {
+            $item = Find-Element (& $appWin) -Name $secretName -Type $listItemType
+            $item -and $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Current.IsSelected
+        }
         Set-ClipText $Data.Sentinel
         Send-Keys 'Enter'
         Wait-Until 'фокус у полі пароля' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input') }
