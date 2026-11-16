@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.3.0 - 2026-11-16
+
+### Before you upgrade
+- Encrypted snippets are stored in a new format (see Security below). Upgrading is safe: snippets from 0.2.1 or earlier keep opening with their password.
+- **Going back to a version before 0.3.0**: older versions cannot read the new format. An encrypted snippet that was created or re-encrypted by this version shows "Wrong password" there, even with the right password. Nothing is damaged, and 0.3.0 or later opens it again. Unencrypted snippets, and encrypted snippets not yet opened in this version, keep working in older versions. If you might go back, back up the `quick-snippets-data` folder before upgrading.
+
 ### Security
 - Encrypted snippets: the encryption key is now derived from the password with PBKDF2-HMAC-SHA256 at 600,000 iterations instead of 100,000. This is the current OWASP minimum for this algorithm and makes password guessing six times more expensive.
 - Encrypted snippets are stored in a new format. Snippets encrypted by 0.2.1 or earlier still open with their password, and each one moves to the new format the first time it is copied or auto-typed. The new data is checked before it replaces the old, and if anything fails the snippet stays as it was. A snippet that is never opened stays in the old format, because the move needs its password.
@@ -10,7 +16,6 @@
 - **Keyboard shortcuts help on F1.** F1 in the main window opens a list of all keyboard shortcuts with what each one does, in the interface language: global, main window, and forms and dialogs. Screen readers read it one shortcut at a time with the Up and Down arrows, keys and action together, and say the group name when you move into the next group; Home and End go to the first and last shortcut. Escape or Close closes the help, and focus returns to where it was. F1 does nothing while another dialog is open.
 
 ### Changed
-- **Going back to a version before 0.3.0**: older versions cannot read the new format. An encrypted snippet that was created or re-encrypted by this version shows "Wrong password" there, even with the right password. Nothing is damaged, and 0.3.0 or later opens it again. Unencrypted snippets, and encrypted snippets not yet opened in this version, keep working in older versions. If you might go back, back up the `quick-snippets-data` folder before upgrading.
 - Checking the password of an encrypted snippet takes longer, by design: about 0.1 s on a recent desktop CPU (was about 0.03 s) and up to about half a second on old ones. The first use of a snippet from an older version takes about twice as long, once.
 - **Settings dialog reworked.** The settings are in three groups: "Appearance and language", "Startup and closing" and "Auto-type". Screen readers say the group name when focus enters a group. Each setting is one row with its label, a short hint where it helps, and the control; the hint is read right after the setting. The theme is now a list, like the language. The dialog fits the default 680×520 window without scrolling, and every control shows a clear focus outline in both themes.
 - Settings: the general hint "Some settings take effect after restart" is gone. Instead, "Start with Windows" and "Start minimized to the tray" say when they take effect; every other setting applies on Save.

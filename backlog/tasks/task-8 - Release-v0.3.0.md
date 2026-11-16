@@ -1,10 +1,11 @@
 ---
 id: TASK-8
 title: Release v0.3.0
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15T23:33:00Z'
-updated_date: '2026-11-16T13:48:00Z'
+updated_date: '2026-11-16T14:46:00Z'
 labels:
   - release
   - model-sonnet
@@ -55,3 +56,29 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Check CI on the latest develop commit (a56043e): passed.
+2. git flow release start 0.3.0; bump the version in Cargo.toml, tauri.conf.json, package.json (and lock files); move [Unreleased] into a v0.3.0 section; commit.
+3. just final-checks; npm run test:all; npm run lint.
+4. npx tauri build --no-bundle; just smoke on the release exe.
+5. Check a 0.2.1-format encrypted snippet on a test copy with its own data folder: opens, is stored as v2:, opens again.
+6. git flow release finish 0.3.0; push main and develop (no tags); wait for CI.
+7. Run the Release workflow for 0.3.0 on main; check ZIP and .sha256; replace the generated release notes with user-facing notes (format change, going back to 0.2.x, backup advice).
+8. Run Excavator in scoop-bucket; check the manifest shows 0.3.0.
+9. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-8-<commit>.exe.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checks on release/0.3.0 (commit 040b934, version bump f29c84a):
+- CI for develop a56043e passed before the release started.
+- just final-checks: versions match (0.3.0), tsc, clippy, 217 Rust tests, 386 Vitest tests, build OK; exe 3,849,728 bytes.
+- npm run lint and npm run test:all: pass.
+- just smoke on the release exe: 35 of 35 steps OK, NVDA checks 105 of 105.
+- 0.2.1 format check (script outside the repo): a test copy of the release exe with its own temp data folder created its database; the pinned v0.2.1 sample blob from crypto.rs was inserted as is_encrypted=1. First open with the password copied the right text and the stored content changed from the legacy format (116 bytes) to v2: (119 bytes); the second open with the same password copied the right text again.
+- CHANGELOG: [Unreleased] moved into v0.3.0; the note on going back to 0.2.x moved to a new first subsection "Before you upgrade" with the advice to back up quick-snippets-data.
+<!-- SECTION:NOTES:END -->
