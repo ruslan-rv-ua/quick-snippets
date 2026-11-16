@@ -4,7 +4,7 @@ title: Release v0.3.0
 status: To Do
 assignee: []
 created_date: '2026-11-15T23:33:00Z'
-updated_date: '2026-11-15T23:33:00Z'
+updated_date: '2026-11-16T00:38:00Z'
 labels:
   - release
   - model-sonnet
@@ -14,6 +14,9 @@ dependencies:
   - TASK-1
   - TASK-2
   - TASK-7
+  - TASK-9
+  - TASK-10
+  - TASK-11
 references:
   - DEVELOPMENT.md
   - CHANGELOG.md
@@ -26,7 +29,7 @@ ordinal: 3500
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ships the toolchain upgrade (TASK-1) and the new key derivation for encrypted snippets (TASK-2). A minor version because the stored format of encrypted snippets may change: if snippets re-encrypted by 0.3.0 cannot be read by 0.2.x, the release notes must say so plainly, since a downgrade would lock users out of those snippets.
+Ships the toolchain upgrade (TASK-1), the new key derivation for encrypted snippets (TASK-2), the fix that keeps the Ctrl+Shift+T theme after a restart (TASK-11), the reworked settings dialog (TASK-9) and the keyboard shortcuts help on F1 (TASK-10). A minor version because the stored format of encrypted snippets may change: if snippets re-encrypted by 0.3.0 cannot be read by 0.2.x, the release notes must say so plainly, since a downgrade would lock users out of those snippets.
 
 Same procedure as v0.2.1 (DEVELOPMENT.md). Pushing and running workflows need the user's go-ahead, and so does the just smoke run.
 
