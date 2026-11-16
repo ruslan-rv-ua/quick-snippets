@@ -129,22 +129,36 @@ pub fn validate_window_state(state: &WindowState) -> WindowState {
 // Language detection
 // ------------------------------------------------------------------
 
-/// Detect system language: `"uk"` for Ukrainian locales, `"en"` otherwise.
+/// Map a locale name such as `"de-AT"` or `"uk_UA.UTF-8"` to a language the
+/// app supports: `"uk"`, `"de"` or `"en"`. Anything else becomes `"en"`.
+pub fn language_from_locale(locale: &str) -> &'static str {
+    let lower = locale.trim().to_lowercase();
+    let primary = lower.split(['-', '_', '.', '@']).next().unwrap_or("");
+    match primary {
+        "uk" => "uk",
+        "de" => "de",
+        _ => "en",
+    }
+}
+
+/// Detect the language for "Same as Windows" (an empty language setting):
+/// the Windows display language, mapped by [`language_from_locale`].
+///
+/// The tray menu and the window both use this one function (the window asks
+/// for it through the `get_system_language` command), so they always agree.
 pub fn detect_language() -> String {
     #[cfg(target_os = "windows")]
     {
-        if let Some(lang) = detect_language_windows() {
-            if lang.to_lowercase().starts_with("uk") {
-                return "uk".to_string();
-            }
+        if let Some(locale) = detect_language_windows() {
+            return language_from_locale(&locale).to_string();
         }
     }
 
     // Fallback: LANG / LANGUAGE env vars (Linux / macOS / some Windows setups)
     for var in &["LANG", "LANGUAGE", "LC_ALL"] {
         if let Ok(val) = std::env::var(var) {
-            if val.to_lowercase().starts_with("uk") {
-                return "uk".to_string();
+            if !val.trim().is_empty() {
+                return language_from_locale(&val).to_string();
             }
         }
     }
@@ -152,25 +166,38 @@ pub fn detect_language() -> String {
     "en".to_string()
 }
 
+/// The first Windows display language of the user, e.g. `"de-DE"`.
 #[cfg(target_os = "windows")]
 fn detect_language_windows() -> Option<String> {
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
 
+    const MUI_LANGUAGE_NAME: u32 = 0x8;
+
     extern "system" {
-        fn GetUserDefaultLocaleName(lpLocaleName: *mut u16, cchLocaleName: i32) -> i32;
+        fn GetUserPreferredUILanguages(
+            dwFlags: u32,
+            pulNumLanguages: *mut u32,
+            pwszLanguagesBuffer: *mut u16,
+            pcchLanguagesBuffer: *mut u32,
+        ) -> i32;
     }
 
-    let mut buf = [0u16; 85];
-    let len = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
-    if len > 0 {
-        let end = (len as usize).saturating_sub(1); // strip null terminator
-        let name = OsString::from_wide(&buf[..end])
-            .to_string_lossy()
-            .to_string();
-        return Some(name);
+    // The buffer holds a list of names, each ended by a null character.
+    let mut buf = [0u16; 512];
+    let mut count: u32 = 0;
+    let mut len: u32 = buf.len() as u32;
+    let ok = unsafe {
+        GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut count, buf.as_mut_ptr(), &mut len)
+    };
+    if ok == 0 || count == 0 {
+        return None;
     }
-    None
+    let first_end = buf.iter().position(|&c| c == 0).unwrap_or(0);
+    if first_end == 0 {
+        return None;
+    }
+    Some(OsString::from_wide(&buf[..first_end]).to_string_lossy().to_string())
 }
 
 // ------------------------------------------------------------------
@@ -475,7 +502,42 @@ mod tests {
     #[test]
     fn test_detect_language_returns_valid_code() {
         let lang = detect_language();
-        assert!(lang == "en" || lang == "uk");
+        assert!(lang == "en" || lang == "uk" || lang == "de");
+    }
+
+    #[test]
+    fn test_language_from_locale_german() {
+        assert_eq!(language_from_locale("de-DE"), "de");
+        assert_eq!(language_from_locale("de-AT"), "de");
+        assert_eq!(language_from_locale("de-CH"), "de");
+        assert_eq!(language_from_locale("de"), "de");
+        assert_eq!(language_from_locale("de_DE.UTF-8"), "de");
+    }
+
+    #[test]
+    fn test_language_from_locale_ukrainian() {
+        assert_eq!(language_from_locale("uk-UA"), "uk");
+        assert_eq!(language_from_locale("UK-ua"), "uk");
+        assert_eq!(language_from_locale("uk_UA.UTF-8"), "uk");
+    }
+
+    #[test]
+    fn test_language_from_locale_english() {
+        assert_eq!(language_from_locale("en-US"), "en");
+        assert_eq!(language_from_locale("en-GB"), "en");
+    }
+
+    #[test]
+    fn test_language_from_locale_unsupported_is_english() {
+        assert_eq!(language_from_locale("fr-FR"), "en");
+        assert_eq!(language_from_locale("pl-PL"), "en");
+        // Only the language part counts, not the region: German in Ukraine
+        // is German, Ukrainian in Germany is Ukrainian.
+        assert_eq!(language_from_locale("de-UA"), "de");
+        assert_eq!(language_from_locale("uk-DE"), "uk");
+        // "ukr" or "deu" are not the two-letter codes Windows uses.
+        assert_eq!(language_from_locale("ukr"), "en");
+        assert_eq!(language_from_locale(""), "en");
     }
 
     #[test]

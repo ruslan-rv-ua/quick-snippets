@@ -108,7 +108,7 @@ export function SettingsModal({
 }: SettingsModalProps): React.ReactElement | null {
   const { t, tf } = useLanguage();
   const { theme, setTheme } = useContext(ThemeContext);
-  const { language, setLanguage } = useContext(LanguageContext);
+  const { language, setLanguage, systemLanguage } = useContext(LanguageContext);
 
   // null until the saved settings are loaded: the dialog appears only then, so
   // focus enters it once and screen readers read its title and first control together.
@@ -191,7 +191,7 @@ export function SettingsModal({
 
   const changeLanguage = (next: LanguagePreference) => {
     update({ language: next });
-    setLanguage(resolveLanguage(next)); // shown at once, saved only by Save
+    setLanguage(resolveLanguage(next, systemLanguage)); // shown at once, saved only by Save
   };
 
   return (

@@ -181,38 +181,68 @@ describe('LanguageContext', () => {
     expect(result.current.language).toBe('en');
   });
 
-  // 13a. An empty setting ("Same as Windows") follows the WebView language
+  // 13a. An empty setting ("Same as Windows") follows the backend's language
   it('resolveLanguage keeps en, uk and de', () => {
-    expect(resolveLanguage('en')).toBe('en');
-    expect(resolveLanguage('uk')).toBe('uk');
-    expect(resolveLanguage('de')).toBe('de');
+    expect(resolveLanguage('en', 'de')).toBe('en');
+    expect(resolveLanguage('uk', 'de')).toBe('uk');
+    expect(resolveLanguage('de', 'uk')).toBe('de');
   });
 
-  it('resolveLanguage follows the WebView language for "" and unknown values', () => {
-    const spy = vi.spyOn(navigator, 'language', 'get');
-    try {
-      spy.mockReturnValue('uk-UA');
-      expect(resolveLanguage('')).toBe('uk');
-      spy.mockReturnValue('de-AT');
-      expect(resolveLanguage('')).toBe('de');
-      expect(resolveLanguage('fr')).toBe('de');
-      spy.mockReturnValue('pl-PL');
-      expect(resolveLanguage('')).toBe('en');
-    } finally {
-      spy.mockRestore();
-    }
+  it('resolveLanguage uses the system language for "" and unknown values', () => {
+    expect(resolveLanguage('', 'uk')).toBe('uk');
+    expect(resolveLanguage('', 'de')).toBe('de');
+    expect(resolveLanguage('fr', 'de')).toBe('de');
+    expect(resolveLanguage('', 'en')).toBe('en');
   });
 
-  it('loads "" (Same as Windows) as the WebView language', async () => {
-    const spy = vi.spyOn(navigator, 'language', 'get').mockReturnValue('uk-UA');
-    try {
-      vi.mocked(invoke).mockResolvedValue(makeSettings(''));
+  const mockBackend = (language: string, system: unknown) =>
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_settings') return makeSettings(language);
+      if (cmd === 'get_system_language') return system;
+      return undefined;
+    });
+
+  it.each(['uk', 'de', 'en'] as const)(
+    'loads "" (Same as Windows) as the backend language %s, like the tray menu',
+    async (system) => {
+      mockBackend('', system);
       const { result } = renderHook(() => useContext(LanguageContext), { wrapper });
       await act(async () => {});
-      expect(result.current.language).toBe('uk');
+      expect(invoke).toHaveBeenCalledWith('get_system_language');
+      expect(result.current.language).toBe(system);
+      expect(result.current.systemLanguage).toBe(system);
+      expect(document.documentElement.lang).toBe(system);
+    },
+  );
+
+  it('ignores the WebView language: the backend decides', async () => {
+    const spy = vi.spyOn(navigator, 'language', 'get').mockReturnValue('uk-UA');
+    try {
+      mockBackend('', 'de');
+      const { result } = renderHook(() => useContext(LanguageContext), { wrapper });
+      await act(async () => {});
+      expect(result.current.language).toBe('de');
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('falls back to English when the backend gives no usable language', async () => {
+    mockBackend('', 'fr');
+    const { result } = renderHook(() => useContext(LanguageContext), { wrapper });
+    await act(async () => {});
+    expect(result.current.language).toBe('en');
+  });
+
+  it('keeps a saved language even if the system language fails', async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_settings') return makeSettings('de');
+      throw new Error('IPC error');
+    });
+    const { result } = renderHook(() => useContext(LanguageContext), { wrapper });
+    await act(async () => {});
+    expect(result.current.language).toBe('de');
+    expect(result.current.systemLanguage).toBe('en');
   });
 
   // 14. Using context outside provider returns default values (no throw)

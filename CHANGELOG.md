@@ -25,6 +25,7 @@
 - Settings: choosing "Auto (system)" in the language list no longer turns the window blank. Save now keeps this choice; before, it replaced it with the language detected at that moment.
 - Settings: the language list shows its drop-down arrow. The arrow was an embedded image, which the app's content security policy blocked.
 - Screen readers: the Save button in Settings stays available while it saves, so focus no longer drops out of the dialog.
+- With the language set to "Same as Windows", the tray menu and the window now always use the same language: the Windows display language if it is English, Ukrainian or German, otherwise English. Before, the tray menu followed the Windows regional format and knew only Ukrainian, so on a German Windows the window was German and the tray menu English.
 
 ## v0.2.1 - 2026-11-16
 

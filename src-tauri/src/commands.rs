@@ -355,6 +355,13 @@ pub mod tauri_commands {
         Ok(s.clone())
     }
 
+    /// The language "Same as Windows" stands for (`"en"`, `"uk"` or `"de"`).
+    /// The window uses it so that it matches the tray menu.
+    #[tauri::command]
+    pub fn get_system_language() -> String {
+        crate::settings::detect_language()
+    }
+
     /// Enable or disable OS autostart depending on `autostart` flag.
     fn apply_autostart(autostart: bool, app: &AppHandle) {
         use tauri_plugin_autostart::ManagerExt;

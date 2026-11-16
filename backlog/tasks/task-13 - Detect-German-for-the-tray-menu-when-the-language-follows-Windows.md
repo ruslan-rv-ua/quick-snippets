@@ -1,9 +1,11 @@
 ---
 id: TASK-13
 title: Detect German for the tray menu when the language follows Windows
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-16T13:48:00Z'
+updated_date: '2026-11-16T14:23:00Z'
 labels:
   - bug
   - backend
@@ -42,3 +44,12 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. settings.rs: pure language_from_locale (uk, de, else en); detect_language reads the Windows display language (GetUserPreferredUILanguages) instead of the regional format.
+2. New command get_system_language; the window asks it for "Same as Windows" instead of using navigator.language, so window and tray use one function.
+3. Rust tests for de, uk, en and unsupported locales; frontend tests for the new source.
+4. CHANGELOG, test:all, lint, release build to real_db.
+<!-- SECTION:PLAN:END -->

@@ -19,6 +19,7 @@ import {
   updateSnippet,
   deleteSnippet,
   getSettings,
+  getSystemLanguage,
   saveSettings,
   updateSettings,
   getPendingNotification,
@@ -307,6 +308,20 @@ describe('deleteSnippet', () => {
     mockInvoke.mockRejectedValueOnce(new Error('cannot delete'));
 
     await expect(deleteSnippet(0)).rejects.toThrow('cannot delete');
+  });
+});
+
+// ── getSystemLanguage ─────────────────────────────────────────────────────
+
+describe('getSystemLanguage', () => {
+  it('calls invoke with "get_system_language" and returns its answer', async () => {
+    mockInvoke.mockResolvedValueOnce('de');
+
+    const returned = await getSystemLanguage();
+
+    expect(mockInvoke).toHaveBeenCalledOnce();
+    expect(mockInvoke).toHaveBeenCalledWith('get_system_language');
+    expect(returned).toBe('de');
   });
 });
 
