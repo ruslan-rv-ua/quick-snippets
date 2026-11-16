@@ -20,6 +20,7 @@ import {
   deleteSnippet,
   getSettings,
   saveSettings,
+  updateSettings,
   getPendingNotification,
   quitApp,
   cancelClose,
@@ -484,5 +485,61 @@ describe('getSortedSnippets', () => {
     mockInvoke.mockRejectedValueOnce(new Error('sort failed'));
 
     await expect(getSortedSnippets('created', 'desc')).rejects.toThrow('sort failed');
+  });
+});
+
+// ── updateSettings ────────────────────────────────────────────────────────
+
+describe('updateSettings', () => {
+  /** get_settings returns a copy of `stored`; save_settings replaces it. */
+  function mockStore(initial: Settings) {
+    let stored = { ...initial };
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'get_settings') return { ...stored };
+      if (cmd === 'save_settings') {
+        stored = (args as { settings: Settings }).settings;
+      }
+      return undefined;
+    });
+    return () => stored;
+  }
+
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('changes only the given fields and keeps the rest', async () => {
+    const initial = makeSettings({ language: 'de', sort_mode: 'alphabetical', sort_direction: 'asc' });
+    const stored = mockStore(initial);
+
+    await updateSettings({ theme: 'light' });
+
+    expect(stored()).toEqual({ ...initial, theme: 'light' });
+  });
+
+  it('runs quick updates one after another, so none is lost', async () => {
+    const initial = makeSettings();
+    const stored = mockStore(initial);
+
+    await Promise.all([
+      updateSettings({ theme: 'light' }),
+      updateSettings({ sort_mode: 'last_used', sort_direction: 'desc' }),
+    ]);
+
+    expect(stored()).toEqual({
+      ...initial,
+      theme: 'light',
+      sort_mode: 'last_used',
+      sort_direction: 'desc',
+    });
+  });
+
+  it('a failed update rejects but does not block the next one', async () => {
+    const initial = makeSettings();
+    const stored = mockStore(initial);
+    mockInvoke.mockRejectedValueOnce(new Error('read failed'));
+
+    await expect(updateSettings({ theme: 'light' })).rejects.toThrow('read failed');
+    await updateSettings({ language: 'uk' });
+
+    expect(stored()).toEqual({ ...initial, language: 'uk' });
   });
 });

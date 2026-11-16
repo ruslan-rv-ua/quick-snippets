@@ -15,7 +15,7 @@ import {
   getPendingNotification,
   cancelClose,
   getSettings,
-  saveSettings,
+  updateSettings,
 } from './hooks/useIpc';
 
 import { SearchBox } from './components/SearchBox';
@@ -221,9 +221,7 @@ function AppInner(): React.ReactElement {
       setSortDirection(newDirection);
 
       // Persist to settings
-      getSettings()
-        .then((s) => saveSettings({ ...s, sort_mode: mode, sort_direction: newDirection }))
-        .catch(() => void 0);
+      updateSettings({ sort_mode: mode, sort_direction: newDirection }).catch(() => void 0);
 
       // Toast with translated label
       const labelKey = getSortLabelKey(mode, newDirection);

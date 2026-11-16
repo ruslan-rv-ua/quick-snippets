@@ -195,4 +195,26 @@ describe('SettingsModal', () => {
       expect(mockInvoke).toHaveBeenCalledWith('save_settings', expect.anything());
     });
   });
+
+  it('theme buttons change the theme but do not save it', async () => {
+    renderModal();
+    await waitFor(() => screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('button', { name: /light|світла|hell/i }));
+    expect(document.documentElement.classList.contains('theme-light')).toBe(true);
+    expect(mockInvoke).not.toHaveBeenCalledWith('save_settings', expect.anything());
+    document.documentElement.classList.remove('theme-light');
+  });
+
+  it('Save stores the theme chosen in the dialog', async () => {
+    renderModal();
+    await waitFor(() => screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('button', { name: /light|світла|hell/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save|зберегти/i }));
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('save_settings', {
+        settings: expect.objectContaining({ theme: 'light', sort_mode: 'modified' }),
+      });
+    });
+    document.documentElement.classList.remove('theme-light');
+  });
 });
