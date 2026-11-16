@@ -86,7 +86,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 
 ### Frontend Testing
 
-- Vitest v3 with jsdom environment, setup in [src/test/setup.ts](src/test/setup.ts).
+- Vitest v5 with jsdom environment (Vite 8), setup in [src/test/setup.ts](src/test/setup.ts).
 - Tauri APIs (`invoke`, `listen`, `emit`, `getCurrentWindow`) are mocked globally in setup.
 - TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` enforced.
 - Test files follow pattern: `src/**/__tests__/*.test.{ts,tsx}`.
