@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- A dialog opened right after the window appears now keeps the focus. Before, if you pressed F1 or Ctrl+N in the first moments after QuickSnippets started, the dialog opened, but focus jumped back to the search box behind it, so the screen reader left the dialog and the keys went to the search.
+
 ## v0.3.1 - 2026-11-17
 
 ### Fixed

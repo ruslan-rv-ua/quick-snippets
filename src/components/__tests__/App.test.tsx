@@ -131,6 +131,76 @@ describe('App: keyboard shortcuts help (F1)', () => {
     expect(search).toHaveFocus();
   });
 
+  describe('the delayed initial focus after the window content loads', () => {
+    /**
+     * Holds back the 60 ms initial-focus timer that useWindowEvents starts on mount, so a test
+     * can run it at a chosen moment. Returns a function that runs the held timer.
+     */
+    function holdInitialFocusTimer(): { restore: () => void; run: () => void } {
+      const realSetTimeout = globalThis.setTimeout;
+      let held: (() => void) | undefined;
+      const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+        fn: (...args: unknown[]) => void,
+        ms?: number,
+        ...args: unknown[]
+      ) => {
+        if (ms === 60 && !held) {
+          held = () => fn(...args);
+          return 0;
+        }
+        return realSetTimeout(fn, ms, ...args);
+      }) as unknown as typeof setTimeout);
+      return {
+        restore: () => spy.mockRestore(),
+        run: () => {
+          expect(held).toBeDefined();
+          act(() => held?.());
+        },
+      };
+    }
+
+    async function renderHoldingInitialFocus() {
+      const timer = holdInitialFocusTimer();
+      try {
+        render(<App />);
+        const search = await screen.findByRole('combobox');
+        return { search, runInitialFocus: timer.run };
+      } finally {
+        timer.restore();
+      }
+    }
+
+    it('moves focus to the search box when no dialog is open', async () => {
+      const { search, runInitialFocus } = await renderHoldingInitialFocus();
+      expect(search).not.toHaveFocus();
+      runInitialFocus();
+      expect(search).toHaveFocus();
+    });
+
+    it('does not take focus from the help opened with F1 before it runs', async () => {
+      const { runInitialFocus } = await renderHoldingInitialFocus();
+      fireEvent.keyDown(document.body, { key: 'F1', code: 'F1' });
+      const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+      const first = within(dialog).getAllByRole('option')[0];
+      expect(first).toHaveFocus();
+
+      runInitialFocus();
+      expect(first).toHaveFocus();
+    });
+
+    it('does not take focus from the new snippet dialog opened with Ctrl+N before it runs', async () => {
+      const { search, runInitialFocus } = await renderHoldingInitialFocus();
+      fireEvent.keyDown(document.body, { key: 'n', code: 'KeyN', ctrlKey: true });
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+      const focused = document.activeElement;
+
+      runInitialFocus();
+      expect(document.activeElement).toBe(focused);
+      expect(search).not.toHaveFocus();
+    });
+  });
+
   it('Escape in the help does not hide the window', async () => {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const search = await renderWithSearchFocused();
