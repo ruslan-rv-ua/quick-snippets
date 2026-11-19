@@ -57,9 +57,6 @@ describe('SearchBox', () => {
     expect(input).not.toHaveAttribute('aria-label');
     expect(input).not.toHaveAttribute('aria-labelledby');
     expect(input).not.toHaveAttribute('aria-autocomplete');
-    // The list is always on screen, not a popup; with the combo box default ("listbox") NVDA
-    // adds "opens list".
-    expect(input).toHaveAttribute('aria-haspopup', 'false');
   });
 
   it('the search box name is one short word in every language', () => {
@@ -72,6 +69,7 @@ describe('SearchBox', () => {
     renderSearchBox({ snippets: mockSnippets, activeIndex: 0 });
     const input = screen.getByRole('combobox');
     expect(input).toHaveAttribute('aria-controls', 'snippet-list');
+    expect(input).toHaveAttribute('aria-haspopup', 'listbox');
     expect(input).toHaveAttribute('aria-expanded', 'true');
   });
 

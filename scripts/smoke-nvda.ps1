@@ -156,11 +156,11 @@ $Role = @{
 # app it then enters again. Steps without the window showing forbid these.
 $FocusNoise = @($Role.Application, $Role.Unknown, 'Snippet Manager')
 
-# The search box is read as its short name, the combo box role and its states, and nothing more:
-# "Пошук, комбінований список, розгорнуто, можливо редагувати" and the query (or "порожньо").
-# Steps that read it expect the name exactly once (an empty field used to repeat it as the
-# placeholder) and forbid "has autocomplete", "opens list" and the old long name.
-$SearchBoxNoise = @($Role.AutoComplete, 'відкриває список|opens list|öffnet Liste', 'Пошук сніпетів')
+# The search box is read as its short name, the combo box role and its states:
+# "Пошук, комбінований список, розгорнуто, можливо редагувати, відкриває список" and the query
+# (or "порожньо"). Steps that read it expect the name exactly once (an empty field used to repeat
+# it as the placeholder) and forbid "has autocomplete" and the old long name.
+$SearchBoxNoise = @($Role.AutoComplete, 'Пошук сніпетів')
 
 # Throwaway values for the throwaway copy of the app.
 $Data = @{

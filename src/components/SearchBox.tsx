@@ -85,16 +85,16 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
         type="search"
         className="search-input"
         role="combobox"
+        aria-haspopup="listbox"
         aria-controls="snippet-list"
         aria-expanded={snippets.length > 0}
         // No aria-label: the name comes from the placeholder. With a separate label Chromium also
         // exposes the placeholder, and NVDA says it a second time while the field is empty.
         // No aria-autocomplete: the list holds results, not completions of the typed text, and
-        // NVDA would add "has autocomplete" every time it comes back to the search box.
-        // aria-haspopup="false": the snippet list is always on screen, it is not a popup. A combo
-        // box otherwise defaults to "listbox", which NVDA reads as "opens list" (aria-controls
-        // still ties the search box to the list).
-        aria-haspopup="false"
+        // NVDA would add "has autocomplete" every time it comes back to the search box. NVDA then
+        // says "opens list" for aria-haspopup instead: Chromium exposes "listbox" for every combo
+        // box, even with aria-haspopup="false", and NVDA leaves "opens list" out only while it
+        // reports "has autocomplete". One of the two is always heard; "opens list" is shorter.
         aria-activedescendant={activeSnippetId}
         autoComplete="off"
         spellCheck={false}
