@@ -413,6 +413,12 @@ pub fn run() {
             // from the program the user was in, and a screen reader announced it. A window
             // that is only created hidden still takes the keyboard, invisibly, because the
             // web content focuses itself when it is created; hence also "without focus".
+            //
+            // The embedded browser (WebView2) gets its own data folder next to the exe
+            // (`paths::get_webview_data_dir`). Without it Tauri puts the browser profile in
+            // %LOCALAPPDATA%\com.quicksnippets.app: outside the portable folder, and shared
+            // by every copy of the app on the computer. Versions up to 0.3.3 did so; that
+            // folder is left alone now, for any older copy that still uses it.
             let start_in_tray = app
                 .state::<AppState>()
                 .settings
@@ -431,6 +437,7 @@ pub fn run() {
             let win = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
                 .visible(shown)
                 .focused(shown)
+                .data_directory(paths::get_webview_data_dir())
                 .build()?;
 
             // ── Apply saved window state ──────────────────────────────────
