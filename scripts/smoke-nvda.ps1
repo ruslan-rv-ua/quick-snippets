@@ -31,8 +31,22 @@
     The keyboard shortcuts help (F1) does not depend on that setting: every row is
     a list option whose name holds the keys and the action.
 
+    With -StartInTray the test copy starts hidden in the tray («Запускати згорнутим у трей»
+    on), as after a login with autostart. Its window is first shown by Ctrl+Alt+Space, and
+    NVDA must read the search box on that very first show. The restart near the end is a
+    start in the tray too. The other steps are the same as in the default run.
+
+.PARAMETER StartInTray
+    Start the test copy hidden in the tray and show its window with Ctrl+Alt+Space.
+
+.PARAMETER TrayIdleSec
+    With -StartInTray: how long the hidden copy is left alone before the first Ctrl+Alt+Space.
+
 .EXAMPLE
     just smoke
+
+.EXAMPLE
+    just smoke-tray
 
 .EXAMPLE
     powershell -NoProfile -File scripts/smoke-nvda.ps1 -Exe path\to\quick-snippets.exe
@@ -43,7 +57,9 @@ param(
     [string]$NvdaLog,
     [int]$TimeoutSec = 8,
     [int]$SpeechWaitSec = 5,
-    [int]$SettleMs = 700
+    [int]$SettleMs = 700,
+    [switch]$StartInTray,
+    [int]$TrayIdleSec = 5
 )
 
 $ErrorActionPreference = 'Stop'
@@ -149,6 +165,8 @@ $Role = @{
     ComboBox   = 'комбінований список|combo box|Kombinationsfeld'
     CheckBox   = 'прапорець|check box|Kontrollfeld'
     NotChecked = 'не позначено|not checked|nicht aktiviert'
+    # Also part of every "not checked" phrase: forbid NotChecked next to it.
+    Checked    = 'позначено|checked|aktiviert'
     SpinButton = 'кнопка прокрутки|spin button|Drehschalter'
     Button     = 'кнопка|button|Schalter'
     List       = 'список|list|Liste'
@@ -224,6 +242,26 @@ public static class QsSmokeNative {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder text, int max);
     delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int max);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hWnd, uint cmd);
+
+    // The top-level window of this process with this title and at least one child window
+    // (the web content), shown or hidden. UI Automation does not list a hidden window.
+    public static IntPtr FindProcessWindow(uint processId, string title) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr h, IntPtr l) {
+            uint pid;
+            GetWindowThreadProcessId(h, out pid);
+            if (pid != processId) return true;
+            System.Text.StringBuilder text = new System.Text.StringBuilder(256);
+            GetWindowText(h, text, 256);
+            if (text.ToString() != title || GetWindow(h, 5) == IntPtr.Zero) return true;  // GW_CHILD
+            found = h;
+            return false;
+        }, IntPtr.Zero);
+        return found;
+    }
 
     // The first window of this class anywhere inside the given window.
     public static IntPtr FindDescendant(IntPtr parent, string className) {
@@ -245,6 +283,13 @@ public static class QsSmokeNative {
         public RECT rcCaret;
     }
     [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO info);
+
+    public static string ClassOf(IntPtr hwnd) {
+        if (hwnd == IntPtr.Zero) return "";
+        System.Text.StringBuilder name = new System.Text.StringBuilder(128);
+        GetClassName(hwnd, name, 128);
+        return name.ToString();
+    }
 
     // The window that has the keyboard right now (in the thread of the foreground window).
     public static IntPtr KeyboardWindow() {
@@ -419,6 +464,48 @@ function Test-AppReady {
 function Show-App {
     if ($script:HotkeyBroken) { Start-Process $TestExe } else { Send-Keys 'Ctrl+Alt+Space' }
     Wait-Until 'вікно програми з фокусом' { Test-AppReady }
+}
+
+# A start in the tray. Waits until the hidden copy is ready: its window with the web content
+# exists, has stayed hidden for 0.3 s and the app holds Ctrl+Alt+Space. Then leaves the copy
+# alone for $TrayIdleSec, as a user does who presses the hotkey some time after login.
+# The app creates its window shown and hides it during startup, so the window is watched
+# from the start: the step reports whether it was on screen or took the keyboard meanwhile.
+function Wait-HiddenStart {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $wasVisible = $false
+    $wasForeground = $false
+    $hiddenAt = $null
+    $ready = $false
+    while ($clock.Elapsed.TotalSeconds -lt 20) {
+        if ($script:AppProc.HasExited) { throw "програма завершилась, код $($script:AppProc.ExitCode)" }
+        $h = [QsSmokeNative]::FindProcessWindow([uint32]$script:AppProc.Id, 'QuickSnippets')
+        if ($h -ne [IntPtr]::Zero) {
+            if ([QsSmokeNative]::IsWindowVisible($h)) {
+                $wasVisible = $true
+                $hiddenAt = $null
+                if ([QsSmokeNative]::GetForegroundWindow() -eq $h) { $wasForeground = $true }
+            } elseif ($null -eq $hiddenAt) {
+                $hiddenAt = $clock.ElapsedMilliseconds
+            } elseif (($clock.ElapsedMilliseconds - $hiddenAt) -ge 300) {
+                if (-not [QsSmokeNative]::HotkeyFree()) { $ready = $true; break }
+                Start-Sleep -Milliseconds 300
+            }
+        }
+        Start-Sleep -Milliseconds 10
+    }
+    if (-not $ready) {
+        if ($wasVisible -and $null -eq $hiddenAt) { throw 'вікно програми лишилося на екрані, хоча увімкнено запуск у треї' }
+        throw 'не дочекався, доки схована програма зареєструє Ctrl+Alt+Space'
+    }
+    $screen = if ($wasForeground) { 'вікно на мить показалося на екрані й забрало клавіатуру' }
+              elseif ($wasVisible) { 'вікно на мить показалося на екрані, клавіатури не забирало' }
+              else { 'вікно на екрані не показувалося' }
+    $script:StepInfo = "схована програма готова за $($clock.ElapsedMilliseconds) мс; $screen"
+    Start-Sleep -Seconds $TrayIdleSec
+    if ($script:AppProc.HasExited) { throw "програма завершилась, код $($script:AppProc.ExitCode)" }
+    if (Get-AppWindow) { throw 'вікно програми відкрилося само, без Ctrl+Alt+Space' }
+    Enter-Target
 }
 
 function Find-TextLike([string]$Pattern) {
@@ -664,16 +751,18 @@ function Invoke-Step {
         [string[]]$Hope = @(),
         [string]$SkipReason
     )
-    $r = [pscustomobject]@{ N = $Results.Count + 1; Title = $Title; Status = 'OK'; Detail = ''; Speech = @(); Checks = @() }
+    $r = [pscustomobject]@{ N = $Results.Count + 1; Title = $Title; Status = 'OK'; Detail = ''; Info = ''; Speech = @(); Checks = @() }
     if ($SkipReason) { $r.Status = 'ПРОПУЩЕНО'; $r.Detail = $SkipReason; $Results.Add($r); return }
     if ($script:Aborted) { $r.Status = 'ПРОПУЩЕНО'; $r.Detail = 'попередній крок не вдався'; $Results.Add($r); return }
 
     $from = Get-LogLength
     $script:SoftFail = $null  # a step sets this to fail without stopping the remaining steps
     $script:SpeechUntil = $null  # a step sets this log offset to ignore what NVDA says after it
+    $script:StepInfo = $null  # a step sets this to add a line of measurements to the report
     try { $null = & $Action }
     catch { $r.Status = 'ПОМИЛКА'; $r.Detail = $_.Exception.Message; $script:Aborted = $true }
     if ($r.Status -eq 'OK' -and $script:SoftFail) { $r.Status = 'ПОМИЛКА'; $r.Detail = $script:SoftFail }
+    if ($script:StepInfo) { $r.Info = $script:StepInfo }
 
     if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectAny.Count -or $ExpectCount.Count -or $ExpectSaid.Count)) {
         # NVDA can lag behind the app: wait until it has said what we expect.
@@ -790,9 +879,11 @@ try {
     $dataDir = Join-Path $Work 'quick-snippets-data'
     $null = New-Item -ItemType Directory -Force -Path $dataDir
     Copy-Item $Exe $TestExe
+    $trayAtStart = [bool]$StartInTray
     $settings = [ordered]@{
         # Like a default install: the window opens at launch (start_in_tray off).
-        theme = 'dark'; start_in_tray = $false; autostart = $false; confirm_on_close = $false; language = 'uk'
+        # With -StartInTray: hidden at launch, as after a login with autostart.
+        theme = 'dark'; start_in_tray = $trayAtStart; autostart = $false; confirm_on_close = $false; language = 'uk'
         window_state = [ordered]@{ x = 100; y = 100; width = 680; height = 520 }
         # 7: a value that no label or hint of the settings dialog contains, so the
         # settings steps can check that NVDA reads the value of the delay field.
@@ -810,20 +901,7 @@ try {
     }
     $script:AppProc = Start-Process $TestExe -PassThru
 
-    # NVDA may stay silent about the very first show of a freshly started window until the
-    # next key press, so this step only hopes for speech; later shows are checked strictly.
-    Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, Escape його ховає' {
-        $null = Wait-Until 'вікно програми після запуску' { Get-AppWindow } 20
-        if (-not (Test-AppReady)) {
-            $w = Get-AppWindow
-            $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
-        }
-        $null = Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
-        Send-Keys 'Esc'
-        Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
-    } -Hope $UI.SearchPlaceholder
-
-    Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' {
+    $hotkeyShowsWindow = {
         Send-Keys 'Ctrl+Alt+Space'
         $shown = $true
         try { $null = Wait-Until 'вікно програми' { Get-AppWindow } 6 }
@@ -845,7 +923,40 @@ try {
             $script:SoftFail += '; далі вікно відкривається повторним запуском exe'
         }
         Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
-    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
+    }
+    # A first show read through UI Automation instead of IAccessible2 (the quick-restart effect,
+    # see DEVELOPMENT.md) names the document address.
+    $firstShowNoise = $SearchBoxNoise + 'tauri.localhost'
+
+    if ($StartInTray) {
+        Invoke-Step 'Запуск у треї: вікно не відкривається, фокус лишається в тестовому вікні' {
+            Wait-HiddenStart
+        }
+
+        # The window has never been on screen with the keyboard in it. NVDA must read the
+        # search box at once, not only after the next key press.
+        Invoke-Step 'Ctrl+Alt+Space вперше показує вікно: NVDA читає поле пошуку' {
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            $null = & $hotkeyShowsWindow
+            $script:StepInfo = 'від Ctrl+Alt+Space до фокуса в полі пошуку {0} мс; клавіатура у вікні класу {1}' -f
+                $clock.ElapsedMilliseconds, [QsSmokeNative]::ClassOf([QsSmokeNative]::KeyboardWindow())
+        } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $firstShowNoise
+    } else {
+        # NVDA may stay silent about the very first show of a freshly started window until the
+        # next key press, so this step only hopes for speech; later shows are checked strictly.
+        Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, Escape його ховає' {
+            $null = Wait-Until 'вікно програми після запуску' { Get-AppWindow } 20
+            if (-not (Test-AppReady)) {
+                $w = Get-AppWindow
+                $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+            }
+            $null = Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
+            Send-Keys 'Esc'
+            Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
+        } -Hope $UI.SearchPlaceholder
+
+        Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' $hotkeyShowsWindow -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
+    }
 
     Invoke-Step 'Ctrl+N відкриває діалог створення, фокус у полі «Назва»' {
         Send-Keys 'Ctrl+N'
@@ -1084,9 +1195,11 @@ try {
         & $tabTo 'settings-autostart' $UI.Autostart
     } -Expect $UI.GroupStartup, $UI.Autostart, $UI.AutostartHint -ExpectAny $Role.Grouping, $Role.CheckBox, $Role.NotChecked
 
+    $trayBoxState = if ($trayAtStart) { @{ ExpectAny = $Role.CheckBox, $Role.Checked; Forbid = $Role.NotChecked } }
+                    else { @{ ExpectAny = $Role.CheckBox, $Role.NotChecked } }
     Invoke-Step 'Tab: прапорець «Запускати згорнутим у трей» з підказкою' {
         & $tabTo 'settings-tray' $UI.StartInTray
-    } -Expect $UI.StartInTray, $UI.StartInTrayHint -ExpectAny $Role.CheckBox, $Role.NotChecked
+    } -Expect $UI.StartInTray, $UI.StartInTrayHint @trayBoxState
 
     Invoke-Step 'Tab: прапорець «Питати перед закриттям програми» з підказкою' {
         & $tabTo 'settings-confirm' $UI.ConfirmOnClose
@@ -1217,7 +1330,7 @@ try {
 
     # The same sequence as in the autostart steps, repeated, because the keyboard stays away
     # from the content only now and then (before the fix: in 2 of 7 repeats). An even number
-    # of repeats leaves «Запускати згорнутим у трей» off for the restart near the end.
+    # of repeats leaves «Запускати згорнутим у трей» as it was for the restart near the end.
     Invoke-Step 'Вікно відкрите, Ctrl+Alt+Space, Ctrl+кома, зміна через UI Automation, Ctrl+Enter: шість разів поспіль зміну збережено' {
         for ($i = 1; $i -le 6; $i++) {
             $want = -not [bool](& $readSettings).start_in_tray
@@ -1237,15 +1350,15 @@ try {
         }
         & $assertSaved 'dark' 'uk'
         $s = & $readSettings
-        if ($s.start_in_tray -ne $false -or $s.autotype_delay_ms -ne 7) { throw 'після шести змін інші налаштування не такі, як були' }
+        if ($s.start_in_tray -ne $trayAtStart -or $s.autotype_delay_ms -ne 7) { throw 'після шести змін інші налаштування не такі, як були' }
     } -Expect $UI.Settings, $UI.StartInTray
 
     # The same failure, made to happen every time: the keyboard is put on the internal WebView2
     # window that holds the accessibility tree, where a UI Automation action leaves it now and
     # then. Before the fix the app hid its window 0.2 s later, every time. Twice, so that
-    # «Запускати згорнутим у трей» ends up off again.
+    # «Запускати згорнутим у трей» ends up as it was again.
     Invoke-Step 'Клавіатура на внутрішньому вікні WebView2, налаштування відкриті: вікно лишається, Ctrl+Enter зберігає' {
-        foreach ($want in $true, $false) {
+        foreach ($want in (-not $trayAtStart), $trayAtStart) {
             Show-App
             Send-Keys 'Ctrl+Comma'
             $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-tray' }
@@ -1633,18 +1746,37 @@ try {
     } -Expect $UI.ExitTitle
 
     # The same exe and data folder: what a user gets after quitting and starting again.
-    Invoke-Step 'Перезапуск тестової копії: світла тема, видалений сніпет не повернувся' {
-        try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
-        $script:AppProc = Start-Process $TestExe -PassThru
-        $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
-        if (-not (Test-AppReady)) {
-            $w = Get-AppWindow
-            $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+    if ($StartInTray) {
+        Invoke-Step 'Перезапуск тестової копії в треї: вікно не відкривається' {
+            try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
+            if (-not [bool](& $readSettings).start_in_tray) { throw 'перед перезапуском «Запускати згорнутим у трей» вимкнено в settings.json' }
+            $script:AppProc = Start-Process $TestExe -PassThru
+            Wait-HiddenStart
         }
-        Wait-Until 'вікно з фокусом' { Test-AppReady }
-        Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
-        if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
-    } -Hope $UI.SearchPlaceholder
+
+        # The first show after this start: the search box and, once, the only snippet.
+        Invoke-Step 'Ctrl+Alt+Space вперше після перезапуску: NVDA читає поле пошуку; світла тема, видалений сніпет не повернувся' {
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            Show-App
+            $script:StepInfo = 'від Ctrl+Alt+Space до фокуса у вікні {0} мс; клавіатура у вікні класу {1}' -f
+                $clock.ElapsedMilliseconds, [QsSmokeNative]::ClassOf([QsSmokeNative]::KeyboardWindow())
+            Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
+            if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
+        } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $firstShowNoise -Hope $Data.SecretTitle
+    } else {
+        Invoke-Step 'Перезапуск тестової копії: світла тема, видалений сніпет не повернувся' {
+            try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
+            $script:AppProc = Start-Process $TestExe -PassThru
+            $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
+            if (-not (Test-AppReady)) {
+                $w = Get-AppWindow
+                $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+            }
+            Wait-Until 'вікно з фокусом' { Test-AppReady }
+            Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
+            if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
+        } -Hope $UI.SearchPlaceholder
+    }
 
     Invoke-Step 'Ctrl+, після перезапуску: тема світла' {
         Send-Keys 'Ctrl+Comma'
@@ -1675,6 +1807,7 @@ finally {
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add(('Звіт перевірки QuickSnippets з NVDA, {0:dd.MM.yyyy HH:mm}' -f (Get-Date)))
 $lines.Add(('Exe: {0}, зібрано {1:dd.MM.yyyy HH:mm}' -f $Exe, $exeTime))
+if ($StartInTray) { $lines.Add("Режим: запуск у треї, перед першим Ctrl+Alt+Space програма $TrayIdleSec с лишається схованою") }
 if ($script:LogPath) { $lines.Add("Лог NVDA: $script:LogPath") } else { $lines.Add('NVDA: мовлення не перевірялось') }
 if ($script:SetupError) { $lines.Add("Підготовка: ПОМИЛКА ($script:SetupError)") }
 foreach ($note in $Notes) { $lines.Add("Увага: $note") }
@@ -1685,6 +1818,7 @@ foreach ($r in $Results) {
     $line = 'Крок {0}. {1}: {2}' -f $r.N, $r.Title, $r.Status
     if ($r.Detail) { $line += " ($($r.Detail))" }
     $lines.Add($line)
+    if ($r.Info) { $lines.Add("  Виміри: $($r.Info)") }
     switch ($r.Status) { 'OK' { $appOk++ } 'ПОМИЛКА' { $appFail++ } default { $skipped++ } }
     if ($r.Speech.Count) {
         $anySpeech = $true
