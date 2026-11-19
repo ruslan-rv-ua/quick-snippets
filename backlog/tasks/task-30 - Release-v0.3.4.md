@@ -4,6 +4,7 @@ title: Release v0.3.4
 status: To Do
 assignee: []
 created_date: '2026-11-19T16:42:00Z'
+updated_date: '2026-11-19T19:06:00Z'
 labels:
   - release
   - model-sonnet
@@ -13,6 +14,7 @@ dependencies:
   - TASK-27
   - TASK-28
   - TASK-29
+  - TASK-31
 references:
   - DEVELOPMENT.md
   - CHANGELOG.md
@@ -24,7 +26,7 @@ ordinal: 4000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Ships the fixes made after 0.3.3: with "Start in tray" the window no longer flashes at startup and takes the keyboard, and NVDA reads the first Ctrl+Alt+Space show properly (TASK-5, already in develop); the browser data stays next to the exe (TASK-27); translated startup error dialogs, and a damaged database that is kept instead of deleted (TASK-28); and whatever TASK-29 changes. Planned as a patch release: none of these tasks is meant to change the database or the settings format, so going back to 0.3.x stays safe. The user chose 0.3.4 (2026-11-19); if one of the tasks does change a format, ask the user about the version again.
+Ships the fixes made after 0.3.3: with "Start in tray" the window no longer flashes at startup and takes the keyboard, and NVDA reads the first Ctrl+Alt+Space show properly (TASK-5, already in develop); the browser data stays next to the exe (TASK-27, already in develop); translated startup error dialogs, and a damaged database that is kept instead of deleted (TASK-28); turning "Start with Windows" off also removes the Task Manager mark from the registry (TASK-31); and whatever TASK-29 changes, including the fix for the first default start with an empty browser profile. Planned as a patch release: none of these tasks is meant to change the database or the settings format, so going back to 0.3.x stays safe. The user chose 0.3.4 (2026-11-19); if one of the tasks does change a format, ask the user about the version again. CHANGELOG [Unreleased] must not ship the Known Limitations entry TASK-27 added, unless the user accepts it.
 
 Same procedure as v0.3.3 (DEVELOPMENT.md; see the archived TASK-24). CI does not run on push, so do not wait for CI after pushing develop or main. The Release workflow runs lint and both test suites on a clean machine before the build, and a failing check stops it before the tag and the release exist; if it fails, fix the cause and run it again. Pushing and running workflows need the user's go-ahead, and so do the just smoke and just smoke-tray runs (about two and a half minutes each; leave a minute between two runs). Finish the release with --no-ff and --notag: main gets a release merge commit, and the Release workflow creates the tag.
 

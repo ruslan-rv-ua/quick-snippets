@@ -4,18 +4,20 @@ title: Remove the Task Manager mark when autostart is turned off
 status: To Do
 assignee: []
 created_date: '2026-11-19T19:03:00Z'
+updated_date: '2026-11-19T19:06:00Z'
 labels:
   - bug
   - backend
   - model-sonnet
   - effort-medium
+milestone: m-6
 dependencies: []
 references:
   - src-tauri/src/commands.rs
   - scripts/smoke-nvda.ps1
   - README.md
 priority: low
-ordinal: 5000
+ordinal: 3500
 ---
 
 ## Description
