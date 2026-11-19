@@ -52,7 +52,7 @@ if (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\src-tauri\target\release\qui
 
 # Ukrainian UI strings from src/i18n/translations.ts ("uk"). The test copy runs with language = uk.
 $UI = @{
-    SearchPlaceholder = 'Пошук сніпетів'
+    SearchPlaceholder = 'Пошук'
     CreateTitle       = 'Створити сніпет'
     EditTitle         = 'Редагувати сніпет'
     TitleLabel        = 'Назва'
@@ -148,12 +148,19 @@ $Role = @{
     Application = 'додаток|application|Anwendung'
     Unknown    = 'невідомо|unknown|unbekannt'
     Blank      = 'порожньо|blank|leer'
+    AutoComplete = 'автоматичне заповнення|auto complete|autocomplete|Autovervollständigung'
 }
 
 # What NVDA says when focus falls to the document on its way back from a dialog to the main
 # window: "unknown" (or "blank"), the window title with "document", and "application" for the
 # app it then enters again. Steps without the window showing forbid these.
 $FocusNoise = @($Role.Application, $Role.Unknown, 'Snippet Manager')
+
+# The search box is read as its short name, the combo box role and its states, and nothing more:
+# "Пошук, комбінований список, розгорнуто, можливо редагувати" and the query (or "порожньо").
+# Steps that read it expect the name exactly once (an empty field used to repeat it as the
+# placeholder) and forbid "has autocomplete" and the old long name.
+$SearchBoxNoise = @($Role.AutoComplete, 'Пошук сніпетів')
 
 # Throwaway values for the throwaway copy of the app.
 $Data = @{
@@ -825,7 +832,7 @@ try {
             $script:SoftFail += '; далі вікно відкривається повторним запуском exe'
         }
         Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
-    } -Expect $UI.SearchPlaceholder
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
 
     Invoke-Step 'Ctrl+N відкриває діалог створення, фокус у полі «Назва»' {
         Send-Keys 'Ctrl+N'
@@ -1001,7 +1008,7 @@ try {
             (Test-HasFocus (Get-SearchBox)) -and -not (Get-FocusedListItem) -and
             (Find-Element (Get-AppWindow) -Type ([System.Windows.Automation.ControlType]::ListItem))
         }
-    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.SecretTitle) = 1 }
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1; ($Data.SecretTitle) = 1 } -Forbid $SearchBoxNoise
 
     # Settings dialog: what NVDA says on opening and at every Tab stop, in the visual
     # order, and that Escape brings back the theme and language without saving.
@@ -1230,7 +1237,7 @@ try {
     Invoke-Step 'Інше вікно стає активним: вікно програми ховається, Ctrl+Alt+Space повертає його' {
         & $leaveApp
         Show-App
-    } -Expect $UI.SearchPlaceholder
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
 
     Invoke-Step 'Те саме з відкритими налаштуваннями: після повернення діалог на місці, фокус у ньому' {
         Send-Keys 'Ctrl+Comma'
@@ -1390,7 +1397,7 @@ try {
             (& $searchValue) -eq 'smoke зв' -and (& $listIs @($secretName, $Data.PlainTitle))
         }
         Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
-    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.SecretTitle) = 1 }
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1; ($Data.SecretTitle) = 1 } -Forbid $SearchBoxNoise
 
     Invoke-Step 'Стрілка вниз з поля пошуку: NVDA читає вибраний сніпет' {
         Send-Keys 'Down'
@@ -1404,7 +1411,7 @@ try {
         $selected = $false
         try { $selected = [bool](Wait-Until 'сніпет лишився вибраним' { & $isSelected (& $plainItem) } 3) } catch { }
         if (-not $selected) { $script:SoftFail = 'сніпет «smoke звичайний» більше не позначено вибраним' }
-    } -Expect $UI.SearchPlaceholder -Forbid $Data.PlainTitle, $Data.SecretTitle
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid ($SearchBoxNoise + $Data.PlainTitle + $Data.SecretTitle)
 
     # "smoke зв" with the caret before "в": Left reads "з", Right reads "в".
     Invoke-Step 'Стрілки вліво й вправо в полі пошуку читають символ біля курсора' {
@@ -1434,7 +1441,7 @@ try {
             (& $searchValue) -eq '' -and (& $listIs @($Data.PlainTitle, $secretName))
         }
         Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
-    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.PlainTitle) = 1 }
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1; ($Data.PlainTitle) = 1 } -Forbid $SearchBoxNoise
 
     # Delete in the search box erases text while there is text to erase; only with nothing to
     # erase does it ask to delete the selected snippet. "звч" and "зв" still find the plain snippet.
