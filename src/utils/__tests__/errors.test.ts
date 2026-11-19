@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ipcErrorToString, parseContentTooLong } from '../errors';
+import { ipcErrorToString, parseContentTooLong, parseTitleLength } from '../errors';
 
 describe('ipcErrorToString', () => {
   it('keeps a string and turns anything else into one', () => {
@@ -33,6 +33,27 @@ describe('parseContentTooLong', () => {
       '',
     ]) {
       expect(parseContentTooLong(message), message).toBeNull();
+    }
+  });
+});
+
+// The backend writes this error in check_title (src-tauri/src/commands.rs).
+describe('parseTitleLength', () => {
+  it('reads the number of characters of a title out of its limits', () => {
+    expect(parseTitleLength('Title must be 3 to 50 characters (51 characters)')).toBe(51);
+    expect(parseTitleLength('Title must be 3 to 50 characters (2 characters)')).toBe(2);
+    expect(parseTitleLength('Title must be 3 to 50 characters (0 characters)')).toBe(0);
+  });
+
+  it('returns null for every other error', () => {
+    for (const message of [
+      'Title already exists',
+      'Title too long (max 50 chars)',
+      'Content too long (70000 bytes, max 65536 bytes)',
+      'CHECK constraint failed: length(title) >= 3 AND length(title) <= 50',
+      '',
+    ]) {
+      expect(parseTitleLength(message), message).toBeNull();
     }
   });
 });
