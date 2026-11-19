@@ -41,7 +41,8 @@ pub const READY_TIMEOUT_MS: u64 = 3000;
 ///
 /// Measured in TASK-29 with NVDA 2026.2 on a fast computer, where the page was ready 0.37 s
 /// after the start: a window shown 0.2 or 0.4 s later was read the wrong way (4 of 4), one
-/// shown 0.6 s or more later the right way (9 of 9, four of them with every processor busy).
+/// shown 0.6 s or more later the right way (9 of 9, four of them with the computer under
+/// load: once with half of the processors kept busy, three times with all of them).
 /// A slower computer needs longer for everything, the embedded browser's start included, so
 /// the pause grows with the time the start has taken.
 pub const SCREEN_READER_PAUSE_FACTOR: u64 = 3;
