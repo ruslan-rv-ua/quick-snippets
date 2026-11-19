@@ -61,6 +61,94 @@ describe('CreateSnippetModal', () => {
     });
   });
 
+  // The database counts a title in characters (code points), whatever the script.
+  describe('title length in characters', () => {
+    const fill = (title: string) => {
+      fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: title } });
+      fireEvent.change(screen.getByLabelText(/^content|^вміст/i), { target: { value: 'some content' } });
+    };
+
+    for (const [name, title] of [
+      ['Cyrillic', 'Ж'.repeat(50)],
+      ['emoji', '😀'.repeat(50)],
+    ] as const) {
+      it(`saves a title of 50 ${name} characters`, async () => {
+        mockInvoke.mockResolvedValue(undefined);
+        const onSuccess = vi.fn();
+        renderModal({ onSuccess });
+        fill(title);
+        save();
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+        expect(mockInvoke).toHaveBeenCalledWith('create_snippet', expect.objectContaining({ title }));
+        expect(region('create-title-err')).toBeEmptyDOMElement();
+      });
+    }
+
+    for (const [name, title] of [
+      ['Cyrillic', 'Ж'.repeat(51)],
+      ['emoji', '😀'.repeat(51)],
+    ] as const) {
+      it(`refuses a title of 51 ${name} characters with the count under Title`, async () => {
+        renderModal();
+        fill(title);
+        const titleInput = screen.getByLabelText(/title|назва/i) as HTMLInputElement;
+        save();
+        await waitFor(() => {
+          expect(region('create-title-err')).toHaveTextContent(/3.*50.*(now|зараз|jetzt) 51$/);
+          expect(document.activeElement).toBe(titleInput);
+        });
+        expect(titleInput).toHaveAttribute('aria-invalid', 'true');
+        expect(titleInput.value).toBe(title);
+        expect(mockInvoke).not.toHaveBeenCalledWith('create_snippet', expect.anything());
+      });
+    }
+
+    it('refuses a title of two emoji, which are four UTF-16 units', async () => {
+      renderModal();
+      fill('😀😀');
+      save();
+      await waitFor(() => {
+        expect(region('create-title-err')).toHaveTextContent(/(now|зараз|jetzt) 2$/);
+      });
+      expect(mockInvoke).not.toHaveBeenCalledWith('create_snippet', expect.anything());
+    });
+
+    it('does not cut the title field: it has no maxLength', () => {
+      renderModal();
+      expect(screen.getByLabelText(/title|назва/i)).not.toHaveAttribute('maxLength');
+    });
+
+    it('translates a title error of the backend and shows it under Title', async () => {
+      mockInvoke.mockRejectedValue('Title must be 3 to 50 characters (51 characters)');
+      renderModal();
+      fill('Valid Title');
+      save();
+      await waitFor(() => {
+        expect(region('create-title-err')).toHaveTextContent(/3.*50.*(now|зараз|jetzt) 51$/);
+      });
+      expect(region('create-title-err')).not.toHaveTextContent('(51 characters)');
+      expect(region('create-content-err')).toBeEmptyDOMElement();
+    });
+  });
+
+  // A paste longer than a snippet holds stays in the field; the backend's message tells why.
+  it('keeps content of more than 65,536 characters in the field and shows the size under Content', async () => {
+    const long = 'x'.repeat(70000);
+    mockInvoke.mockRejectedValue('Content too long (70000 bytes, max 65536 bytes)');
+    renderModal();
+    const content = screen.getByLabelText(/^content|^вміст/i) as HTMLTextAreaElement;
+    expect(content).not.toHaveAttribute('maxLength');
+    fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
+    fireEvent.change(content, { target: { value: long } });
+    save();
+    await waitFor(() => {
+      expect(region('create-content-err')).toHaveTextContent(/70000.*65536/);
+      expect(document.activeElement).toBe(content);
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('create_snippet', expect.objectContaining({ content: long }));
+    expect(content.value).toBe(long);
+  });
+
   it('validates content required on save click and focuses content field', async () => {
     renderModal();
     const titleInput = screen.getByLabelText(/title|назва/i);

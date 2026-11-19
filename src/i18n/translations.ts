@@ -52,7 +52,12 @@ export interface TranslationMap {
   of: string;
 
   // ── Validation messages ──────────────────────────────────────────────────
-  titleValidation: string;
+  /**
+   * A title out of its limits (3 to 50 characters); `count` is its current number of
+   * characters as the database counts them (Unicode code points), so that a user sees
+   * how much to shorten, also when an emoji counts as more than one character.
+   */
+  titleLength: (count: number) => string;
   titleDuplicate: string;
   contentValidation: string;
   /**
@@ -167,7 +172,7 @@ const en: TranslationMap = {
   of: 'of',
 
   // Validation
-  titleValidation: 'Title must be 3–50 characters',
+  titleLength: (count) => `Title must be 3–50 characters, now ${count}`,
   titleDuplicate: 'A snippet with this title already exists',
   contentValidation: 'Content must not be empty',
   contentTooLong: (size, max, encrypted) =>
@@ -312,7 +317,7 @@ const uk: TranslationMap = {
   of: 'з',
 
   // Validation
-  titleValidation: 'Назва має бути від 3 до 50 символів',
+  titleLength: (count) => `Назва має бути від 3 до 50 символів, зараз ${count}`,
   titleDuplicate: 'Сніпет з такою назвою вже існує',
   contentValidation: 'Вміст не може бути порожнім',
   contentTooLong: (size, max, encrypted) =>
@@ -452,7 +457,7 @@ const de: TranslationMap = {
   of: 'von',
 
   // Validation
-  titleValidation: 'Titel muss 3–50 Zeichen lang sein',
+  titleLength: (count) => `Titel muss 3–50 Zeichen lang sein, jetzt ${count}`,
   titleDuplicate: 'Ein Snippet mit diesem Titel existiert bereits',
   contentValidation: 'Inhalt darf nicht leer sein',
   contentTooLong: (size, max, encrypted) =>

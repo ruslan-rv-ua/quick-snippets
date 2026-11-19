@@ -33,3 +33,15 @@ export function parseContentTooLong(message: string): ContentTooLong | null {
     encrypted: match[1] !== undefined,
   };
 }
+
+/** The text of `check_title` in src-tauri/src/commands.rs: change the two together. */
+const TITLE_LENGTH = /^Title must be \d+ to \d+ characters \((\d+) characters\)$/;
+
+/**
+ * Reads the number of characters from a "title out of its limits" error of the backend,
+ * so that the dialogs can say it in the user's language. `null` for any other error.
+ */
+export function parseTitleLength(message: string): number | null {
+  const match = TITLE_LENGTH.exec(message);
+  return match ? Number(match[1]) : null;
+}

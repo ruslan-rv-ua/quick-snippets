@@ -64,6 +64,14 @@ describe('translations', () => {
     expect(one).not.toEqual(many);
   });
 
+  // A title out of its limits: what the create and edit dialogs say under Title.
+  it('titleLength names the limits and the current number of characters in each language', () => {
+    expect(translations.en.titleLength(51)).toBe('Title must be 3–50 characters, now 51');
+    expect(translations.uk.titleLength(51)).toBe('Назва має бути від 3 до 50 символів, зараз 51');
+    expect(translations.de.titleLength(51)).toBe('Titel muss 3–50 Zeichen lang sein, jetzt 51');
+    expect(translations.uk.titleLength(0)).toBe('Назва має бути від 3 до 50 символів, зараз 0');
+  });
+
   // Content over the size limit: what the create and edit dialogs say under Content.
   it('contentTooLong names the size and the limit in each language', () => {
     expect(translations.en.contentTooLong(70000, 65536, false)).toBe(
@@ -104,7 +112,7 @@ describe('translations', () => {
     'searchPlaceholder', 'copySuccess', 'saveSuccess', 'deleteSuccess',
     'cancel', 'save', 'delete', 'quit', 'copy',
     'titleLabel', 'contentLabel', 'passwordLabel', 'confirmPasswordLabel',
-    'titleValidation', 'contentValidation', 'passwordMismatch',
+    'contentValidation', 'passwordMismatch',
     'wrongPassword', 'decryptError', 'enterPassword',
     'createSnippet', 'editSnippet', 'deleteSnippet',
     'noSnippets', 'noResults', 'encrypted',

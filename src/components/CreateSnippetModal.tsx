@@ -9,7 +9,8 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { createSnippet } from '../hooks/useIpc';
-import { ipcErrorToString, parseContentTooLong } from '../utils/errors';
+import { ipcErrorToString, parseContentTooLong, parseTitleLength } from '../utils/errors';
+import { countCharacters, isTitleLengthValid } from '../utils/title';
 
 export interface CreateSnippetModalProps {
   isOpen: boolean;
@@ -56,11 +57,12 @@ export function CreateSnippetModal({
 
   const validate = useCallback((): FormErrors => {
     const errs: FormErrors = {};
-    if (title.length < 3 || title.length > 50) errs.title = t('titleValidation');
+    // Counted as the database counts it: an emoji is one character, not two UTF-16 units.
+    if (!isTitleLengthValid(title)) errs.title = tf.titleLength(countCharacters(title));
     if (content.length === 0) errs.content = t('contentValidation');
     if (password && password !== confirmPassword) errs.password = t('passwordMismatch');
     return errs;
-  }, [title, content, password, confirmPassword, t]);
+  }, [title, content, password, confirmPassword, t, tf]);
 
   const handleSubmit = useCallback(async () => {
     setSubmitted(true);
@@ -89,6 +91,12 @@ export function CreateSnippetModal({
         contentRef.current?.focus();
         return;
       }
+      const titleCount = parseTitleLength(msg);
+      if (titleCount !== null) {
+        setErrors({ title: tf.titleLength(titleCount) });
+        titleRef.current?.focus();
+        return;
+      }
       const titleErr = msg.includes('Title already exists')
         ? t('titleDuplicate')
         : msg;
@@ -115,7 +123,6 @@ export function CreateSnippetModal({
           ref={titleRef}
           id="create-title"
           type="text"
-          maxLength={50}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           autoComplete="off"
@@ -131,7 +138,6 @@ export function CreateSnippetModal({
         <textarea
           ref={contentRef}
           id="create-content"
-          maxLength={65536}
           rows={5}
           value={content}
           onChange={(e) => setContent(e.target.value)}
