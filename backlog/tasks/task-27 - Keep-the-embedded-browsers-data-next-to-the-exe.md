@@ -1,11 +1,11 @@
 ---
 id: TASK-27
 title: Keep the embedded browser's data next to the exe
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T16:41:00Z'
-updated_date: '2026-11-19T18:41:00Z'
+updated_date: '2026-11-19T18:42:00Z'
 labels:
   - bug
   - backend
@@ -120,6 +120,8 @@ Follow-up question, the folder name: quick-snippets-webview for any exe (all exe
 
 - README (en) "No registry — QuickSnippets does not touch Windows registry or AppData directories" and the "no registry" in the Portable bullet of all three READMEs: with "Start with Windows" on, tauri-plugin-autostart writes HKCU\Software\Microsoft\Windows\CurrentVersion\Run\QuickSnippets (just smoke checks that value).
 - The first start with an empty profile: in the tray the copy took about 0.35 s until ready; the browser folder appeared about 0.1 s after the process start. Its size after a full smoke session: about 9 MB.
+
+After the merge into develop (15305e3): npm run test:all (489 frontend, 250 Rust tests) and npm run lint pass again. Nothing was pushed; the task is not archived.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
