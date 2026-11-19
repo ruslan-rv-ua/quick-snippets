@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import React from 'react';
+import React, { useLayoutEffect } from 'react';
 import { ModalOverlay } from '../ModalOverlay';
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof ModalOverlay>> = {}) {
@@ -108,5 +108,48 @@ describe('ModalOverlay', () => {
     unmount();
     expect(document.activeElement).toBe(button);
     document.body.removeChild(button);
+  });
+
+  // The layout effect of a later sibling runs in the same commit, once the dialog is gone. Focus
+  // must already be back there: when it waited for a later task, NVDA heard the document first.
+  describe('when the dialog closes, focus is back in the same commit', () => {
+    function FocusProbe({ open, seen }: { open: boolean; seen: (Element | null)[] }) {
+      useLayoutEffect(() => {
+        seen.push(document.activeElement);
+      }, [open, seen]);
+      return null;
+    }
+
+    function Harness({ open, unmount, seen }: { open: boolean; unmount: boolean; seen: (Element | null)[] }) {
+      return (
+        <>
+          <button>Opener</button>
+          {(open || !unmount) && (
+            <ModalOverlay isOpen={open} onClose={vi.fn()} titleId="t">
+              <h2 id="t">Dialog</h2>
+              <button>Inside</button>
+            </ModalOverlay>
+          )}
+          <FocusProbe open={open} seen={seen} />
+        </>
+      );
+    }
+
+    it.each([
+      ['the dialog component returns null, as the dialogs of the app do', true],
+      ['isOpen becomes false', false],
+    ])('%s', (_, unmount) => {
+      const seen: (Element | null)[] = [];
+      const { rerender } = render(<Harness open={false} unmount={unmount} seen={seen} />);
+      const opener = screen.getByRole('button', { name: 'Opener' });
+      opener.focus();
+      rerender(<Harness open={true} unmount={unmount} seen={seen} />);
+      expect(screen.getByRole('button', { name: 'Inside' })).toHaveFocus();
+
+      seen.length = 0;
+      rerender(<Harness open={false} unmount={unmount} seen={seen} />);
+      expect(seen).toEqual([opener]);
+      expect(opener).toHaveFocus();
+    });
   });
 });

@@ -221,6 +221,69 @@ describe('useSearchLogic', () => {
     }
   });
 
+  describe('reload', () => {
+    const greeting = { id: 1, title: 'Greeting', is_encrypted: false, score: 0, matched_positions: [] };
+    const goodbye = { id: 2, title: 'Goodbye', is_encrypted: false, score: 0, matched_positions: [] };
+
+    it('loads the list again and resolves once the new list is in state, first snippet selected', async () => {
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([greeting, goodbye]);
+      const { result } = renderHook(() => useSearchLogic());
+      await act(async () => {});
+      act(() => result.current.setActiveIndex(1));
+      expect(result.current.snippets).toEqual([greeting, goodbye]);
+
+      // The selected snippet was deleted.
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([greeting]);
+      let done = false;
+      let reloaded: Promise<void> = Promise.resolve();
+      act(() => {
+        reloaded = result.current.reload().then(() => { done = true; });
+      });
+      expect(done).toBe(false);
+      await act(async () => reloaded);
+
+      expect(done).toBe(true);
+      expect(result.current.snippets).toEqual([greeting]);
+      expect(result.current.activeIndex).toBe(0);
+    });
+
+    it('loads the results for the query shown', async () => {
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue([goodbye]);
+      vi.useFakeTimers();
+      try {
+        const { result } = renderHook(() => useSearchLogic());
+        act(() => result.current.setQuery('good'));
+        await act(async () => {
+          await vi.runAllTimersAsync();
+        });
+        vi.mocked(useIpc.searchSnippets).mockClear();
+
+        let reloaded: Promise<void> = Promise.resolve();
+        act(() => {
+          reloaded = result.current.reload();
+        });
+        await act(async () => reloaded);
+        expect(useIpc.searchSnippets).toHaveBeenCalledTimes(1);
+        expect(useIpc.searchSnippets).toHaveBeenCalledWith('good');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('resolves when loading fails, so a dialog still closes', async () => {
+      const { result } = renderHook(() => useSearchLogic());
+      await act(async () => {});
+      vi.mocked(useIpc.getSortedSnippets).mockRejectedValue(new Error('IPC failed'));
+
+      let reloaded: Promise<void> = Promise.resolve();
+      act(() => {
+        reloaded = result.current.reload();
+      });
+      await act(async () => reloaded);
+      expect(useIpc.getSortedSnippets).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('handles searchSnippets errors gracefully', async () => {
     vi.mocked(useIpc.searchSnippets).mockRejectedValue(new Error('Search failed'));
 

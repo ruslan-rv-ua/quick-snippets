@@ -8,7 +8,8 @@ export interface DeleteConfirmModalProps {
   onClose: () => void;
   snippetTitle: string;
   snippetId: number;
-  onSuccess: () => void;
+  /** Called after the delete; the dialog closes once a returned promise settles. */
+  onSuccess: () => void | Promise<void>;
   onError: (err: string) => void;
 }
 
@@ -33,11 +34,13 @@ export function DeleteConfirmModal({
   const handleDelete = useCallback(async () => {
     try {
       await deleteSnippet(snippetId);
-      onSuccess();
-      onClose();
     } catch (err: unknown) {
       onError(String(err));
+      return;
     }
+    // The list behind the dialog no longer has the snippet when focus returns to it.
+    await onSuccess();
+    onClose();
   }, [snippetId, onSuccess, onClose, onError]);
 
   useEffect(() => {
