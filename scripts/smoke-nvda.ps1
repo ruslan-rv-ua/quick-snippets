@@ -46,6 +46,12 @@
 .PARAMETER TrayIdleSec
     With -StartInTray: how long the hidden copy is left alone before the first Ctrl+Alt+Space.
 
+.PARAMETER BrowserProfileFrom
+    A quick-snippets-webview folder left by an earlier copy that has quit. It is copied next to
+    the test exe before the first start, so the test copy starts with an existing browser
+    profile, as every start but the first after an install or update does. Without it the test
+    copy starts with an empty one.
+
 .EXAMPLE
     just smoke
 
@@ -63,7 +69,8 @@ param(
     [int]$SpeechWaitSec = 5,
     [int]$SettleMs = 700,
     [switch]$StartInTray,
-    [int]$TrayIdleSec = 5
+    [int]$TrayIdleSec = 5,
+    [string]$BrowserProfileFrom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -912,6 +919,10 @@ try {
     $dataDir = Join-Path $Work 'quick-snippets-data'
     $null = New-Item -ItemType Directory -Force -Path $dataDir
     Copy-Item $Exe $TestExe
+    if ($BrowserProfileFrom) {
+        Copy-Item -LiteralPath $BrowserProfileFrom -Destination (Join-Path $Work 'quick-snippets-webview') -Recurse
+        $Notes.Add("тестова копія стартує з готовим профілем браузера з $BrowserProfileFrom")
+    }
     $trayAtStart = [bool]$StartInTray
     $settings = [ordered]@{
         # Like a default install: the window opens at launch (start_in_tray off).
