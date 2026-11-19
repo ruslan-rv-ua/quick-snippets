@@ -76,7 +76,9 @@ export function useWindowHiding(params: UseWindowHidingParams): UseWindowHidingR
 
   // ── Window events (focus, hidden, tray, hotkey) ─────────────────────────
   useWindowEvents({
-    onInitialFocus: () => searchRef.current?.focus(),
+    // A key pressed right after the window content loads (F1, Ctrl+N) may already have opened
+    // a dialog; the delayed initial focus must not pull focus back to the search box behind it.
+    onInitialFocus: focusSearch,
     onShow: () => {
       focusSearch();
       setRefreshTick((n) => n + 1);
