@@ -108,22 +108,21 @@ function AppInner(): React.ReactElement {
   // everything requested on mount (theme, language, sort order) has been answered; the second
   // one loads the list with the sort order those answers brought. The window then appears
   // complete: no theme switch and no list in another order a moment later.
-  //
-  // Until it is shown, the list is left as it is whenever the window is hidden: with nothing
-  // selected. A screen reader in the search box reads the first snippet only when it becomes
-  // the selected one, and that has to happen after the window is shown, on the reload the show
-  // brings. Clearing the selection only at the show would be too late: unselected and selected
-  // again within a few milliseconds, the snippet does not count as newly selected.
   useEffect(() => {
     reload()
       .then(() => reload())
-      .then(() => {
-        // The window is still hidden, unless the backend gave up waiting and showed it.
-        if (!document.hasFocus()) setActiveIndex(-1);
-        return frontendReady();
-      })
+      .then(() => frontendReady())
       .catch(() => void 0);
-  }, [reload, setActiveIndex]);
+  }, [reload]);
+
+  // ── Nothing is marked as selected before the window is first shown ───────
+  // A screen reader in the search box reads the first snippet only when it becomes the
+  // selected one. The first list is loaded, and its first snippet selected, while the window
+  // is still hidden after the start; marked as selected then, it would not become selected
+  // when the window is shown, and nothing would be read. So the mark appears with the first
+  // show, as it does on every later show (hiding clears the selection).
+  const [shownOnce, setShownOnce] = useState(false);
+  const markedIndex = shownOnce ? activeIndex : -1;
 
   // ── Pending notification on startup ──────────────────────────────────
   useEffect(() => {
@@ -182,6 +181,7 @@ function AppInner(): React.ReactElement {
     setShowSettings,
     setShowExit,
     setAutotypeMode,
+    onWindowShown: () => setShownOnce(true),
   });
 
   // ── Snippet activation ────────────────────────────────────────────────
@@ -285,7 +285,7 @@ function AppInner(): React.ReactElement {
         value={query}
         onChange={setQuery}
         snippets={snippets}
-        activeIndex={activeIndex}
+        activeIndex={markedIndex}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
         onAutotype={handleAutotype}
@@ -295,7 +295,7 @@ function AppInner(): React.ReactElement {
       />
       <SnippetList
         snippets={snippets}
-        activeIndex={activeIndex}
+        activeIndex={markedIndex}
         query={query}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
