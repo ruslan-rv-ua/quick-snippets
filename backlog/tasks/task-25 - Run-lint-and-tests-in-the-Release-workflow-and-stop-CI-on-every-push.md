@@ -1,9 +1,11 @@
 ---
 id: TASK-25
 title: Run lint and tests in the Release workflow and stop CI on every push
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-19T07:24:00Z'
+updated_date: '2026-11-19T07:52:00Z'
 labels:
   - tooling
   - release
@@ -47,3 +49,16 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. release.yml: add a dry_run input; build the frontend, then run npm run lint, npm run test and npm run test:rust before the Tauri build; skip the tag and the GitHub release on a dry run; add clippy to the toolchain.
+2. ci.yml: keep only pull_request and workflow_dispatch triggers.
+3. Update actions in both workflows to the latest major versions on Node.js 24: actions/checkout v7, actions/setup-node v7, softprops/action-gh-release v3 (Swatinem/rust-cache v2 already points to 2.9.3 on Node.js 24; dtolnay/rust-toolchain is a composite action).
+4. DEVELOPMENT.md and CLAUDE.md (Release & CI): where the checks run now, how to do a dry run, no waiting for CI on develop.
+5. Update TASK-23 and TASK-24 so the release procedure no longer waits for CI.
+6. Local npm run test:all and npm run lint.
+7. With the user's go-ahead: push the feature branch, run Release as a dry run (dry_run plus prerelease plus a version that git refuses as a tag name, as a safety net) and CI by hand on the feature branch; confirm no tag or release appeared.
+8. Finish the feature with --no-ff into develop.
+<!-- SECTION:PLAN:END -->

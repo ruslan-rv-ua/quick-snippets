@@ -3,15 +3,26 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #
 # ЩО ВІДБУВАЄТЬСЯ ПРИ ЗАПУСКУ
-#   workflow_dispatch (ручний)  →  створення тегу  →  збірка  →
-#   →  ZIP + SHA256  →  GitHub Release
+#   workflow_dispatch (ручний)  →  перевірки (lint + тести)  →  збірка  →
+#   →  ZIP + SHA256  →  створення тегу  →  GitHub Release
 #
 # ТРИГЕР
-#   • workflow_dispatch — єдиний спосіб запуску. Вказується версія та прапорець
-#     pre-release. Тег v{version} створюється автоматично.
+#   • workflow_dispatch — єдиний спосіб запуску. Вказується версія та прапорці
+#     pre-release і dry run. Тег v{version} створюється автоматично.
+#
+# ПЕРЕВІРКИ
+#   Перед збіркою запускаються npm run lint, npm run test і npm run test:rust
+#   на чистій машині. Якщо будь-яка перевірка падає, workflow зупиняється до
+#   створення тегу і релізу. CI (ci.yml) на кожен push більше не запускається.
 #
 # PRE-RELEASE
 #   Якщо позначено прапорець prerelease — реліз маркується як pre-release.
+#
+# DRY RUN (пробний запуск)
+#   Прапорець dry_run проганяє перевірки, збірку і пакування ZIP, але пропускає
+#   створення тегу і GitHub Release. Так змінений workflow можна перевірити
+#   з будь-якої гілки, не публікуючи реліз (Excavator у scoop-bucket підхопив
+#   би його для користувачів Scoop).
 #
 # SCOOP BUCKET
 #   Маніфест оновлює Excavator у репозиторії ruslan-rv-ua/scoop-bucket
@@ -34,6 +45,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Release
+run-name: Release ${{ inputs.version }}${{ inputs.dry_run && ' (dry run)' || '' }}
 
 on:
   workflow_dispatch:
@@ -44,6 +56,11 @@ on:
         type: string
       prerelease:
         description: 'Позначити як pre-release?'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Пробний запуск: перевірки, збірка і ZIP без тегу й релізу'
         required: false
         type: boolean
         default: false
@@ -60,17 +77,17 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
-      # ── ЗБІРКА ───────────────────────────────────────────────────────────────
+        uses: actions/checkout@v7
 
       # ── Rust toolchain ────────────────────────────────────────────────────────
       # `@stable` вибирає останній стабільний Rust і враховує rust-toolchain.toml.
       # MSVC target вказано явно для однозначності (хоча windows-latest і так його використовує).
+      # clippy потрібен для `npm run lint`.
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+          components: clippy
 
       # ── Rust build cache ──────────────────────────────────────────────────────
       # Кешує ~/.cargo/registry, ~/.cargo/git та src-tauri/target.
@@ -81,18 +98,36 @@ jobs:
 
       # ── Node.js ───────────────────────────────────────────────────────────────
       - name: Set up Node.js LTS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 'lts/*'
           cache: 'npm'
 
-      # ── 6. Install JS dependencies ────────────────────────────────────────────
-      # `tauri build` will run `beforeBuildCommand` (npm run build) internally,
-      # so we only need `npm ci` here — no separate frontend build step.
       - name: Install JS dependencies
         run: npm ci
 
-      # ── 7. Tauri release build (no installer bundle) ──────────────────────────
+      # ── ПЕРЕВІРКИ ────────────────────────────────────────────────────────────
+      # Ті самі перевірки, що й локально (npm run lint, test, test:rust).
+      # Падіння будь-якої з них зупиняє workflow до створення тегу й релізу.
+      #
+      # Tauri вимагає наявну папку frontendDist (dist/) навіть для clippy і
+      # cargo test, тому фронтенд збирається раніше за перевірки. `tauri build`
+      # нижче збере його ще раз (beforeBuildCommand) — це кілька секунд.
+      - name: Build frontend
+        run: npm run build
+
+      - name: Lint (tsc + clippy)
+        run: npm run lint
+
+      - name: Frontend tests
+        run: npm run test
+
+      - name: Rust tests
+        run: npm run test:rust
+
+      # ── ЗБІРКА ───────────────────────────────────────────────────────────────
+
+      # ── Tauri release build (no installer bundle) ─────────────────────────────
       # We use `npx tauri build --no-bundle` instead of raw
       # `cargo build --release` for three critical reasons:
       #
@@ -146,11 +181,6 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Building ${{ env.APP_NAME }} version $VERSION"
 
-      - name: Create and push tag
-        run: |
-          git tag "v${{ steps.info.outputs.VERSION }}"
-          git push origin "v${{ steps.info.outputs.VERSION }}"
-
       - name: Create release package
         id: package
         shell: pwsh
@@ -177,8 +207,18 @@ jobs:
           echo "HASH=$hash" >> $env:GITHUB_OUTPUT
           echo "ZIP_NAME=$zipName" >> $env:GITHUB_OUTPUT
 
+      # ── ПУБЛІКАЦІЯ (пропускається при dry run) ──────────────────────────────
+      # Тег створюється лише після всіх перевірок, збірки і пакування, тож
+      # невдалий запуск не залишає тегу без релізу.
+      - name: Create and push tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git tag "v${{ steps.info.outputs.VERSION }}"
+          git push origin "v${{ steps.info.outputs.VERSION }}"
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        if: ${{ !inputs.dry_run }}
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.info.outputs.VERSION }}
           files: |
@@ -189,3 +229,11 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        shell: pwsh
+        run: |
+          $msg = "Dry run: checks, build and package passed. No tag and no release were created."
+          Write-Host $msg
+          $msg | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

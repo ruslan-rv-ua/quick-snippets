@@ -96,10 +96,11 @@ The autotype module simulates keyboard input to type snippet content into the fo
 ### Release & CI
 
 - GitHub Actions release triggered manually via `workflow_dispatch` (version specified in UI).
-- Workflow auto-creates git tag `v{version}` and pushes it.
+- Release runs `npm run build`, `npm run lint`, `npm run test` and `npm run test:rust` before the Tauri build; a failing check stops it before any tag or release exists. Only then does it create and push tag `v{version}` and publish the release.
+- The `dry_run` input runs checks, build and packaging but skips the tag and the release. Check changes to `release.yml` only this way (see DEVELOPMENT.md): never create a real release or tag as a test, because the Scoop Excavator would ship it.
 - Uses `npx tauri build --no-bundle` — skips Wix/NSIS installer generation for portability.
 - ZIP contains `.exe`, `LICENSE`, `README.md`.
-- CI (`ci.yml`) runs build, lint, and both test suites on push to `develop`/`main` and on pull requests.
+- CI (`ci.yml`) runs build, lint, and both test suites only on pull requests and when started by hand, not on push; the release procedure does not wait for CI on develop.
 - Scoop: the manifest lives in the `ruslan-rv-ua/scoop-bucket` repo and is updated there by its Excavator workflow (`checkver` + `autoupdate` from the `.sha256` asset). Keep release asset names `quick-snippets-{version}-windows-x64.zip[.sha256]` unchanged.
 - Release exe size: keep `removeUnusedCommands` in `tauri.conf.json`, generate `icons/icon.ico` with `npx tauri icon` (PNG-compressed layers), and check for unused crates with `cargo machete`.
 - Release profile: `strip = true`, `lto = true`, `codegen-units = 1`, `opt-level = "z"`, `panic = "abort"`. Only the `sha2` crate is built with `opt-level = 3`: it halves the PBKDF2 wait on every use of an encrypted snippet.
