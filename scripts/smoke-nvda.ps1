@@ -56,6 +56,7 @@ $UI = @{
     CreateTitle       = 'Створити сніпет'
     EditTitle         = 'Редагувати сніпет'
     TitleLabel        = 'Назва'
+    ContentLabel      = 'Вміст'
     Saved             = 'Збережено'
     Copied            = 'Скопійовано'
     EnterPassword     = 'Введіть пароль для розшифрування'
@@ -911,9 +912,7 @@ try {
         Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
     } -ExpectCount @{ ($UI.PasswordMismatch) = 1 } -Forbid $UI.TitleInvalid, $UI.ContentEmpty
 
-    # The backend refuses the text before anything is stored. Ctrl+Enter is pressed in the
-    # confirmation field, so focus has to move to the content field with the message.
-    Invoke-Step 'Створення, задовгий зашифрований текст: повідомлення один раз, фокус у полі «Вміст»' {
+    Invoke-Step 'Створення: задовгий текст у полі «Вміст», паролі однакові' {
         Send-Keys 'Ctrl+A'
         Send-Text $Data.Password
         Send-Keys 'Shift+Tab', 'Shift+Tab'
@@ -922,10 +921,17 @@ try {
         Send-Text $Data.TooLongText
         Send-Keys 'Tab', 'Tab'
         Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
+    }
+
+    # The backend refuses the text before anything is stored. Ctrl+Enter is pressed in the
+    # confirmation field, so focus has to move to the content field with the message. NVDA
+    # then reads the line at the cursor, not the whole text: twenty words in a row would not
+    # fit on one line of the field.
+    Invoke-Step 'Ctrl+Enter, задовгий зашифрований текст: повідомлення один раз, фокус у полі «Вміст»' {
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.SecretTooLong }
         Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
-    } -ExpectCount @{ ($UI.SecretTooLong) = 1 } -Forbid $UI.TitleInvalid, $UI.PasswordMismatch, 'CHECK constraint', 'Content too long'
+    } -ExpectCount @{ ($UI.SecretTooLong) = 1 } -Expect $UI.ContentLabel -Forbid $UI.TitleInvalid, $UI.PasswordMismatch, 'CHECK constraint', 'Content too long', ('секрет ' * 20).Trim()
 
     Invoke-Step 'Escape закриває діалог створення без збереження' {
         Send-Keys 'Esc'
