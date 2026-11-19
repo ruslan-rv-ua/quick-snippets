@@ -1,10 +1,11 @@
 ---
 id: TASK-24
 title: Release v0.3.3
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-19T07:11:00Z'
-updated_date: '2026-11-19T12:26:00Z'
+updated_date: '2026-11-19T12:45:00Z'
 labels:
   - release
   - model-sonnet
