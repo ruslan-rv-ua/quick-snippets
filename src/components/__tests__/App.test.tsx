@@ -131,6 +131,76 @@ describe('App: keyboard shortcuts help (F1)', () => {
     expect(search).toHaveFocus();
   });
 
+  describe('the delayed initial focus after the window content loads', () => {
+    /**
+     * Holds back the 60 ms initial-focus timer that useWindowEvents starts on mount, so a test
+     * can run it at a chosen moment. Returns a function that runs the held timer.
+     */
+    function holdInitialFocusTimer(): { restore: () => void; run: () => void } {
+      const realSetTimeout = globalThis.setTimeout;
+      let held: (() => void) | undefined;
+      const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+        fn: (...args: unknown[]) => void,
+        ms?: number,
+        ...args: unknown[]
+      ) => {
+        if (ms === 60 && !held) {
+          held = () => fn(...args);
+          return 0;
+        }
+        return realSetTimeout(fn, ms, ...args);
+      }) as unknown as typeof setTimeout);
+      return {
+        restore: () => spy.mockRestore(),
+        run: () => {
+          expect(held).toBeDefined();
+          act(() => held?.());
+        },
+      };
+    }
+
+    async function renderHoldingInitialFocus() {
+      const timer = holdInitialFocusTimer();
+      try {
+        render(<App />);
+        const search = await screen.findByRole('combobox');
+        return { search, runInitialFocus: timer.run };
+      } finally {
+        timer.restore();
+      }
+    }
+
+    it('moves focus to the search box when no dialog is open', async () => {
+      const { search, runInitialFocus } = await renderHoldingInitialFocus();
+      expect(search).not.toHaveFocus();
+      runInitialFocus();
+      expect(search).toHaveFocus();
+    });
+
+    it('does not take focus from the help opened with F1 before it runs', async () => {
+      const { runInitialFocus } = await renderHoldingInitialFocus();
+      fireEvent.keyDown(document.body, { key: 'F1', code: 'F1' });
+      const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+      const first = within(dialog).getAllByRole('option')[0];
+      expect(first).toHaveFocus();
+
+      runInitialFocus();
+      expect(first).toHaveFocus();
+    });
+
+    it('does not take focus from the new snippet dialog opened with Ctrl+N before it runs', async () => {
+      const { search, runInitialFocus } = await renderHoldingInitialFocus();
+      fireEvent.keyDown(document.body, { key: 'n', code: 'KeyN', ctrlKey: true });
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+      const focused = document.activeElement;
+
+      runInitialFocus();
+      expect(document.activeElement).toBe(focused);
+      expect(search).not.toHaveFocus();
+    });
+  });
+
   it('Escape in the help does not hide the window', async () => {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const search = await renderWithSearchFocused();
@@ -437,5 +507,124 @@ describe('App: the keyboard moves inside the window, or the window hides', () =>
     act(() => hiddenListener()?.());
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(search.value).toBe('');
+  });
+});
+
+// After a delete or a save, focus comes back to the search box once, and by then it already
+// points at the snippet selected in the new list: NVDA says "list" and that snippet, never the
+// deleted snippet or the one selected before. The dialog closes only once the list is loaded
+// again, and focus is back in the same commit that removes the dialog.
+describe('App: where focus goes after a dialog changes the list', () => {
+  type Item = { id: number; title: string; score: number; matched_positions: number[]; is_encrypted: boolean };
+  const item = (id: number, title: string): Item => ({ id, title, score: 0, matched_positions: [], is_encrypted: false });
+  let snippets: Item[] = [];
+
+  beforeEach(() => {
+    snippets = [item(1, 'Greeting'), item(2, 'Goodbye')];
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      switch (cmd) {
+        case 'get_settings':
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language: 'en',
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 0,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets':
+        case 'get_sorted_snippets':
+          return snippets.map((s) => ({ ...s }));
+        case 'delete_snippet':
+          snippets = snippets.filter((s) => s.id !== (args as { id: number }).id);
+          return null;
+        case 'create_snippet':
+          // The newest change comes first.
+          snippets = [item(3, (args as { title: string }).title), ...snippets];
+          return null;
+        default:
+          return null;
+      }
+    });
+  });
+
+  const pointsAt = (search: HTMLElement) => search.getAttribute('aria-activedescendant') ?? '';
+  const listIds = () => Array.from(document.querySelectorAll('#snippet-list [role="option"]')).map((o) => o.id);
+
+  /** Opens the app with the search box focused and waits until the first snippet is selected. */
+  async function openApp(): Promise<HTMLInputElement> {
+    render(<App />);
+    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
+    search.focus();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    return search;
+  }
+
+  /** What the search box points at, and the snippets in the list, each time it gets focus. */
+  function recordFocus(search: HTMLElement): { pointsAt: string; list: string[] }[] {
+    const seen: { pointsAt: string; list: string[] }[] = [];
+    search.addEventListener('focus', () => seen.push({ pointsAt: pointsAt(search), list: listIds() }));
+    return seen;
+  }
+
+  async function confirmDelete(): Promise<void> {
+    const dialog = await screen.findByRole('dialog', { name: 'Delete snippet' });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  }
+
+  it('Ctrl+D, Ctrl+Enter: focus comes back once, to the snippet now first; the deleted one is gone by then', async () => {
+    const search = await openApp();
+    const seen = recordFocus(search);
+    fireEvent.keyDown(search, { key: 'd', code: 'KeyD', ctrlKey: true });
+    await confirmDelete();
+
+    expect(mockInvoke).toHaveBeenCalledWith('delete_snippet', { id: 1 });
+    expect(seen).toEqual([{ pointsAt: 'snippet-2', list: ['snippet-2'] }]);
+    expect(search).toHaveFocus();
+    expect(screen.getByText('Deleted')).toBeInTheDocument();
+  });
+
+  it('Delete in the empty search box, Ctrl+Enter: the same', async () => {
+    const search = await openApp();
+    const seen = recordFocus(search);
+    fireEvent.keyDown(search, { key: 'Delete', code: 'Delete' });
+    await confirmDelete();
+
+    expect(mockInvoke).toHaveBeenCalledWith('delete_snippet', { id: 1 });
+    expect(seen).toEqual([{ pointsAt: 'snippet-2', list: ['snippet-2'] }]);
+    expect(search).toHaveFocus();
+  });
+
+  it('deleting the last snippet: focus comes back to the search box itself, pointing at nothing', async () => {
+    snippets = [item(1, 'Greeting')];
+    const search = await openApp();
+    const seen = recordFocus(search);
+    fireEvent.keyDown(search, { key: 'd', code: 'KeyD', ctrlKey: true });
+    await confirmDelete();
+
+    expect(seen).toEqual([{ pointsAt: '', list: [] }]);
+    expect(search).toHaveFocus();
+  });
+
+  it('Ctrl+N, Ctrl+Enter: focus comes back once, to the new snippet, not first to the one selected before', async () => {
+    const search = await openApp();
+    const seen = recordFocus(search);
+    fireEvent.keyDown(search, { key: 'n', code: 'KeyN', ctrlKey: true });
+    const dialog = await screen.findByRole('dialog', { name: 'Create snippet' });
+    fireEvent.change(within(dialog).getByLabelText(/^title/i), { target: { value: 'Newest' } });
+    fireEvent.change(within(dialog).getByLabelText(/^content/i), { target: { value: 'Text' } });
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    expect(seen).toEqual([{ pointsAt: 'snippet-3', list: ['snippet-3', 'snippet-1', 'snippet-2'] }]);
+    expect(search).toHaveFocus();
   });
 });

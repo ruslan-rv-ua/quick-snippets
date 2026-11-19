@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDebounce } from './useDebounce';
 import { searchSnippets, getSortedSnippets } from './useIpc';
 import type { SearchResult } from '../types';
@@ -24,6 +24,12 @@ export interface SearchLogicState {
   setListFocused: (listFocused: boolean) => void;
   refreshTick: number;
   setRefreshTick: (tick: number | ((prev: number) => number)) => void;
+  /**
+   * Loads the list again and resolves once the new list is in state (also when loading fails).
+   * A dialog that changed a snippet closes only then, so focus comes back once, to a snippet
+   * that is in the list now: not first to a deleted one or to the one selected before.
+   */
+  reload: () => Promise<void>;
   reset: () => void;
 }
 
@@ -37,9 +43,14 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
   const [listFocused, setListFocused] = useState<boolean>(false);
   const [refreshTick, setRefreshTick] = useState<number>(0);
   const debouncedQuery = useDebounce(query, 100);
+  // Callers of reload() waiting for the next load.
+  const reloadWaitersRef = useRef<Array<() => void>>([]);
 
   // ── Fetch snippets on debounced query change OR window show ────────────
   useEffect(() => {
+    // Those who asked for this load; a reload() called later waits for the load it starts.
+    const waiters = reloadWaitersRef.current;
+    reloadWaitersRef.current = [];
     const fetchPromise =
       debouncedQuery.trim() === ''
         ? getSortedSnippets(sortMode, sortDirection)
@@ -51,8 +62,18 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
         setSnippets(safeResults);
         setActiveIndex(safeResults.length > 0 ? 0 : -1);
       })
-      .catch(() => void 0);
+      .catch(() => void 0)
+      .finally(() => waiters.forEach((resolve) => resolve()));
   }, [debouncedQuery, refreshTick, sortMode, sortDirection]);
+
+  const reload = useCallback(
+    () =>
+      new Promise<void>((resolve) => {
+        reloadWaitersRef.current.push(resolve);
+        setRefreshTick((n) => n + 1);
+      }),
+    [],
+  );
 
   // ── Reset search logic ─────────────────────────────────────────────────
   const reset = useCallback(() => {
@@ -72,6 +93,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
     setListFocused,
     refreshTick,
     setRefreshTick,
+    reload,
     reset,
   };
 }

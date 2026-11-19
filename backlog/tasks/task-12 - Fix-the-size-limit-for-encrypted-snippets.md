@@ -4,13 +4,14 @@ title: Fix the size limit for encrypted snippets
 status: To Do
 assignee: []
 created_date: '2026-11-16T12:39:00Z'
+updated_date: '2026-11-19T07:10:00Z'
 labels:
   - bug
   - backend
   - frontend
   - model-sonnet
   - effort-high
-milestone: m-2
+milestone: m-5
 dependencies: []
 references:
   - src-tauri/src/db.rs
@@ -19,7 +20,7 @@ references:
   - src/components/CreateSnippetModal.tsx
   - src/i18n/translations.ts
 priority: low
-ordinal: 7000
+ordinal: 5000
 ---
 
 ## Description

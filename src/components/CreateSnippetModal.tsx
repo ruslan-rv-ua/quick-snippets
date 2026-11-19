@@ -14,7 +14,8 @@ import { ipcErrorToString } from '../utils/errors';
 export interface CreateSnippetModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  /** Called after the save; the dialog closes once a returned promise settles. */
+  onSuccess: () => void | Promise<void>;
 }
 
 interface FormErrors {
@@ -79,8 +80,6 @@ export function CreateSnippetModal({
     }
     try {
       await createSnippet(title, content, password);
-      onSuccess();
-      onClose();
     } catch (err: unknown) {
       const msg = ipcErrorToString(err);
       const titleErr = msg.includes('Title already exists')
@@ -88,7 +87,11 @@ export function CreateSnippetModal({
         : msg;
       setErrors({ title: titleErr });
       titleRef.current?.focus();
+      return;
     }
+    // Focus returns to the list as it is after the save, with the new snippet in it.
+    await onSuccess();
+    onClose();
   }, [validate, title, content, password, onSuccess, onClose, t]);
 
   useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });

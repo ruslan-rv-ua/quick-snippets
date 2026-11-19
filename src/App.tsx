@@ -94,6 +94,7 @@ function AppInner(): React.ReactElement {
     listFocused,
     setListFocused,
     setRefreshTick,
+    reload,
     reset,
   } = useSearchLogic({ sortMode, sortDirection });
 
@@ -196,11 +197,6 @@ function AppInner(): React.ReactElement {
     [t, addToast, hideWindow, setPasswordSnippet, setShowPassword],
   );
 
-  // Reload snippets list after CRUD
-  const refreshSnippets = useCallback(() => {
-    setRefreshTick((n) => n + 1);
-  }, [setRefreshTick]);
-
   // Announce for accessibility
   const handleAnnounce = useCallback(() => {
     const active = snippets[activeIndex];
@@ -281,12 +277,14 @@ function AppInner(): React.ReactElement {
         onActivate={handleActivate}
       />
 
+      {/* After a change the dialogs close only once the list is loaded again (they await
+          onSuccess): focus then comes back once, to the snippet selected in the new list. */}
       <CreateSnippetModal
         isOpen={showCreate}
         onClose={() => setShowCreate(false)}
         onSuccess={() => {
           addToast(t('saveSuccess'), 'success');
-          refreshSnippets();
+          return reload();
         }}
       />
 
@@ -296,7 +294,7 @@ function AppInner(): React.ReactElement {
         snippet={editSnippet}
         onSuccess={() => {
           addToast(t('saveSuccess'), 'success');
-          refreshSnippets();
+          return reload();
         }}
       />
 
@@ -307,7 +305,7 @@ function AppInner(): React.ReactElement {
         snippetId={deleteId}
         onSuccess={() => {
           addToast(t('deleteSuccess'), 'success');
-          refreshSnippets();
+          return reload();
         }}
         onError={(err) => addToast(err, 'error')}
       />

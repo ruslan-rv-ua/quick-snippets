@@ -18,7 +18,7 @@ references:
   - src-tauri/src/settings.rs
   - scripts/smoke-nvda.ps1
 priority: low
-ordinal: 4000
+ordinal: 9000
 ---
 
 ## Description

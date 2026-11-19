@@ -142,6 +142,9 @@ git flow release finish 1.2.3
 git push origin main develop
 ```
 
+Чекати CI після push не треба: на push він не запускається. Lint і тести на чистій
+машині проганяє сам Release workflow перед збіркою (див. нижче).
+
 ### Створення GitHub Release
 
 Реліз створюється вручну через GitHub Actions:
@@ -151,12 +154,29 @@ git push origin main develop
 3. За потреби позначити як pre-release
 
 Workflow автоматично:
-1. Створює і пушить тег `v{version}`
+1. Збирає фронтенд і запускає `npm run lint`, `npm run test`, `npm run test:rust`.
+   Якщо перевірка падає, workflow зупиняється: тегу і релізу немає
 2. Запускає `npx tauri build --no-bundle` (фронтенд + Rust binary)
 3. Пакує `quick-snippets.exe`, `LICENSE`, `README.md` у ZIP
    `quick-snippets-{version}-windows-x64.zip`
 4. Створює файл `quick-snippets-{version}-windows-x64.zip.sha256`
-5. Публікує GitHub Release з обома файлами
+5. Створює і пушить тег `v{version}`
+6. Публікує GitHub Release з обома файлами
+
+### Пробний запуск Release (dry run)
+
+Прапорець **dry run** проганяє перевірки, збірку і пакування ZIP, але пропускає
+тег і GitHub Release. Ним перевіряють зміни в `release.yml` або готовність гілки
+до релізу. Запускати можна з будь-якої гілки, де є цей прапорець:
+
+```powershell
+gh workflow run release.yml --ref feature/my-branch -f version=0.0.0..dryrun -f dry_run=true -f prerelease=true
+```
+
+Версія `0.0.0..dryrun` — страховка: git не прийме таку назву тегу, тож навіть якщо
+прапорець через помилку не спрацює, тег і реліз не з'являться. Справжній реліз
+не можна створювати для перевірки навіть тимчасово: Excavator у scoop-bucket бере
+найновіший реліз і роздав би його користувачам Scoop.
 
 ### Оновлення Scoop
 
@@ -180,8 +200,14 @@ https://github.com/ruslan-rv-ua/quick-snippets/releases/download/v{version}/quic
 
 ## CI
 
-`.github/workflows/ci.yml` на кожен push у `develop`/`main` і на pull request запускає
-`npm run build`, `npm run lint`, `npm run test`, `npm run test:rust`.
+`.github/workflows/ci.yml` запускає `npm run build`, `npm run lint`, `npm run test`,
+`npm run test:rust` лише для pull request (репозиторій публічний, тож чужі зміни
+перевіряються) і вручну: **Actions → CI → Run workflow** або
+`gh workflow run ci.yml --ref <гілка>`.
+
+На кожен push у `develop`/`main` CI не запускається. Ті самі перевірки виконуються
+локально в кожній задачі (`npm run test:all`, `npm run lint`), а на чистій машині —
+у Release workflow перед збіркою релізу.
 
 ## TDD та безпека
 

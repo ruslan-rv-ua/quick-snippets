@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import React from 'react';
 import { CreateSnippetModal } from '../CreateSnippetModal';
@@ -189,6 +189,36 @@ describe('CreateSnippetModal', () => {
     await waitFor(() => {
       expect(onSuccess).toHaveBeenCalled();
     });
+  });
+
+  // The app loads the list again in onSuccess: focus comes back once, to the new list.
+  it('after a save it closes only once onSuccess has finished', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    let finish = () => {};
+    const onSuccess = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const onClose = vi.fn();
+    renderModal({ onSuccess, onClose });
+    fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
+    fireEvent.change(screen.getByLabelText(/^content|^вміст/i), { target: { value: 'Content here' } });
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => finish());
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed save keeps the dialog open without onSuccess', async () => {
+    mockInvoke.mockRejectedValue('Title already exists');
+    const onSuccess = vi.fn();
+    const onClose = vi.fn();
+    renderModal({ onSuccess, onClose });
+    fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
+    fireEvent.change(screen.getByLabelText(/^content|^вміст/i), { target: { value: 'Content here' } });
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(screen.getByLabelText(/title|назва/i)).toHaveAttribute('aria-invalid', 'true'));
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('clears all fields on open', () => {

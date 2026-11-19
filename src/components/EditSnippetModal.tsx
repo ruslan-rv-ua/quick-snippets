@@ -16,7 +16,8 @@ export interface EditSnippetModalProps {
   isOpen: boolean;
   onClose: () => void;
   snippet: SnippetView | null;
-  onSuccess: () => void;
+  /** Called after the save; the dialog closes once a returned promise settles. */
+  onSuccess: () => void | Promise<void>;
 }
 
 interface FormErrors {
@@ -71,8 +72,6 @@ export function EditSnippetModal({
     }
     try {
       await updateSnippet(snippet.id, title, content);
-      onSuccess();
-      onClose();
     } catch (err: unknown) {
       const msg = ipcErrorToString(err);
       const titleErr = msg.includes('Title already exists')
@@ -80,7 +79,11 @@ export function EditSnippetModal({
         : msg;
       setErrors({ title: titleErr });
       titleRef.current?.focus();
+      return;
     }
+    // Focus returns to the list as it is after the save.
+    await onSuccess();
+    onClose();
   }, [validate, snippet, title, content, onSuccess, onClose, t]);
 
   useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });

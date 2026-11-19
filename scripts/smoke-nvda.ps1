@@ -52,7 +52,7 @@ if (-not $Exe) { $Exe = Join-Path $PSScriptRoot '..\src-tauri\target\release\qui
 
 # Ukrainian UI strings from src/i18n/translations.ts ("uk"). The test copy runs with language = uk.
 $UI = @{
-    SearchPlaceholder = 'Пошук сніпетів'
+    SearchPlaceholder = 'Пошук'
     CreateTitle       = 'Створити сніпет'
     EditTitle         = 'Редагувати сніпет'
     TitleLabel        = 'Назва'
@@ -145,7 +145,22 @@ $Role = @{
     SpinButton = 'кнопка прокрутки|spin button|Drehschalter'
     Button     = 'кнопка|button|Schalter'
     List       = 'список|list|Liste'
+    Application = 'додаток|application|Anwendung'
+    Unknown    = 'невідомо|unknown|unbekannt'
+    Blank      = 'порожньо|blank|leer'
+    AutoComplete = 'автоматичне заповнення|auto complete|autocomplete|Autovervollständigung'
 }
+
+# What NVDA says when focus falls to the document on its way back from a dialog to the main
+# window: "unknown" (or "blank"), the window title with "document", and "application" for the
+# app it then enters again. Steps without the window showing forbid these.
+$FocusNoise = @($Role.Application, $Role.Unknown, 'Snippet Manager')
+
+# The search box is read as its short name, the combo box role and its states:
+# "Пошук, комбінований список, розгорнуто, можливо редагувати, відкриває список" and the query
+# (or "порожньо"). Steps that read it expect the name exactly once (an empty field used to repeat
+# it as the placeholder) and forbid "has autocomplete" and the old long name.
+$SearchBoxNoise = @($Role.AutoComplete, 'Пошук сніпетів')
 
 # Throwaway values for the throwaway copy of the app.
 $Data = @{
@@ -154,6 +169,8 @@ $Data = @{
     PlainEdited   = 'Привіт з QuickSnippets 123, змінено'
     SecretTitle   = 'smoke зашифрований'
     SecretText    = 'Секретний текст 456'
+    TempTitle     = 'smoke тимчасовий'
+    TempText      = 'Тимчасовий текст 789'
     Password      = 'smoke-pass-42'
     WrongPassword = 'wrong-pass'
     Sentinel      = 'quick-snippets smoke: clipboard not changed'
@@ -620,8 +637,8 @@ function Get-SaidText($Events) {
 # ExpectCount - must be said exactly N times, e.g. @{ 'Збережено' = 2 }
 # ExpectSaid  - for each entry, one of its '|'-separated variants must be said on its own, as a
 #               whole utterance: a character or word NVDA reads at the caret, e.g. 'з'
-# Forbid      - must not be said
-# Hope        - nice to hear, reported but never a failure (speech that races with the window hiding)
+# Forbid      - must not be said (none of its '|'-separated variants)
+# Hope       - nice to hear, reported but never a failure (speech that races with the window hiding)
 function Invoke-Step {
     param(
         [string]$Title,
@@ -684,7 +701,8 @@ function Invoke-Step {
             $checks += [pscustomobject]@{ Text = "окремо звучить $variants"; Ok = (Test-SaidWhole $r.Speech $w); Required = $true }
         }
         foreach ($p in $Forbid) {
-            $checks += [pscustomobject]@{ Text = "не звучить «$p»"; Ok = (Get-Count $all $p) -eq 0; Required = $true }
+            $variants = ($p.Split('|') | ForEach-Object { "«$_»" }) -join ' чи '
+            $checks += [pscustomobject]@{ Text = "не звучить $variants"; Ok = -not (Test-SaidAny $all $p); Required = $true }
         }
         foreach ($p in $Hope) {
             $checks += [pscustomobject]@{ Text = "бажано, щоб звучало «$p»"; Ok = (Get-Count $all $p) -ge 1; Required = $false }
@@ -814,7 +832,7 @@ try {
             $script:SoftFail += '; далі вікно відкривається повторним запуском exe'
         }
         Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
-    } -Expect $UI.SearchPlaceholder
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
 
     Invoke-Step 'Ctrl+N відкриває діалог створення, фокус у полі «Назва»' {
         Send-Keys 'Ctrl+N'
@@ -837,7 +855,7 @@ try {
         Wait-Until 'діалог редагування закрито, фокус на сніпеті' {
             -not (Find-Element (Get-AppWindow) -Id 'edit-title') -and (Test-HasFocus (& $plainItem))
         }
-    } -Expect $Data.PlainTitle, $UI.EditTitle -ExpectCount @{ ($UI.Saved) = 2 }
+    } -Expect $Data.PlainTitle, $UI.EditTitle -ExpectCount @{ ($UI.Saved) = 2 } -Forbid $FocusNoise
 
     Invoke-Step 'Ctrl+E змінює вміст сніпета' {
         Send-Keys 'Ctrl+E'
@@ -848,7 +866,7 @@ try {
         Wait-Until 'діалог редагування закрито, фокус на сніпеті' {
             -not (Find-Element (Get-AppWindow) -Id 'edit-title') -and (Test-HasFocus (& $plainItem))
         }
-    } -Expect $UI.EditTitle
+    } -Expect $UI.EditTitle -Forbid $FocusNoise
 
     # Validation errors: each message must be said once, with its text, and focus must
     # be on the invalid field. The dialogs are closed with Escape, so no snippet is added.
@@ -893,7 +911,7 @@ try {
         Wait-Until 'діалог створення закрито, фокус на сніпеті' {
             -not (Find-Element (& $appWin) -Id 'create-title') -and (Test-HasFocus (& $plainItem))
         }
-    } -Forbid $UI.Saved
+    } -Forbid (@($UI.Saved) + $FocusNoise)
 
     Invoke-Step 'Редагування, порожня назва: повідомлення один раз, фокус у полі «Назва»' {
         Send-Keys 'Ctrl+E'
@@ -920,7 +938,7 @@ try {
         Wait-Until 'діалог редагування закрито, фокус на сніпеті' {
             -not (Find-Element (& $appWin) -Id 'edit-title') -and (Test-HasFocus (& $plainItem))
         }
-    } -Forbid $UI.Saved
+    } -Forbid (@($UI.Saved) + $FocusNoise)
 
     Invoke-Step 'Enter копіює сніпет і ховає вікно' {
         Set-ClipText $Data.Sentinel
@@ -938,19 +956,26 @@ try {
         Wait-Until 'текст надруковано в тестовому вікні' { (Get-TargetText) -eq $Data.PlainEdited }
     }
 
-    Invoke-Step 'Створення зашифрованого сніпета' {
+    Invoke-Step 'Створення зашифрованого сніпета: діалог заповнено' {
         Show-App
         Send-Keys 'Ctrl+N'
         Wait-Until 'фокус у полі «Назва»' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'create-title') }
         Send-Text $Data.SecretTitle; Send-Keys 'Tab'
         Send-Text $Data.SecretText; Send-Keys 'Tab'
         Send-Text $Data.Password; Send-Keys 'Tab'
-        Send-Text $Data.Password; Send-Keys 'Ctrl+Enter'
+        Send-Text $Data.Password
+        Wait-Until 'фокус у полі підтвердження' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'create-confirm') }
+    } -Expect $UI.CreateTitle
+
+    # The new snippet is the newest change, so it is first and selected. NVDA goes straight to
+    # it: not through the document, and not first to the snippet selected before.
+    Invoke-Step 'Ctrl+Enter зберігає зашифрований сніпет: «Збережено», потім NVDA одразу на ньому' {
+        Send-Keys 'Ctrl+Enter'
         $name = '{0} ({1})' -f $Data.SecretTitle, $UI.Encrypted
         Wait-Until 'зашифрований сніпет у списку з фокусом' {
             Test-HasFocus (Find-Element (Get-AppWindow) -Name $name -Type ([System.Windows.Automation.ControlType]::ListItem))
         }
-    } -ExpectCount @{ ($UI.Saved) = 1 } -Expect $UI.Encrypted
+    } -ExpectCount @{ ($UI.Saved) = 1; ($Data.SecretTitle) = 1 } -Expect $UI.Encrypted -ExpectAny $Role.List -Forbid (@($Data.PlainTitle, $Role.Blank) + $FocusNoise)
 
     Invoke-Step 'Enter на зашифрованому сніпеті питає пароль' {
         Set-ClipText $Data.Sentinel
@@ -983,7 +1008,7 @@ try {
             (Test-HasFocus (Get-SearchBox)) -and -not (Get-FocusedListItem) -and
             (Find-Element (Get-AppWindow) -Type ([System.Windows.Automation.ControlType]::ListItem))
         }
-    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.SecretTitle) = 1 }
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1; ($Data.SecretTitle) = 1 } -Forbid $SearchBoxNoise
 
     # Settings dialog: what NVDA says on opening and at every Tab stop, in the visual
     # order, and that Escape brings back the theme and language without saving.
@@ -1046,7 +1071,7 @@ try {
             -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady)
         }
         & $assertSaved 'dark' 'uk'
-    } -Expect $UI.Light, $UI.German -Forbid $UI.Saved
+    } -Expect $UI.Light, $UI.German -Forbid (@($UI.Saved) + $FocusNoise)
 
     Invoke-Step 'Знову Ctrl+,: діалог українською, тема темна' {
         Send-Keys 'Ctrl+Comma'
@@ -1054,7 +1079,7 @@ try {
         Send-Keys 'Esc'
         Wait-Until 'діалог закрито' { -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'dark' 'uk'
-    } -Expect $UI.Settings, $UI.Theme, $UI.Dark -Forbid $UI.SettingsGerman, $UI.Light
+    } -Expect $UI.Settings, $UI.Theme, $UI.Dark -Forbid (@($UI.SettingsGerman, $UI.Light) + $FocusNoise)
 
     # Keyboard shortcuts help: NVDA reads every row, keys and action, with the arrow keys
     # (the app root is role="application", so plain text would stay silent here).
@@ -1089,7 +1114,7 @@ try {
         Wait-Until 'довідку закрито, фокус у головному вікні' {
             -not (& $helpItem 0) -and (Test-AppReady)
         }
-    } -Forbid $UI.HelpTitle
+    } -Forbid (@($UI.HelpTitle) + $FocusNoise)
 
     Invoke-Step 'F1 у діалозі створення нічого не робить' {
         Send-Keys 'Ctrl+N'
@@ -1100,7 +1125,7 @@ try {
         if (-not (& $hasFocus 'create-title')) { throw 'після F1 фокус пішов з поля «Назва»' }
         Send-Keys 'Esc'
         Wait-Until 'діалог створення закрито' { -not (Find-Element (& $appWin) -Id 'create-title') -and (Test-AppReady) }
-    } -Expect $UI.CreateTitle -Forbid $UI.HelpTitle
+    } -Expect $UI.CreateTitle -Forbid (@($UI.HelpTitle) + $FocusNoise)
 
     $autostartSkip = ''
     if ($UserRunValue) { $autostartSkip = 'у вас увімкнено автозапуск QuickSnippets, тест його не чіпає' }
@@ -1212,7 +1237,7 @@ try {
     Invoke-Step 'Інше вікно стає активним: вікно програми ховається, Ctrl+Alt+Space повертає його' {
         & $leaveApp
         Show-App
-    } -Expect $UI.SearchPlaceholder
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
 
     Invoke-Step 'Те саме з відкритими налаштуваннями: після повернення діалог на місці, фокус у ньому' {
         Send-Keys 'Ctrl+Comma'
@@ -1372,7 +1397,7 @@ try {
             (& $searchValue) -eq 'smoke зв' -and (& $listIs @($secretName, $Data.PlainTitle))
         }
         Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
-    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.SecretTitle) = 1 }
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1; ($Data.SecretTitle) = 1 } -Forbid $SearchBoxNoise
 
     Invoke-Step 'Стрілка вниз з поля пошуку: NVDA читає вибраний сніпет' {
         Send-Keys 'Down'
@@ -1386,7 +1411,7 @@ try {
         $selected = $false
         try { $selected = [bool](Wait-Until 'сніпет лишився вибраним' { & $isSelected (& $plainItem) } 3) } catch { }
         if (-not $selected) { $script:SoftFail = 'сніпет «smoke звичайний» більше не позначено вибраним' }
-    } -Expect $UI.SearchPlaceholder -Forbid $Data.PlainTitle, $Data.SecretTitle
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid ($SearchBoxNoise + $Data.PlainTitle + $Data.SecretTitle)
 
     # "smoke зв" with the caret before "в": Left reads "з", Right reads "в".
     Invoke-Step 'Стрілки вліво й вправо в полі пошуку читають символ біля курсора' {
@@ -1416,7 +1441,7 @@ try {
             (& $searchValue) -eq '' -and (& $listIs @($Data.PlainTitle, $secretName))
         }
         Wait-Until 'фокус у полі пошуку' { & $inSearchBox }
-    } -Expect $UI.SearchPlaceholder -ExpectCount @{ ($Data.PlainTitle) = 1 }
+    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1; ($Data.PlainTitle) = 1 } -Forbid $SearchBoxNoise
 
     # Delete in the search box erases text while there is text to erase; only with nothing to
     # erase does it ask to delete the selected snippet. "звч" and "зв" still find the plain snippet.
@@ -1458,26 +1483,76 @@ try {
         Wait-Until 'поле пошуку порожнє, у списку обидва сніпети' {
             (& $searchValue) -eq '' -and (& $listIs @($Data.PlainTitle, $secretName))
         }
-    } -Forbid $UI.Deleted
+    } -Forbid (@($UI.Deleted) + $FocusNoise)
 
-    Invoke-Step 'Ctrl+D і Ctrl+Enter видаляють сніпет' {
+    # A third snippet, to delete with the Delete key. It has never been used, so it comes last
+    # (least recently used first, unused at the end) and the first snippet stays selected.
+    $tempItem = { Find-Element (& $appWin) -Name $Data.TempTitle -Type $listItemType }
+
+    Invoke-Step 'Ctrl+N: діалог створення ще одного сніпета заповнено' {
+        Send-Keys 'Ctrl+N'
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
+        Send-Text $Data.TempTitle
+        Send-Keys 'Tab'
+        Send-Text $Data.TempText
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
+    } -Expect $UI.CreateTitle
+
+    Invoke-Step 'Ctrl+Enter зберігає: «Збережено» один раз, потім NVDA одразу на вибраному сніпеті' {
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'новий сніпет у списку' { & $listIs @($Data.PlainTitle, $secretName, $Data.TempTitle) }
+        Wait-Until 'діалог закрито, фокус на першому сніпеті' {
+            -not (Find-Element (& $appWin) -Id 'create-title') -and (Test-HasFocus (& $plainItem))
+        }
+    } -ExpectCount @{ ($UI.Saved) = 1; ($Data.PlainTitle) = 1 } -ExpectAny $Role.List -Forbid (@($Role.Blank) + $FocusNoise)
+
+    Invoke-Step 'Delete питає підтвердження видалення нового сніпета' {
+        & $selectSnippet $Data.TempTitle
+        Send-Keys 'Delete'
+        Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
+        if (-not (Find-TextLike "*$($Data.TempTitle)*")) { throw 'у діалозі немає назви сніпета' }
+    } -Expect $UI.DeleteTitle, $UI.Cancel
+
+    # NVDA says the deletion once, then where focus is: the first snippet, selected now. The
+    # deleted snippet is not read again, and focus does not pass through the document.
+    Invoke-Step 'Ctrl+Enter видаляє сніпет після Delete: «Видалено» один раз, потім NVDA одразу на першому сніпеті' {
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'сніпет зник зі списку' { & $listIs @($Data.PlainTitle, $secretName) }
+        Wait-Until 'діалог закрито, фокус на першому сніпеті' { -not (& $cancelButton) -and (Test-HasFocus (& $plainItem)) }
+    } -ExpectCount @{ ($UI.Deleted) = 1; ($Data.PlainTitle) = 1 } -ExpectAny $Role.List -Forbid (@($Data.TempTitle, $Role.Blank) + $FocusNoise)
+
+    Invoke-Step 'Ctrl+D питає підтвердження видалення' {
         & $selectSnippet $Data.PlainTitle
         Send-Keys 'Ctrl+D'
         Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
+    } -Expect $UI.DeleteTitle, $UI.Cancel
+
+    Invoke-Step 'Ctrl+Enter видаляє сніпет після Ctrl+D: «Видалено» один раз, потім NVDA одразу на сніпеті, що лишився' {
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'сніпет зник зі списку' { & $listIs @($secretName) }
-        Wait-Until 'діалог закрито, фокус у головному вікні' { -not (& $cancelButton) -and (Test-AppReady) }
-    } -Expect $UI.DeleteTitle -ExpectCount @{ ($UI.Deleted) = 1 }
+        Wait-Until 'діалог закрито, фокус на сніпеті, що лишився' {
+            -not (& $cancelButton) -and (Test-HasFocus (Find-Element (& $appWin) -Name $secretName -Type $listItemType))
+        }
+    } -ExpectCount @{ ($UI.Deleted) = 1; ($Data.SecretTitle) = 1 } -ExpectAny $Role.List -Forbid (@($Data.PlainTitle, $Role.Blank) + $FocusNoise)
 
-    Invoke-Step 'Налаштування: увімкнути «Питати перед закриттям програми»' {
+    # From the keyboard: a toggle through UI Automation may move the keyboard inside WebView2
+    # for a moment (see the steps above), and NVDA would then say "application" on its own.
+    Invoke-Step 'Налаштування: Tab до «Питати перед закриттям програми», пробіл його вмикає' {
         Send-Keys 'Ctrl+Comma'
-        $box = Wait-Until 'налаштування відкрито' { Find-Element (& $appWin) -Id 'settings-confirm' }
-        Set-Toggle $box $true
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        Send-Keys 'Tab', 'Tab', 'Tab', 'Tab'
+        Wait-Until 'фокус на «Питати перед закриттям програми»' { & $hasFocus 'settings-confirm' }
+        $toggle = (Find-Element (& $appWin) -Id 'settings-confirm').GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+        if ($toggle.Current.ToggleState.ToString() -ne 'On') { Send-Keys 'Space' }
+        Wait-Until 'прапорець позначено' { $toggle.Current.ToggleState.ToString() -eq 'On' }
+    } -Expect $UI.Settings, $UI.ConfirmOnClose
+
+    Invoke-Step 'Ctrl+Enter зберігає налаштування: NVDA одразу на вибраному сніпеті' {
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'підтвердження виходу в settings.json' { (& $readSettings).confirm_on_close -eq $true }
         Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'dark' 'uk'
-    } -Expect $UI.Settings
+    } -Expect $Data.SecretTitle -ExpectAny $Role.List -Forbid (@($Role.Blank) + $FocusNoise)
 
     Invoke-Step 'Ctrl+Shift+T вмикає світлу тему й записує її' {
         Send-Keys 'Ctrl+Shift+T'
@@ -1499,7 +1574,7 @@ try {
         Start-Sleep -Milliseconds 500  # a blur would hide the window after 200 ms
         if ($script:AppProc.HasExited) { throw 'програма завершилась' }
         if (-not (Test-AppReady)) { throw 'вікно сховалося після скасування виходу' }
-    } -Forbid $UI.ExitTitle
+    } -Forbid (@($UI.ExitTitle) + $FocusNoise)
 
     Invoke-Step 'Знову Alt+F4, Ctrl+Enter: програма завершується' {
         Send-Keys 'Alt+F4'
@@ -1534,7 +1609,7 @@ try {
         Send-Keys 'Esc'
         Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'light' 'uk'
-    } -Expect $UI.Settings, $UI.Theme, $UI.Light -Forbid $UI.Dark
+    } -Expect $UI.Settings, $UI.Theme, $UI.Light -Forbid (@($UI.Dark) + $FocusNoise)
 }
 finally {
     Stop-Target

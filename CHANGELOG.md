@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## v0.3.2 - 2026-11-19
+
+### Changed
+- Search box: screen readers now say it more briefly. NVDA says "Search, combo box, expanded, editable, opens list" and then the query, or "blank" when the search is empty. Before, it said "Search snippets…, combo box, expanded, has autocomplete, editable", and in an empty search box it repeated "Search snippets…" before "blank". You hear this each time the window opens and each time you go back from the list to the search box. The hint shown in the empty search box is now "Search" ("Пошук" in Ukrainian, "Suchen" in German).
+
+### Fixed
+- After you delete a snippet, or save one in the create or edit dialog, screen readers now go straight back to the snippet list: right after "Deleted" or "Saved" they read the snippet that is selected now. Before, NVDA first said "blank" or "unknown" and "application", because focus passed through the empty page on its way back from the dialog, and after a delete it sometimes read an unnamed list item, what was left of the deleted snippet.
+- A dialog opened right after the window appears now keeps the focus. Before, if you pressed F1 or Ctrl+N in the first moments after QuickSnippets started, the dialog opened, but focus jumped back to the search box behind it, so the screen reader left the dialog and the keys went to the search.
+
 ## v0.3.1 - 2026-11-17
 
 ### Fixed
