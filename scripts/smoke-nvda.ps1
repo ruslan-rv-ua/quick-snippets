@@ -10,6 +10,10 @@
     What it protects:
     - Your data: the test runs a copy of the exe from a temp folder with its own
       empty quick-snippets-data folder. Your snippets and settings are not touched.
+      The copy keeps its browser data in quick-snippets-webview in that temp folder.
+      The last step checks that it left %LOCALAPPDATA%\com.quicksnippets.app, where
+      0.3.3 and older keep theirs, as it was; there it reads only the number of files
+      and folders and the time of the newest change.
     - The test runs only its own copy. A running QuickSnippets is closed (the app
       allows only one copy) and is not started again afterwards. Near the end the test
       quits its own copy through the exit confirmation and starts it again with the
@@ -550,6 +554,25 @@ function Get-RunValue {
     return (Get-ItemProperty -Path $RunKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue).QuickSnippets
 }
 
+# The folder where QuickSnippets 0.3.3 and older keep the data of their embedded browser,
+# shared by every copy on the computer. A newer copy must neither create nor change it.
+# Only whether it exists, how many files and folders it holds and when the newest of them
+# changed are read: no names, no contents. Read only while no other copy of the app runs.
+$OldBrowserDir = Join-Path $env:LOCALAPPDATA 'com.quicksnippets.app'
+function Get-OldBrowserState {
+    if (-not (Test-Path -LiteralPath $OldBrowserDir)) {
+        return [pscustomobject]@{ Key = 'none'; Text = 'теки немає' }
+    }
+    $items = @(Get-ChildItem -LiteralPath $OldBrowserDir -Recurse -Force -ErrorAction SilentlyContinue)
+    $newest = (Get-Item -LiteralPath $OldBrowserDir -Force).LastWriteTimeUtc.Ticks
+    foreach ($i in $items) { if ($i.LastWriteTimeUtc.Ticks -gt $newest) { $newest = $i.LastWriteTimeUtc.Ticks } }
+    $when = (New-Object DateTime $newest, ([DateTimeKind]::Utc)).ToLocalTime()
+    return [pscustomobject]@{
+        Key  = "$($items.Count)|$newest"
+        Text = '{0} файлів і тек, остання зміна {1:dd.MM.yyyy HH:mm:ss}' -f $items.Count, $when
+    }
+}
+
 # ── Home window ──────────────────────────────────────────────────────────────
 # A small window with one text field, owned by this script, open for the whole run.
 # It is the window the app returns focus to whenever it hides, so NVDA describes it
@@ -901,6 +924,16 @@ try {
     }
     # No BOM: serde_json rejects it.
     [IO.File]::WriteAllText((Join-Path $dataDir 'settings.json'), ($settings | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+
+    # The old browser folder before the test copy first starts. A copy closed just now may
+    # still be writing there for a moment: wait until two reads half a second apart agree.
+    $oldBrowserBefore = Get-OldBrowserState
+    for ($i = 0; $i -lt 10; $i++) {
+        Start-Sleep -Milliseconds 500
+        $again = Get-OldBrowserState
+        if ($again.Key -eq $oldBrowserBefore.Key) { break }
+        $oldBrowserBefore = $again
+    }
 
     # The home window first: the app window then opens over it, and focus returns to it
     # whenever the app hides.
@@ -1796,6 +1829,21 @@ try {
         Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'light' 'uk'
     } -Expect $UI.Settings, $UI.Theme, $UI.Light -Forbid (@($UI.Dark) + $FocusNoise)
+
+    # The embedded browser keeps its data next to the exe, outside the user's data folder.
+    # Up to 0.3.3 every copy kept it in AppData, shared with all other copies.
+    Invoke-Step 'Дані браузера лише в quick-snippets-webview поруч із тестовою копією; %LOCALAPPDATA%\com.quicksnippets.app не змінено' {
+        $webviewDir = Join-Path $Work 'quick-snippets-webview'
+        if (-not (Test-Path -LiteralPath (Join-Path $webviewDir 'EBWebView'))) { throw 'поруч із тестовою копією немає quick-snippets-webview\EBWebView' }
+        if (Test-Path -LiteralPath (Join-Path $dataDir 'EBWebView')) { throw 'дані браузера потрапили в quick-snippets-data' }
+        $files = @(Get-ChildItem -LiteralPath $webviewDir -Recurse -Force -File -ErrorAction SilentlyContinue)
+        $mb = ($files | Measure-Object Length -Sum).Sum / 1MB
+        $after = Get-OldBrowserState
+        $script:StepInfo = 'quick-snippets-webview: {0} файлів, {1:0.0} МБ; %LOCALAPPDATA%\com.quicksnippets.app: {2}' -f $files.Count, $mb, $after.Text
+        if ($after.Key -ne $oldBrowserBefore.Key) {
+            throw "тестова копія змінила %LOCALAPPDATA%\com.quicksnippets.app (до запуску: $($oldBrowserBefore.Text); тепер: $($after.Text))"
+        }
+    }
 }
 finally {
     Stop-Target
