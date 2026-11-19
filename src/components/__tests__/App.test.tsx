@@ -7,12 +7,22 @@ import App from '../../App';
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
 
-/** The handler the app registered last for the backend's `window:hidden` event. */
-function hiddenListener(): (() => void) | undefined {
-  const calls = mockListen.mock.calls.filter(([event]) => event === 'window:hidden');
+/** The handler the app registered last for an event of the backend. */
+function backendListener(name: string): (() => void) | undefined {
+  const calls = mockListen.mock.calls.filter(([event]) => event === name);
   const call = calls[calls.length - 1];
   const handler = call?.[1] as ((e: unknown) => void) | undefined;
-  return handler ? () => handler({ event: 'window:hidden', id: 0, payload: null }) : undefined;
+  return handler ? () => handler({ event: name, id: 0, payload: null }) : undefined;
+}
+
+/** The handler the app registered last for the backend's `window:hidden` event. */
+function hiddenListener(): (() => void) | undefined {
+  return backendListener('window:hidden');
+}
+
+/** The handler the app registered last for the backend's `window:show` event. */
+function showListener(): (() => void) | undefined {
+  return backendListener('window:show');
 }
 
 describe('App', () => {
@@ -415,6 +425,116 @@ describe('App: where the screen reader is', () => {
     fireEvent.focus(window);
     await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
     expect(pointsAt(search)).toBe('');
+  });
+
+});
+
+describe('App: telling the backend that the page is ready', () => {
+  const settings = {
+    theme: 'light',
+    start_in_tray: false,
+    autostart: false,
+    confirm_on_close: false,
+    language: 'en',
+    window_state: { x: 0, y: 0, width: 680, height: 520 },
+    autotype_delay_ms: 0,
+    sort_mode: 'alphabetical',
+    sort_direction: 'asc',
+  };
+  const snippets = [{ id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false }];
+
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    document.documentElement.classList.remove('theme-light');
+  });
+
+  const commandsSent = () => mockInvoke.mock.calls.map(([cmd]) => cmd as string);
+
+  // The backend shows the window only after this, so it has to come when the page looks as it
+  // will: the saved theme applied and the list loaded in the saved sort order.
+  it('reports once, when the saved theme is applied and the list is loaded in the saved order', async () => {
+    let themeWhenReady: boolean | undefined;
+    let lastListRequestWhenReady: unknown;
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      switch (cmd) {
+        case 'get_settings':
+          return settings;
+        case 'get_sorted_snippets':
+          lastListRequestWhenReady = args;
+          return snippets.map((s) => ({ ...s }));
+        case 'frontend_ready':
+          themeWhenReady = document.documentElement.classList.contains('theme-light');
+          return undefined;
+        default:
+          return null;
+      }
+    });
+
+    render(<App />);
+    await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+    expect(themeWhenReady).toBe(true);
+    expect(lastListRequestWhenReady).toEqual({ sortMode: 'alphabetical', sortDirection: 'asc' });
+
+    // Later reloads do not report again.
+    fireEvent.focus(window);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toBeInTheDocument());
+    expect(commandsSent().filter((cmd) => cmd === 'frontend_ready')).toHaveLength(1);
+  });
+
+  it('reports even when the list cannot be loaded, so the window still opens', async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_sorted_snippets') throw new Error('database is locked');
+      return cmd === 'get_settings' ? settings : null;
+    });
+
+    render(<App />);
+    await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+  });
+
+  describe('the selection in the list', () => {
+    const first = () => screen.getByRole('option', { name: 'Greeting' });
+
+    beforeEach(() => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_settings') return settings;
+        return cmd === 'get_sorted_snippets' ? snippets.map((s) => ({ ...s })) : null;
+      });
+    });
+
+    // NVDA, in the search box, reads a snippet only when it becomes the selected one. The first
+    // list is loaded while the window is still hidden, so the first snippet has to become the
+    // selected one after the show, as on every later show.
+    it('while the window is still hidden, nothing is selected; the show selects the first snippet', async () => {
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      try {
+        render(<App />);
+        await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+        await waitFor(() => expect(first()).toHaveAttribute('aria-selected', 'false'));
+
+        hasFocus.mockReturnValue(true);
+        act(() => showListener()?.());
+        await waitFor(() => expect(first()).toHaveAttribute('aria-selected', 'true'));
+      } finally {
+        hasFocus.mockRestore();
+      }
+    });
+
+    // The backend shows the window by itself if the page takes too long to report.
+    it('in a window that is already showing, the first snippet stays selected', async () => {
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      try {
+        render(<App />);
+        await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        });
+        expect(first()).toHaveAttribute('aria-selected', 'true');
+      } finally {
+        hasFocus.mockRestore();
+      }
+    });
   });
 });
 

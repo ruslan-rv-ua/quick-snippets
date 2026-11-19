@@ -14,6 +14,7 @@ import {
   autotypeSnippet,
   getPendingNotification,
   cancelClose,
+  frontendReady,
   getSettings,
   updateSettings,
 } from './hooks/useIpc';
@@ -100,6 +101,29 @@ function AppInner(): React.ReactElement {
 
   const searchRef = useRef<SearchBoxHandle>(null);
   const [autotypeMode, setAutotypeMode] = useState(false);
+
+  // ── Tell the backend when the page is ready to be seen ────────────────
+  // The window is created hidden, and without "Start in tray" the backend shows it only after
+  // this. Answers come back in the order the requests were sent. The first reload ends after
+  // everything requested on mount (theme, language, sort order) has been answered; the second
+  // one loads the list with the sort order those answers brought. The window then appears
+  // complete: no theme switch and no list in another order a moment later.
+  //
+  // Until it is shown, the list is left as it is whenever the window is hidden: with nothing
+  // selected. A screen reader in the search box reads the first snippet only when it becomes
+  // the selected one, and that has to happen after the window is shown, on the reload the show
+  // brings. Clearing the selection only at the show would be too late: unselected and selected
+  // again within a few milliseconds, the snippet does not count as newly selected.
+  useEffect(() => {
+    reload()
+      .then(() => reload())
+      .then(() => {
+        // The window is still hidden, unless the backend gave up waiting and showed it.
+        if (!document.hasFocus()) setActiveIndex(-1);
+        return frontendReady();
+      })
+      .catch(() => void 0);
+  }, [reload, setActiveIndex]);
 
   // ── Pending notification on startup ──────────────────────────────────
   useEffect(() => {
