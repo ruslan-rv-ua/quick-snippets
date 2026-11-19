@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { SearchBox } from '../SearchBox';
+import { LanguageProvider } from '../../contexts/LanguageContext';
+import { translations } from '../../i18n/translations';
 import type { SearchResult } from '../../types';
 
 const mockSnippets: SearchResult[] = [
@@ -31,10 +33,44 @@ describe('SearchBox', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
-  it('has aria-label for search placeholder', () => {
-    renderSearchBox();
+  // NVDA reads every word of this name and the states each time it comes back to the search box.
+  // A separate aria-label makes Chromium expose the placeholder too, and NVDA then says the name
+  // twice in an empty field; aria-autocomplete adds "has autocomplete".
+  it('is named by its short placeholder only, without aria-autocomplete', () => {
+    render(
+      <LanguageProvider>
+        <SearchBox
+          value=""
+          onChange={vi.fn()}
+          snippets={[]}
+          activeIndex={-1}
+          onActiveIndexChange={vi.fn()}
+          onActivate={vi.fn()}
+          listFocused={false}
+          onListFocusChange={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+    // Chromium names the field by its placeholder; the test library's name calculation does not.
     const input = screen.getByRole('combobox');
-    expect(input).toHaveAttribute('aria-label');
+    expect(input).toHaveAttribute('placeholder', 'Search');
+    expect(input).not.toHaveAttribute('aria-label');
+    expect(input).not.toHaveAttribute('aria-labelledby');
+    expect(input).not.toHaveAttribute('aria-autocomplete');
+  });
+
+  it('the search box name is one short word in every language', () => {
+    expect(translations.en.searchPlaceholder).toBe('Search');
+    expect(translations.uk.searchPlaceholder).toBe('Пошук');
+    expect(translations.de.searchPlaceholder).toBe('Suchen');
+  });
+
+  it('keeps the combo box attributes the list keys rely on', () => {
+    renderSearchBox({ snippets: mockSnippets, activeIndex: 0 });
+    const input = screen.getByRole('combobox');
+    expect(input).toHaveAttribute('aria-controls', 'snippet-list');
+    expect(input).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('has autocomplete="off" and spellcheck="false"', () => {
