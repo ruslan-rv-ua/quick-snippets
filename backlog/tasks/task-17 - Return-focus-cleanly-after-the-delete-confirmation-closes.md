@@ -19,7 +19,7 @@ references:
   - src/App.tsx
   - scripts/smoke-nvda.ps1
 priority: low
-ordinal: 1000
+ordinal: 2000
 ---
 
 ## Description

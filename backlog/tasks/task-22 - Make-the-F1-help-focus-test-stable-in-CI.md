@@ -16,7 +16,7 @@ references:
   - src/components/__tests__/App.test.tsx
   - src/hooks/useWindowEvents.ts
 priority: low
-ordinal: 3000
+ordinal: 1000
 ---
 
 ## Description

@@ -17,7 +17,7 @@ references:
   - src/i18n/translations.ts
   - scripts/smoke-nvda.ps1
 priority: low
-ordinal: 2000
+ordinal: 2500
 ---
 
 ## Description
