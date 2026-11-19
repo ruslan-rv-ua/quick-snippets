@@ -57,8 +57,9 @@ describe('SearchBox', () => {
     expect(input).not.toHaveAttribute('aria-label');
     expect(input).not.toHaveAttribute('aria-labelledby');
     expect(input).not.toHaveAttribute('aria-autocomplete');
-    // "listbox" is the default for a combo box; set explicitly, NVDA adds "opens list".
-    expect(input).not.toHaveAttribute('aria-haspopup');
+    // The list is always on screen, not a popup; with the combo box default ("listbox") NVDA
+    // adds "opens list".
+    expect(input).toHaveAttribute('aria-haspopup', 'false');
   });
 
   it('the search box name is one short word in every language', () => {

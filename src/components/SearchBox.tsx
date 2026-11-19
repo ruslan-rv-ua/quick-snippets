@@ -91,8 +91,10 @@ export const SearchBox = forwardRef<SearchBoxHandle, SearchBoxProps>(function Se
         // exposes the placeholder, and NVDA says it a second time while the field is empty.
         // No aria-autocomplete: the list holds results, not completions of the typed text, and
         // NVDA would add "has autocomplete" every time it comes back to the search box.
-        // No aria-haspopup: "listbox" is already the default for a combo box, and without
-        // aria-autocomplete NVDA reads the explicit value as "opens list".
+        // aria-haspopup="false": the snippet list is always on screen, it is not a popup. A combo
+        // box otherwise defaults to "listbox", which NVDA reads as "opens list" (aria-controls
+        // still ties the search box to the list).
+        aria-haspopup="false"
         aria-activedescendant={activeSnippetId}
         autoComplete="off"
         spellCheck={false}
