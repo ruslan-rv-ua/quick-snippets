@@ -64,6 +64,41 @@ describe('translations', () => {
     expect(one).not.toEqual(many);
   });
 
+  // Content over the size limit: what the create and edit dialogs say under Content.
+  it('contentTooLong names the size and the limit in each language', () => {
+    expect(translations.en.contentTooLong(70000, 65536, false)).toBe(
+      'Text too long: 70000 bytes, at most 65536 allowed',
+    );
+    expect(translations.en.contentTooLong(52300, 49105, true)).toBe(
+      'Text too long for an encrypted snippet: 52300 bytes, at most 49105 allowed',
+    );
+    expect(translations.uk.contentTooLong(70000, 65536, false)).toBe(
+      'Текст задовгий: 70000 байтів, можна до 65536',
+    );
+    expect(translations.uk.contentTooLong(52300, 49105, true)).toBe(
+      'Текст задовгий для зашифрованого сніпета: 52300 байтів, можна до 49105',
+    );
+    expect(translations.de.contentTooLong(70000, 65536, false)).toBe(
+      'Text zu lang: 70000 Bytes, höchstens 65536 erlaubt',
+    );
+    expect(translations.de.contentTooLong(52300, 49105, true)).toBe(
+      'Text zu lang für ein verschlüsseltes Snippet: 52300 Bytes, höchstens 49105 erlaubt',
+    );
+  });
+
+  it('contentTooLong uses the Ukrainian plural of "байт" for the size', () => {
+    const word = (n: number) => translations.uk.contentTooLong(n, 65536, false).split(' ')[3];
+    expect(word(65541)).toBe('байт,');
+    expect(word(65542)).toBe('байти,');
+    expect(word(65544)).toBe('байти,');
+    expect(word(65545)).toBe('байтів,');
+    expect(word(65611)).toBe('байтів,');
+    expect(word(65612)).toBe('байтів,');
+    expect(word(65614)).toBe('байтів,');
+    expect(word(65621)).toBe('байт,');
+    expect(word(65622)).toBe('байти,');
+  });
+
   // PRD required strings presence
   const requiredKeys = [
     'searchPlaceholder', 'copySuccess', 'saveSuccess', 'deleteSuccess',

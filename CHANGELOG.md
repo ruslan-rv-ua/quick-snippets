@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Saving a snippet with too much text now gives a clear message. The create and edit dialogs say under "Content", in the interface language, how long the text is and how much fits, for example "Text too long for an encrypted snippet: 52300 bytes, at most 49105 allowed", and move the focus to the content field. Before, an encrypted snippet with more than 49,105 bytes of text failed with a raw database error ("CHECK constraint failed: …"), and a plain snippet with more than 65,536 bytes got a message in English only; both appeared under the title field, which got the focus. The limits themselves are unchanged: 65,536 bytes for a plain snippet and 49,105 bytes for an encrypted one, because the encrypted text takes about a third more space. A Latin letter takes 1 byte, a Cyrillic letter 2.
+
 ## v0.3.2 - 2026-11-19
 
 ### Changed

@@ -101,6 +101,55 @@ describe('CreateSnippetModal', () => {
     });
   });
 
+  // The backend checks the size in bytes; the dialog tells it under Content, translated.
+  it('shows the too-long error from the backend under Content with the size and the limit', async () => {
+    mockInvoke.mockRejectedValue('Content too long (70000 bytes, max 65536 bytes)');
+    renderModal();
+    const titleInput = screen.getByLabelText(/title|назва/i);
+    const content = screen.getByLabelText(/^content|^вміст/i);
+    fireEvent.change(titleInput, { target: { value: 'Valid Title' } });
+    fireEvent.change(content, { target: { value: 'some content' } });
+    titleInput.focus();
+    save();
+    await waitFor(() => {
+      expect(region('create-content-err')).toHaveTextContent(/too long|задовгий/i);
+      expect(document.activeElement).toBe(content);
+    });
+    const message = region('create-content-err');
+    expect(message).toHaveTextContent('70000');
+    expect(message).toHaveTextContent('65536');
+    expect(message).not.toHaveTextContent(/encrypted|зашифр/i);
+    expect(message).not.toHaveTextContent('Content too long');
+    expect(content).toHaveAttribute('aria-invalid', 'true');
+    expect(region('create-title-err')).toBeEmptyDOMElement();
+    expect(titleInput).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('names the lower limit of encrypted snippets when the backend reports it', async () => {
+    mockInvoke.mockRejectedValue(
+      'Content too long for an encrypted snippet (52300 bytes, max 49105 bytes)',
+    );
+    const onSuccess = vi.fn();
+    renderModal({ onSuccess });
+    const content = screen.getByLabelText(/^content|^вміст/i);
+    const confirmPwd = screen.getByLabelText(/confirm|підтвердити/i);
+    fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'Valid Title' } });
+    fireEvent.change(content, { target: { value: 'some content' } });
+    fireEvent.change(screen.getByLabelText(/^password|^пароль/i), { target: { value: 'pass' } });
+    fireEvent.change(confirmPwd, { target: { value: 'pass' } });
+    confirmPwd.focus();
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(region('create-content-err')).toHaveTextContent(/encrypted snippet|зашифрованого сніпета/i);
+      expect(document.activeElement).toBe(content);
+    });
+    expect(region('create-content-err')).toHaveTextContent('52300');
+    expect(region('create-content-err')).toHaveTextContent('49105');
+    expect(region('create-title-err')).toBeEmptyDOMElement();
+    expect(region('create-confirm-err')).toBeEmptyDOMElement();
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
   it('does NOT show errors before save is clicked', () => {
     renderModal();
     for (const id of ['create-title-err', 'create-content-err', 'create-confirm-err']) {

@@ -9,7 +9,7 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { createSnippet } from '../hooks/useIpc';
-import { ipcErrorToString } from '../utils/errors';
+import { ipcErrorToString, parseContentTooLong } from '../utils/errors';
 
 export interface CreateSnippetModalProps {
   isOpen: boolean;
@@ -29,7 +29,7 @@ export function CreateSnippetModal({
   onClose,
   onSuccess,
 }: CreateSnippetModalProps): React.ReactElement | null {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
@@ -82,6 +82,13 @@ export function CreateSnippetModal({
       await createSnippet(title, content, password);
     } catch (err: unknown) {
       const msg = ipcErrorToString(err);
+      // The backend measures the text in bytes, and an encrypted snippet holds less.
+      const tooLong = parseContentTooLong(msg);
+      if (tooLong) {
+        setErrors({ content: tf.contentTooLong(tooLong.size, tooLong.max, tooLong.encrypted) });
+        contentRef.current?.focus();
+        return;
+      }
       const titleErr = msg.includes('Title already exists')
         ? t('titleDuplicate')
         : msg;
@@ -92,7 +99,7 @@ export function CreateSnippetModal({
     // Focus returns to the list as it is after the save, with the new snippet in it.
     await onSuccess();
     onClose();
-  }, [validate, title, content, password, onSuccess, onClose, t]);
+  }, [validate, title, content, password, onSuccess, onClose, t, tf]);
 
   useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });
 
