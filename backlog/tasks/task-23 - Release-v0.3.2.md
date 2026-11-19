@@ -4,7 +4,7 @@ title: Release v0.3.2
 status: To Do
 assignee: []
 created_date: '2026-11-19T07:10:00Z'
-updated_date: '2026-11-19T07:24:00Z'
+updated_date: '2026-11-19T07:54:00Z'
 labels:
   - release
   - model-sonnet
@@ -28,7 +28,7 @@ ordinal: 4000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Ships the small NVDA fixes planned after 0.3.1: clean focus after the delete confirmation closes (TASK-17), a shorter announcement of the search box (TASK-19), and the F1 help focus race, if TASK-22 finds that a user can hit it. A patch release: no change to stored data.
 
-Same procedure as v0.3.1 (DEVELOPMENT.md; see the archived TASK-21). Pushing and running workflows need the user's go-ahead, and so does the just smoke run (about two and a half minutes; leave a minute between two runs). Finish the release with --no-ff, so main gets a release merge commit.
+Same procedure as v0.3.1 (DEVELOPMENT.md; see the archived TASK-21), with one change from TASK-25: CI no longer runs on push, so do not wait for CI after pushing develop or main. The Release workflow itself runs lint and both test suites on a clean machine before the build, and a failing check stops it before the tag and the release exist; if it fails, fix the cause and run it again. Pushing and running workflows need the user's go-ahead, and so does the just smoke run (about two and a half minutes; leave a minute between two runs). Finish the release with --no-ff, so main gets a release merge commit.
 
 Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort medium`). The documented release procedure.
 <!-- SECTION:DESCRIPTION:END -->

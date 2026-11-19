@@ -1,6 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# ci.yml — тести та лінт на кожен push і pull request
+# ci.yml — тести та лінт для pull request і ручного запуску
 # ─────────────────────────────────────────────────────────────────────────────
+#
+# Коли запускається:
+#   • pull_request — репозиторій публічний, тож чужі зміни перевіряються;
+#   • workflow_dispatch — вручну (Actions → CI → Run workflow).
+# На кожен push у develop/main CI більше не запускається: ті самі перевірки
+# виконуються локально в кожній задачі і в release.yml перед збіркою релізу.
 #
 # Запускає те саме, що й локально:
 #   npm run lint      — TypeScript (tsc --noEmit) + cargo clippy -D warnings
@@ -13,8 +19,6 @@
 name: CI
 
 on:
-  push:
-    branches: [develop, main]
   pull_request:
   workflow_dispatch:
 
@@ -31,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +49,7 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Set up Node.js LTS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 'lts/*'
           cache: 'npm'
