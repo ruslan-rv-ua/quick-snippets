@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.3 - 2026-11-19
+
 ### Fixed
 - Saving a snippet with too much text now gives a clear message. The create and edit dialogs say under "Content", in the interface language, how long the text is and how much fits, for example "Text too long for an encrypted snippet: 52300 bytes, at most 49105 allowed", and move the focus to the content field. Before, an encrypted snippet with more than 49,105 bytes of text failed with a raw database error ("CHECK constraint failed: …"), and a plain snippet with more than 65,536 bytes got a message in English only; both appeared under the title field, which got the focus. The limits themselves are unchanged: 65,536 bytes for a plain snippet and 49,105 bytes for an encrypted one, because the encrypted text takes about a third more space. A Latin letter takes 1 byte, a Cyrillic letter 2.
 - Snippet titles of 3 to 50 characters are now accepted in any language, emoji included, when you create a snippet and when you rename one. Before, creating a snippet with a title of more than 25 Cyrillic letters failed with "Title too long (max 50 chars)" in English, a title of two emoji failed with a raw database error, and the title field stopped taking input early when the title had emoji. A title that is too short or too long now gets a message under "Title" in the interface language that also says how many characters it has, for example "Title must be 3–50 characters, now 57". Some emoji, such as flags or a family, count as several characters.

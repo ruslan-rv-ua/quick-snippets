@@ -1,10 +1,11 @@
 ---
 id: TASK-24
 title: Release v0.3.3
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-19T07:11:00Z'
-updated_date: '2026-11-19T12:26:00Z'
+updated_date: '2026-11-19T12:50:00Z'
 labels:
   - release
   - model-sonnet
@@ -50,3 +51,14 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checks on release/0.3.3 (version bump 004aba9):
+- just final-checks: versions match (0.3.3), tsc, clippy, Rust and Vitest tests, build OK; exe 3.7 MB.
+- npm run test:all: 489 Vitest tests in 26 files and 245 Rust tests (1 ignored), all pass. npm run lint: pass. npx tauri build --no-bundle: OK, exe 3,852,800 bytes, file version 0.3.3.
+- just smoke on that release exe: 80 of 80 steps OK, NVDA checks 284 of 284. The settings dialog reads "QuickSnippets версія 0.3.3". The NVDA log had the one known error of NVDA's own script_caret_newLine (Enter in a text field), as in TASK-12, TASK-26 and earlier runs.
+- CHANGELOG: [Unreleased] turned into "v0.3.3 - 2026-11-19" unchanged, with an empty [Unreleased] above it: three Fixed entries (TASK-12, TASK-26), all user-facing. No new user-facing strings in this task.
+- The release build is copied to C:\5-quicksnippets\real_db\quick-snippets-TASK-24-004aba9.exe (same SHA-256 as the build, F233FC7D…DB2A).
+<!-- SECTION:NOTES:END -->
