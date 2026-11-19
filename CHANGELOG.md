@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- With "Start in tray" on, the window no longer shows up for a moment when QuickSnippets starts. Before, at every start it was on screen for about a quarter of a second and took the keyboard from the program you were in: a screen reader said "QuickSnippets" and then read your current window again, and a key pressed in that moment could be lost. Now the window stays hidden, and the keyboard stays where it was, until you press Ctrl+Alt+Space or use the tray icon.
+- After a start in the tray, screen readers now read the first Ctrl+Alt+Space properly: the window, then the search box, once. Before, when QuickSnippets had been started again soon after it was closed, NVDA read the window title and the document several times and the search box twice, and once in a while it said nothing at all until the next key press.
+
 ## v0.3.3 - 2026-11-19
 
 ### Fixed

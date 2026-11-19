@@ -79,6 +79,13 @@ pub fn generate_tray_icon_rgba() -> Vec<u8> {
     data
 }
 
+/// Whether the main window is created visible and focused when the app starts. With "Start
+/// in tray" on it is created hidden and without focus, and stays so until the user asks for
+/// it (Ctrl+Alt+Space, the tray icon, a second launch).
+pub fn show_window_at_launch(start_in_tray: bool) -> bool {
+    !start_in_tray
+}
+
 // ---------------------------------------------------------------------------
 // Tauri application entry point
 // ---------------------------------------------------------------------------
@@ -396,28 +403,41 @@ pub fn run() {
             commands::tauri_commands::cancel_close,
         ])
         .setup(|app| {
-            let win = app
-                .get_webview_window("main")
-                .expect("main window not found");
+            // ── Create the main window ────────────────────────────────────
+            // Tauri does not create it by itself (`"create": false` in tauri.conf.json),
+            // because how it is created depends on the "Start in tray" setting. Without it
+            // the window is created visible and focused. With it the window is created
+            // hidden and without focus, and first appears when the user asks for it.
+            // Up to 0.3.3 it was always created visible and hidden a moment later: at every
+            // start in the tray it was on screen for a quarter of a second, took the keyboard
+            // from the program the user was in, and a screen reader announced it. A window
+            // that is only created hidden still takes the keyboard, invisibly, because the
+            // web content focuses itself when it is created; hence also "without focus".
+            let start_in_tray = app
+                .state::<AppState>()
+                .settings
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .start_in_tray;
+            let shown = show_window_at_launch(start_in_tray);
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .expect("main window is not configured")
+                .clone();
+            let win = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .visible(shown)
+                .focused(shown)
+                .build()?;
 
             // ── Apply saved window state ──────────────────────────────────
             {
                 let state: tauri::State<AppState> = app.state();
                 let s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
                 settings::apply_window_state(&win, &s.window_state);
-            }
-
-            // ── start_in_tray ─────────────────────────────────────────────
-            {
-                let state: tauri::State<AppState> = app.state();
-                let start_in_tray = state
-                    .settings
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .start_in_tray;
-                if start_in_tray {
-                    let _ = win.hide();
-                }
             }
 
             // ── Resolve display language ──────────────────────────────────
@@ -454,6 +474,18 @@ pub fn run() {
 mod tests {
     use super::*;
     use crate::commands::AppState;
+
+    // === Window at launch ===
+
+    #[test]
+    fn test_window_is_shown_at_launch_by_default() {
+        assert!(show_window_at_launch(false));
+    }
+
+    #[test]
+    fn test_window_stays_hidden_at_launch_with_start_in_tray() {
+        assert!(!show_window_at_launch(true));
+    }
 
     // === Tray icon ===
 
