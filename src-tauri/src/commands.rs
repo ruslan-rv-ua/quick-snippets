@@ -547,6 +547,13 @@ pub mod tauri_commands {
     pub fn cancel_close(state: State<AppState>) {
         state.set_close_pending(false);
     }
+
+    /// The page has its first list on screen. The start-up goes on from here: with "Start in
+    /// tray" off, this is when the window opens (see `startup`).
+    #[tauri::command]
+    pub fn frontend_ready(app: AppHandle) {
+        crate::finish_startup(app);
+    }
 }
 
 // ---------------------------------------------------------------------------

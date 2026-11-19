@@ -25,6 +25,7 @@ import {
   getPendingNotification,
   quitApp,
   cancelClose,
+  frontendReady,
   getSortedSnippets,
 } from '../useIpc';
 import type { SearchResult, SnippetView, Settings } from '../../types';
@@ -467,6 +468,25 @@ describe('cancelClose', () => {
     mockInvoke.mockRejectedValueOnce(new Error('cancel failed'));
 
     await expect(cancelClose()).rejects.toThrow('cancel failed');
+  });
+});
+
+// ── frontendReady ─────────────────────────────────────────────────────────
+
+describe('frontendReady', () => {
+  it('calls invoke with "frontend_ready" and no arguments', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    await frontendReady();
+
+    expect(mockInvoke).toHaveBeenCalledOnce();
+    expect(mockInvoke).toHaveBeenCalledWith('frontend_ready');
+  });
+
+  it('propagates errors', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('not ready'));
+
+    await expect(frontendReady()).rejects.toThrow('not ready');
   });
 });
 

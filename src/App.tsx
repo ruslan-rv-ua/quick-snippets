@@ -14,6 +14,7 @@ import {
   autotypeSnippet,
   getPendingNotification,
   cancelClose,
+  frontendReady,
   getSettings,
   updateSettings,
 } from './hooks/useIpc';
@@ -101,6 +102,28 @@ function AppInner(): React.ReactElement {
   const searchRef = useRef<SearchBoxHandle>(null);
   const [autotypeMode, setAutotypeMode] = useState(false);
 
+  // ── Tell the backend when the page is ready to be seen ────────────────
+  // The window is created hidden, and without "Start in tray" the backend shows it only after
+  // this. Answers come back in the order the requests were sent. The first reload ends after
+  // everything requested on mount (theme, language, sort order) has been answered; the second
+  // one loads the list with the sort order those answers brought. The window then appears
+  // complete: no theme switch and no list in another order a moment later.
+  useEffect(() => {
+    reload()
+      .then(() => reload())
+      .then(() => frontendReady())
+      .catch(() => void 0);
+  }, [reload]);
+
+  // ── Nothing is marked as selected before the window is first shown ───────
+  // A screen reader in the search box reads the first snippet only when it becomes the
+  // selected one. The first list is loaded, and its first snippet selected, while the window
+  // is still hidden after the start; marked as selected then, it would not become selected
+  // when the window is shown, and nothing would be read. So the mark appears with the first
+  // show, as it does on every later show (hiding clears the selection).
+  const [shownOnce, setShownOnce] = useState(false);
+  const markedIndex = shownOnce ? activeIndex : -1;
+
   // ── Pending notification on startup ──────────────────────────────────
   useEffect(() => {
     getPendingNotification()
@@ -158,6 +181,7 @@ function AppInner(): React.ReactElement {
     setShowSettings,
     setShowExit,
     setAutotypeMode,
+    onWindowShown: () => setShownOnce(true),
   });
 
   // ── Snippet activation ────────────────────────────────────────────────
@@ -261,7 +285,7 @@ function AppInner(): React.ReactElement {
         value={query}
         onChange={setQuery}
         snippets={snippets}
-        activeIndex={activeIndex}
+        activeIndex={markedIndex}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
         onAutotype={handleAutotype}
@@ -271,7 +295,7 @@ function AppInner(): React.ReactElement {
       />
       <SnippetList
         snippets={snippets}
-        activeIndex={activeIndex}
+        activeIndex={markedIndex}
         query={query}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}

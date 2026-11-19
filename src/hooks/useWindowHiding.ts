@@ -19,6 +19,8 @@ export interface UseWindowHidingParams {
   setShowSettings: (show: boolean) => void;
   setShowExit: (show: boolean) => void;
   setAutotypeMode?: (mode: boolean) => void;
+  /** Called whenever the window is shown or gets the keyboard back; first at the first show. */
+  onWindowShown?: () => void;
 }
 
 export interface UseWindowHidingReturn {
@@ -49,6 +51,7 @@ export function useWindowHiding(params: UseWindowHidingParams): UseWindowHidingR
     setShowSettings,
     setShowExit,
     setAutotypeMode,
+    onWindowShown,
   } = params;
 
   // ── Full reset + hide window ──────────────────────────────────────────
@@ -80,6 +83,7 @@ export function useWindowHiding(params: UseWindowHidingParams): UseWindowHidingR
     // a dialog; the delayed initial focus must not pull focus back to the search box behind it.
     onInitialFocus: focusSearch,
     onShow: () => {
+      onWindowShown?.();
       focusSearch();
       setRefreshTick((n) => n + 1);
     },

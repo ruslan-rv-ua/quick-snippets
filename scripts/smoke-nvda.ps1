@@ -470,10 +470,31 @@ function Test-AppReady {
     return (Test-HasFocus (Get-SearchBox)) -or ($null -ne (Get-FocusedListItem))
 }
 
+# Waits, without UI Automation, until the app window is on screen and in the foreground, then
+# gives NVDA time to read it. For the first show after a start, which is what these steps
+# measure: the test keeps its own queries out of the web content until NVDA has read the
+# window, so that they cannot change what NVDA does with it.
+# Returns $false if the window did not come to the foreground.
+function Wait-ShownQuietly([int]$Seconds = 20, [int]$ReadMs = 1500) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    do {
+        $h = [QsSmokeNative]::FindProcessWindow([uint32]$script:AppProc.Id, 'QuickSnippets')
+        if ($h -ne [IntPtr]::Zero -and [QsSmokeNative]::IsWindowVisible($h) -and [QsSmokeNative]::GetForegroundWindow() -eq $h) {
+            $script:ShownAfterMs = [int]((Get-Date) - $script:AppProc.StartTime).TotalMilliseconds
+            Start-Sleep -Milliseconds $ReadMs
+            return $true
+        }
+        Start-Sleep -Milliseconds 20
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
 # Shows the app with the hotkey, or, once the hotkey is known to be broken, by starting
 # the exe again (single instance: a second launch brings up the running window).
-function Show-App {
+# -Quiet: the first show after a start (see Wait-ShownQuietly).
+function Show-App([switch]$Quiet) {
     if ($script:HotkeyBroken) { Start-Process $TestExe } else { Send-Keys 'Ctrl+Alt+Space' }
+    if ($Quiet) { $null = Wait-ShownQuietly 8 }
     Wait-Until 'вікно програми з фокусом' { Test-AppReady }
 }
 
@@ -956,7 +977,10 @@ try {
     $script:AppProc = Start-Process $TestExe -PassThru
 
     $hotkeyShowsWindow = {
+        # -Quiet: the first show after a start (see Wait-ShownQuietly).
+        param([switch]$Quiet)
         Send-Keys 'Ctrl+Alt+Space'
+        if ($Quiet) { $null = Wait-ShownQuietly 6 }
         $shown = $true
         try { $null = Wait-Until 'вікно програми' { Get-AppWindow } 6 }
         catch {
@@ -978,9 +1002,14 @@ try {
         }
         Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
     }
-    # A first show read through UI Automation instead of IAccessible2 (the quick-restart effect,
-    # see DEVELOPMENT.md) names the document address.
-    $firstShowNoise = $SearchBoxNoise + 'tauri.localhost'
+    # The first show after a start is read as any later show: the window and its document once,
+    # then the search box once, with its states. When the web content gets the keyboard while
+    # the embedded browser is still starting up, NVDA reads the window through UI Automation
+    # instead (see DEVELOPMENT.md): it then names the browser pane («веб-вміст») or the document
+    # address, says the search box twice or without its states, and keeps Escape for itself.
+    $firstShowNoise = $SearchBoxNoise + 'tauri.localhost' + 'веб-вміст|web content|Webinhalt'
+    $firstShowOnce = @{ ($UI.SearchPlaceholder) = 1; 'Snippet Manager' = 1 }
+    $editable = 'можливо редагувати|editable|bearbeitbar'
 
     if ($StartInTray) {
         # NVDA says the bare window title when the app window takes the keyboard.
@@ -992,23 +1021,28 @@ try {
         # search box at once, not only after the next key press.
         Invoke-Step 'Ctrl+Alt+Space вперше показує вікно: NVDA читає поле пошуку' {
             $clock = [Diagnostics.Stopwatch]::StartNew()
-            $null = & $hotkeyShowsWindow
-            $script:StepInfo = 'від Ctrl+Alt+Space до фокуса в полі пошуку {0} мс; клавіатура у вікні класу {1}' -f
+            $null = & $hotkeyShowsWindow -Quiet
+            $script:StepInfo = 'від Ctrl+Alt+Space до перевірки фокуса в полі пошуку {0} мс (з них 1500 мс тест чекав, доки NVDA прочитає вікно); клавіатура у вікні класу {1}' -f
                 $clock.ElapsedMilliseconds, [QsSmokeNative]::ClassOf([QsSmokeNative]::KeyboardWindow())
-        } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $firstShowNoise
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount $firstShowOnce -Forbid $firstShowNoise
     } else {
-        # NVDA may stay silent about the very first show of a freshly started window until the
-        # next key press, so this step only hopes for speech; later shows are checked strictly.
-        Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, Escape його ховає' {
+        # The window opens by itself, once the page is ready and, with a screen reader running,
+        # the embedded browser has settled (about a second and a half after the start). NVDA
+        # must read it at once and the usual way, and the first Escape must hide it.
+        Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, NVDA читає його один раз, Escape його ховає' {
+            $script:ShownAfterMs = $null
+            $byItself = Wait-ShownQuietly
             $null = Wait-Until 'вікно програми після запуску' { Get-AppWindow } 20
+            $script:StepInfo = if ($byItself) { "вікно з'явилося на передньому плані через $($script:ShownAfterMs) мс після запуску процесу" }
+                               else { 'вікно не вийшло на передній план саме, його вивів тест' }
             if (-not (Test-AppReady)) {
                 $w = Get-AppWindow
                 $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
             }
             $null = Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
             Send-Keys 'Esc'
-            Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
-        } -Hope $UI.SearchPlaceholder
+            Wait-Until 'вікно сховалось' { -not (Get-AppWindow) } 3
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount $firstShowOnce -Forbid $firstShowNoise
 
         Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' $hotkeyShowsWindow -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
     }
@@ -1809,20 +1843,27 @@ try {
             Wait-HiddenStart
         } -ForbidSaid 'QuickSnippets'
 
-        # The first show after this start: the search box and, once, the only snippet.
-        Invoke-Step 'Ctrl+Alt+Space вперше після перезапуску: NVDA читає поле пошуку; світла тема, видалений сніпет не повернувся' {
+        # The first show after this start: the window, the search box and, once, the only
+        # snippet, exactly as on every later show.
+        Invoke-Step 'Ctrl+Alt+Space вперше після перезапуску: NVDA читає поле пошуку й перший сніпет; світла тема, видалений сніпет не повернувся' {
             $clock = [Diagnostics.Stopwatch]::StartNew()
-            Show-App
-            $script:StepInfo = 'від Ctrl+Alt+Space до фокуса у вікні {0} мс; клавіатура у вікні класу {1}' -f
+            Show-App -Quiet
+            $script:StepInfo = 'від Ctrl+Alt+Space до перевірки фокуса у вікні {0} мс (з них 1500 мс тест чекав, доки NVDA прочитає вікно); клавіатура у вікні класу {1}' -f
                 $clock.ElapsedMilliseconds, [QsSmokeNative]::ClassOf([QsSmokeNative]::KeyboardWindow())
             Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
             if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
-        } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $firstShowNoise -Hope $Data.SecretTitle
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount ($firstShowOnce + @{ ($Data.SecretTitle) = 1 }) -Forbid $firstShowNoise
     } else {
-        Invoke-Step 'Перезапуск тестової копії: світла тема, видалений сніпет не повернувся' {
+        # The window opens by itself again, now with a snippet in the list: NVDA reads the
+        # window, the search box and that snippet, each once.
+        Invoke-Step 'Перезапуск тестової копії: NVDA читає вікно, поле пошуку й перший сніпет; світла тема, видалений сніпет не повернувся' {
             try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
             $script:AppProc = Start-Process $TestExe -PassThru
+            $script:ShownAfterMs = $null
+            $byItself = Wait-ShownQuietly
             $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
+            $script:StepInfo = if ($byItself) { "вікно з'явилося на передньому плані через $($script:ShownAfterMs) мс після запуску процесу" }
+                               else { 'вікно не вийшло на передній план саме, його вивів тест' }
             if (-not (Test-AppReady)) {
                 $w = Get-AppWindow
                 $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
@@ -1830,7 +1871,7 @@ try {
             Wait-Until 'вікно з фокусом' { Test-AppReady }
             Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
             if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
-        } -Hope $UI.SearchPlaceholder
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount ($firstShowOnce + @{ ($Data.SecretTitle) = 1 }) -Forbid $firstShowNoise
     }
 
     Invoke-Step 'Ctrl+, після перезапуску: тема світла' {
