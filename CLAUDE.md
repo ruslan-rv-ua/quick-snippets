@@ -39,6 +39,8 @@ npx vitest run src/hooks/__tests__/useSearchLogic.test.ts
 # NVDA smoke test of the built release exe (~2.5 min, hands off; NVDA log level "input/output";
 # leave a minute between two runs, see DEVELOPMENT.md)
 just smoke               # scripts/smoke-nvda.ps1; report also in %TEMP%\quick-snippets-smoke-report.txt
+just smoke-tray          # the same with the test copy started in the tray: the window must not appear
+                         # at startup, and NVDA must read the first Ctrl+Alt+Space show
 
 # Lint
 npm run lint             # TypeScript strict noEmit + cargo clippy -D warnings
@@ -74,7 +76,7 @@ App-level state lives in [src/App.tsx](src/App.tsx) via `useSnippets`, `useSearc
 | [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file in data directory (not AppData); includes `autotype_delay_ms`, `sort_mode`, `sort_direction` |
 | [src-tauri/src/autotype.rs](src-tauri/src/autotype.rs) | Windows keyboard input simulation (PostMessage primary, SendInput fallback) |
 | [src-tauri/src/window_blur.rs](src-tauri/src/window_blur.rs) | Decides what happens after the web content loses the keyboard: hide once the window is no longer the active one, or give the keyboard back while it still is |
-| [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events, Ctrl+Alt+Space global hotkey (shows the window; it never hides it) |
+| [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Creates the main window in `setup` (hidden and without focus when `start_in_tray` is on), tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events, Ctrl+Alt+Space global hotkey (shows the window; it never hides it) |
 | [src-tauri/src/main.rs](src-tauri/src/main.rs) | App entry (calls `quick_snippets_lib::run`) |
 
 ### Autotype
@@ -111,8 +113,9 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - **Portable**: No installer, no registry, no AppData — all data stays in `quick-snippets-data/` next to the `.exe`. Handles Scoop `persist` directory stubs.
 - **Encrypted blob formats are permanent**: users' snippets exist in both the legacy and the `v2:` format, so the iteration constants, the marker and the blob layout in `crypto.rs` must never change. A new key derivation setting needs a new marker (`v3:`) and the old ones must stay readable. Legacy blobs are re-encrypted in `activate_snippet_get_content` after a successful decrypt (the only place the password is known); versions before 0.3.0 cannot read `v2:` blobs.
 - **Rust tests must run single-threaded** (`--test-threads=1`) because SQLite connections are not `Send`-safe across threads in the test setup.
-- **Screen reader support**: WebView2 accessibility tree is pre-initialized via `--force-renderer-accessibility` browser argument. Keep semantic HTML and ARIA labels on all interactive elements. After changes to capabilities, focus handling, dialogs or announcements, rebuild and run `just smoke` (drives the real exe and checks what NVDA says).
+- **Screen reader support**: WebView2 accessibility tree is pre-initialized via `--force-renderer-accessibility` browser argument. Keep semantic HTML and ARIA labels on all interactive elements. After changes to capabilities, focus handling, dialogs or announcements, rebuild and run `just smoke` (drives the real exe and checks what NVDA says). After changes to how the window is created, started in the tray or shown, also run `just smoke-tray`.
 - **i18n**: All user-facing strings must be added to [src/i18n/translations.ts](src/i18n/translations.ts) for English (`en`), Ukrainian (`uk`), and German (`de`). Tray menu labels are also localized in Rust.
 - **Windows-only target**: The build and some APIs (tray, global hotkey, autostart, autotype) are Windows-specific. Do not abstract for cross-platform unless explicitly requested.
 - **Single instance**: `tauri-plugin-single-instance` prevents multiple app instances.
+- **Start in tray**: Tauri does not create the main window itself (`"create": false` in `tauri.conf.json`); `setup` in `lib.rs` builds it from that config. With `start_in_tray` on it is created hidden and without focus (`show_window_at_launch`), otherwise visible and focused. Never create it visible and hide it afterwards: up to 0.3.3 that put the window on screen for a quarter of a second at every start, took the keyboard from the active program, and NVDA then read the first Ctrl+Alt+Space show with extra phrases or not at all. Hidden alone is not enough either: WebView2 focuses itself when it is created, so a hidden window would take the keyboard invisibly. A window created without focus is shown without being activated, so every code path that shows it must also call `set_focus()` (the hotkey, the tray and the second-launch handler do).
 - **Window behavior**: blur → hide with 200ms delay, but only once the window is no longer the foreground window; move/resize → debounced settings save (500ms); close requires confirmation dialog. On Windows, Tauri's `Focused(false)` means "the WebView2 control lost focus", which also happens while the window stays active (a UI Automation Invoke or Toggle moves the keyboard between WebView2's internal windows); the window then stays and the keyboard is given back to the web content. The frontend clears the search and closes the password dialog only on the `window:hidden` event the backend emits right before such a hide, never on a DOM `blur`.
