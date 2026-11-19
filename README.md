@@ -33,7 +33,7 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Encrypted snippets** — protect sensitive content with a password (AES-256-GCM encryption, keys never leave your device)
 - **Fully keyboard-driven** — every action has a shortcut; mouse is optional
 - **Screen reader support** — built for NVDA, JAWS, and Windows Narrator from day one
-- **Portable** — no installer, no registry, no `AppData`; the whole app lives in one folder
+- **Portable** — no installer, no `AppData`, and nothing in the registry unless you turn on "Start with Windows"; the whole app lives in one folder
 - **System tray** — stays out of your way when not in use; right-click the tray icon for quick actions
 - **Light and dark themes** — switch with a single shortcut or from Settings
 - **Three languages** — English, Ukrainian, and German; language auto-detected from your system
@@ -62,7 +62,7 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder.
+Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder. If "Start with Windows" is on, turn it off before you move or delete the folder (and on again after a move): Windows keeps the path to the exe in its autostart entry.
 
 With Scoop, that folder is kept across updates in `~\scoop\persist\quick-snippets\quick-snippets-data` — back up that folder instead.
 
@@ -113,7 +113,7 @@ Your privacy is paramount. QuickSnippets is designed to keep your snippets on yo
 - **Snippets from older versions keep working** — snippets encrypted by version 0.2.1 or earlier (100,000 iterations) still open, and each one is re-encrypted with the stronger setting the first time you copy or auto-type it with its password
 - **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
 - **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the `quick-snippets-data` folder next to the executable; no cloud, no telemetry, no sync
-- **No registry** — QuickSnippets does not touch Windows registry or AppData directories
+- **No AppData, registry only for autostart** — QuickSnippets keeps nothing in AppData directories. It writes to the Windows registry only when you turn on "Start with Windows": the usual autostart entry for your user account and the on/off mark that Task Manager shows for it. Turning the setting off removes the entry; the mark stays, and Windows ignores it
 - **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
 
 ### What Is Encrypted
