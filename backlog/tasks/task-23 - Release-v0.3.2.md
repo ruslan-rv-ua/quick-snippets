@@ -1,10 +1,11 @@
 ---
 id: TASK-23
 title: Release v0.3.2
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-19T07:10:00Z'
-updated_date: '2026-11-19T07:54:00Z'
+updated_date: '2026-11-19T11:21:00Z'
 labels:
   - release
   - model-sonnet
@@ -51,3 +52,17 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Mark TASK-23 In Progress on develop; git flow release start 0.3.2.
+2. Bump the version to 0.3.2 in Cargo.toml, tauri.conf.json, package.json and both lock files; turn [Unreleased] into "v0.3.2 - 2026-11-19" with an empty [Unreleased] above it; commit.
+3. just final-checks; npm run test:all; npm run lint; npx tauri build --no-bundle.
+4. just smoke on the release exe, only after the user's go-ahead.
+5. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-23-<commit>.exe.
+6. git flow release finish 0.3.2 --no-ff --notag.
+7. With the user's go-ahead: git push origin main develop; gh workflow run release.yml --ref main -f version=0.3.2 (the workflow runs lint and tests itself; no CI wait after the push).
+8. Check the release: ZIP and .sha256, checksum, notes replaced with the v0.3.2 CHANGELOG section; run Excavator in scoop-bucket (with the go-ahead); check the manifest version and hash.
+9. Ask whether to update the Scoop copy (back up quick-snippets-data first, close the running copy, do not start it again).
+<!-- SECTION:PLAN:END -->
