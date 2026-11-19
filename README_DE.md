@@ -60,6 +60,10 @@ Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) wer
 
 Bei Scoop bleibt dieser Ordner über Updates hinweg in `~\scoop\persist\quick-snippets\quick-snippets-data` erhalten — sichern Sie diesen Ordner.
 
+Der eingebaute Browser, der das Fenster darstellt (Microsoft Edge WebView2), legt seinen Cache in einem eigenen Ordner `quick-snippets-webview` neben der ausführbaren Datei ab (bei Scoop im Ordner der jeweiligen Version). Er enthält keine Ihrer Daten und muss daher nicht gesichert werden; wenn Sie ihn löschen, während QuickSnippets geschlossen ist, legt die App ihn neu an.
+
+> **Update von Version 0.3.3 oder älter** — ältere Versionen legten den Browser-Cache in `%LOCALAPPDATA%\com.quicksnippets.app` ab. Diese Version verwendet diesen Ordner nicht und löscht ihn auch nicht, sodass eine ältere Kopie weiter funktioniert. Wenn Sie Version 0.3.3 oder älter nicht mehr verwenden, können Sie ihn löschen.
+
 > **Update von Version 0.2.1 oder älter** — Ihre verschlüsselten Schnipsel lassen sich weiterhin öffnen. Jeder von ihnen wird mit stärkeren Parametern (PBKDF2-HMAC-SHA256, 600.000 statt 100.000 Iterationen) neu verschlüsselt, sobald Sie ihn zum ersten Mal mit seinem Passwort kopieren oder automatisch tippen lassen. Danach können Versionen vor 0.3.0 diesen Schnipsel nicht mehr öffnen (sie melden „Falsches Passwort“); die Daten werden dabei nicht beschädigt, und Version 0.3.0 oder neuer öffnet ihn wieder. Falls Sie zu einer älteren Version zurückkehren könnten, sichern Sie vor dem Update den Ordner `quick-snippets-data`.
 
 > **SHA-256-Prüfsumme** — eine `.sha256`-Datei ist jedem Release zur Überprüfung beigefügt.

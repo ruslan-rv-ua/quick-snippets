@@ -72,11 +72,11 @@ App-level state lives in [src/App.tsx](src/App.tsx) via `useSnippets`, `useSearc
 | [src-tauri/src/db.rs](src-tauri/src/db.rs) | SQLite CRUD (`snippets` table; `title` has UNIQUE constraint); `last_used_at` column with migration via `PRAGMA user_version` |
 | [src-tauri/src/crypto.rs](src-tauri/src/crypto.rs) | AES-256-GCM + PBKDF2-HMAC-SHA256; writes the `v2:` format (600k iterations), still reads the legacy format of 0.1.0–0.2.1 (100k, no marker); keys are `zeroize`d |
 | [src-tauri/src/search.rs](src-tauri/src/search.rs) | Fuzzy match: sequential char search, multi-term AND logic |
-| [src-tauri/src/paths.rs](src-tauri/src/paths.rs) | Data directory path helpers (`quick-snippets-data/` next to `.exe`) |
+| [src-tauri/src/paths.rs](src-tauri/src/paths.rs) | Path helpers: `quick-snippets-data/` (snippets, settings) and `quick-snippets-webview/` (WebView2 profile), both next to `.exe` |
 | [src-tauri/src/settings.rs](src-tauri/src/settings.rs) | JSON settings file in data directory (not AppData); includes `autotype_delay_ms`, `sort_mode`, `sort_direction` |
 | [src-tauri/src/autotype.rs](src-tauri/src/autotype.rs) | Windows keyboard input simulation (PostMessage primary, SendInput fallback) |
 | [src-tauri/src/window_blur.rs](src-tauri/src/window_blur.rs) | Decides what happens after the web content loses the keyboard: hide once the window is no longer the active one, or give the keyboard back while it still is |
-| [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Creates the main window in `setup` (hidden and without focus when `start_in_tray` is on), tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events, Ctrl+Alt+Space global hotkey (shows the window; it never hides it) |
+| [src-tauri/src/lib.rs](src-tauri/src/lib.rs) | Creates the main window in `setup` (hidden and without focus when `start_in_tray` is on; WebView2 data in `quick-snippets-webview/` next to the exe), tray icon (dynamic 16×16 RGBA), menu labels, plugin registration, window events, Ctrl+Alt+Space global hotkey (shows the window; it never hides it) |
 | [src-tauri/src/main.rs](src-tauri/src/main.rs) | App entry (calls `quick_snippets_lib::run`) |
 
 ### Autotype
@@ -110,7 +110,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 
 ### Key Design Constraints
 
-- **Portable**: No installer, no registry, no AppData — all data stays in `quick-snippets-data/` next to the `.exe`. Handles Scoop `persist` directory stubs.
+- **Portable**: No installer, no registry, no AppData — the user's data stays in `quick-snippets-data/` next to the `.exe`. Handles Scoop `persist` directory stubs. The embedded browser's profile (WebView2 cache and its own state) goes to `quick-snippets-webview/`, also next to the `.exe` but outside the data folder, so Scoop does not persist it and backups of the data folder skip it: `setup` in `lib.rs` passes `paths::get_webview_data_dir()` to `data_directory`. Never drop that call and never use the `dataDirectory` config option (Tauri resolves it inside `%LOCALAPPDATA%`): without it Tauri puts the profile in `%LOCALAPPDATA%\com.quicksnippets.app`, shared by every copy of the app. Versions up to 0.3.3 did so; the app never reads, changes or deletes that folder (older copies may still use it; removing it is the user's call). `just smoke` checks both in its last step.
 - **Encrypted blob formats are permanent**: users' snippets exist in both the legacy and the `v2:` format, so the iteration constants, the marker and the blob layout in `crypto.rs` must never change. A new key derivation setting needs a new marker (`v3:`) and the old ones must stay readable. Legacy blobs are re-encrypted in `activate_snippet_get_content` after a successful decrypt (the only place the password is known); versions before 0.3.0 cannot read `v2:` blobs.
 - **Rust tests must run single-threaded** (`--test-threads=1`) because SQLite connections are not `Send`-safe across threads in the test setup.
 - **Screen reader support**: WebView2 accessibility tree is pre-initialized via `--force-renderer-accessibility` browser argument. Keep semantic HTML and ARIA labels on all interactive elements. After changes to capabilities, focus handling, dialogs or announcements, rebuild and run `just smoke` (drives the real exe and checks what NVDA says). After changes to how the window is created, started in the tray or shown, also run `just smoke-tray`.

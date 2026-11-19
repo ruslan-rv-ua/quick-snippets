@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Before you upgrade
+- Versions 0.3.3 and older kept the data of the built-in browser that draws the window (Microsoft Edge WebView2: its cache and its own state, no snippets or settings) in `%LOCALAPPDATA%\com.quicksnippets.app`. This version no longer uses that folder and leaves it as it is, so an older copy can still use it. Once you no longer run version 0.3.3 or older on that computer, you can delete it.
+- Going back to 0.3.3 is safe: snippets and settings are stored exactly as before, and 0.3.3 simply uses its old folder in `%LOCALAPPDATA%` again.
+
+### Changed
+- QuickSnippets now keeps everything next to the exe, as a portable app should: the built-in browser's data goes to a new `quick-snippets-webview` folder next to `quick-snippets.exe`, not to `%LOCALAPPDATA%\com.quicksnippets.app`. A copy run from a USB stick no longer leaves that folder behind on every computer, and copies in different folders no longer share it. The new folder holds only the browser's cache and its own state; your snippets and settings stay in `quick-snippets-data`, so that folder and its backups hold nothing else. If you delete `quick-snippets-webview` while QuickSnippets is closed, the app creates it again. With Scoop it lies in the folder of each version: after an update the browser starts with an empty cache, and `scoop cleanup` removes the old one with the old version.
+
 ### Fixed
 - With "Start in tray" on, the window no longer shows up for a moment when QuickSnippets starts. Before, at every start it was on screen for about a quarter of a second and took the keyboard from the program you were in: a screen reader said "QuickSnippets" and then read your current window again, and a key pressed in that moment could be lost. Now the window stays hidden, and the keyboard stays where it was, until you press Ctrl+Alt+Space or use the tray icon.
 - After a start in the tray, screen readers now read the first Ctrl+Alt+Space properly: the window, then the search box, once. Before, when QuickSnippets had been started again soon after it was closed, NVDA read the window title and the document several times and the search box twice, and once in a while it said nothing at all until the next key press.
