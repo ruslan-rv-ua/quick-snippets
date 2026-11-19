@@ -131,7 +131,7 @@ export interface TranslationMap {
 
 const en: TranslationMap = {
   // Search
-  searchPlaceholder: 'Search snippets…',
+  searchPlaceholder: 'Search',
   noResults: 'No results found',
   nothingSelected: 'Select a snippet to preview',
 
@@ -265,7 +265,7 @@ const en: TranslationMap = {
 
 const uk: TranslationMap = {
   // Search
-  searchPlaceholder: 'Пошук сніпетів…',
+  searchPlaceholder: 'Пошук',
   noResults: 'Нічого не знайдено',
   nothingSelected: 'Виберіть сніпет для перегляду',
 
@@ -403,7 +403,7 @@ const uk: TranslationMap = {
 
 const de: TranslationMap = {
   // Search
-  searchPlaceholder: 'Snippets suchen…',
+  searchPlaceholder: 'Suchen',
   noResults: 'Keine Ergebnisse gefunden',
   nothingSelected: 'Snippet auswählen, um eine Vorschau zu sehen',
 
