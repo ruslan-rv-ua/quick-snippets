@@ -56,15 +56,22 @@ $UI = @{
     CreateTitle       = 'Створити сніпет'
     EditTitle         = 'Редагувати сніпет'
     TitleLabel        = 'Назва'
+    ContentLabel      = 'Вміст'
     Saved             = 'Збережено'
     Copied            = 'Скопійовано'
     EnterPassword     = 'Введіть пароль для розшифрування'
     WrongPassword     = 'Невірний пароль'
     Encrypted         = 'зашифровано'
     Settings          = 'Налаштування'
+    # Every title message starts this way; it ends with the title's number of characters.
     TitleInvalid      = 'Назва має бути від 3 до 50 символів'
+    TitleEmpty        = 'Назва має бути від 3 до 50 символів, зараз 0'
+    # titleLength(51): the number of characters of $Data.LongTitle
+    TitleTooLong      = 'Назва має бути від 3 до 50 символів, зараз 51'
     ContentEmpty      = 'Вміст не може бути порожнім'
     PasswordMismatch  = 'Паролі не збігаються'
+    # contentTooLong(50000, 49105, true): the size of $Data.TooLongText and the encrypted limit
+    SecretTooLong     = 'Текст задовгий для зашифрованого сніпета: 50000 байтів, можна до 49105'
     # Settings dialog
     AppVersion        = 'QuickSnippets версія'
     GroupAppearance   = 'Вигляд і мова'
@@ -164,7 +171,8 @@ $SearchBoxNoise = @($Role.AutoComplete, 'Пошук сніпетів')
 
 # Throwaway values for the throwaway copy of the app.
 $Data = @{
-    PlainTitle    = 'smoke звичайний'
+    # 39 characters but 68 bytes: the backend once counted bytes (max 50) and refused it.
+    PlainTitle    = 'smoke звичайний сніпет із довгою назвою'
     PlainText     = 'Привіт з QuickSnippets 123'
     PlainEdited   = 'Привіт з QuickSnippets 123, змінено'
     SecretTitle   = 'smoke зашифрований'
@@ -174,6 +182,11 @@ $Data = @{
     Password      = 'smoke-pass-42'
     WrongPassword = 'wrong-pass'
     Sentinel      = 'quick-snippets smoke: clipboard not changed'
+    # 50,000 bytes of UTF-8 (13 bytes per word: six Cyrillic letters and a space, then "xx"):
+    # more than an encrypted snippet holds (49,105 bytes), less than a plain one (65,536).
+    TooLongText   = ('секрет ' * 3846) + 'xx'
+    # 51 Cyrillic letters: one character more than a title holds.
+    LongTitle     = ('довга ' * 8) + 'наз'
 }
 
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -888,12 +901,21 @@ try {
         Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
         Send-Keys 'Ctrl+A', 'Delete'
         Send-Keys 'Ctrl+Enter'
-        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleInvalid }
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleEmpty }
         Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
-    } -ExpectCount @{ ($UI.TitleInvalid) = 1 } -Forbid $UI.ContentEmpty
+    } -ExpectCount @{ ($UI.TitleEmpty) = 1 } -Forbid $UI.ContentEmpty
+
+    # The field takes the whole pasted title; the dialog counts characters, not bytes.
+    Invoke-Step 'Створення, назва з 51 літери: повідомлення з кількістю один раз, фокус у полі «Назва»' {
+        Send-Text $Data.LongTitle
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleTooLong }
+        Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'create-title' }
+    } -ExpectCount @{ ($UI.TitleTooLong) = 1 } -Forbid $UI.ContentEmpty, 'Title too long', 'CHECK constraint'
 
     # Focus is already in the confirmation field when the error appears.
     Invoke-Step 'Створення, паролі не збігаються: повідомлення один раз, фокус у полі підтвердження' {
+        Send-Keys 'Ctrl+A'
         Send-Text $Data.SecretTitle
         Send-Keys 'Tab', 'Tab'
         Wait-Until 'фокус у полі пароля' { & $hasFocus 'create-password' }
@@ -905,6 +927,27 @@ try {
         Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.PasswordMismatch }
         Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
     } -ExpectCount @{ ($UI.PasswordMismatch) = 1 } -Forbid $UI.TitleInvalid, $UI.ContentEmpty
+
+    Invoke-Step 'Створення: задовгий текст у полі «Вміст», паролі однакові' {
+        Send-Keys 'Ctrl+A'
+        Send-Text $Data.Password
+        Send-Keys 'Shift+Tab', 'Shift+Tab'
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
+        Send-Keys 'Ctrl+A'
+        Send-Text $Data.TooLongText
+        Send-Keys 'Tab', 'Tab'
+        Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
+    }
+
+    # The backend refuses the text before anything is stored. Ctrl+Enter is pressed in the
+    # confirmation field, so focus has to move to the content field with the message. NVDA
+    # then reads the line at the cursor, not the whole text: twenty words in a row would not
+    # fit on one line of the field.
+    Invoke-Step 'Ctrl+Enter, задовгий зашифрований текст: повідомлення один раз, фокус у полі «Вміст»' {
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.SecretTooLong }
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
+    } -ExpectCount @{ ($UI.SecretTooLong) = 1 } -Expect $UI.ContentLabel -Forbid $UI.TitleInvalid, $UI.PasswordMismatch, 'CHECK constraint', 'Content too long', ('секрет ' * 20).Trim()
 
     Invoke-Step 'Escape закриває діалог створення без збереження' {
         Send-Keys 'Esc'
@@ -918,9 +961,9 @@ try {
         Wait-Until 'фокус у полі «Назва» діалогу редагування' { & $hasFocus 'edit-title' }
         Send-Keys 'Ctrl+A', 'Delete'
         Send-Keys 'Ctrl+Enter'
-        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleInvalid }
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.TitleEmpty }
         Wait-Until 'фокус у полі «Назва»' { & $hasFocus 'edit-title' }
-    } -ExpectCount @{ ($UI.TitleInvalid) = 1 }
+    } -ExpectCount @{ ($UI.TitleEmpty) = 1 }
 
     # Focus is already in the content field when the error appears.
     Invoke-Step 'Редагування, порожній вміст: повідомлення один раз, фокус у полі «Вміст»' {

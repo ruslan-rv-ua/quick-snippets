@@ -52,9 +52,20 @@ export interface TranslationMap {
   of: string;
 
   // ── Validation messages ──────────────────────────────────────────────────
-  titleValidation: string;
+  /**
+   * A title out of its limits (3 to 50 characters); `count` is its current number of
+   * characters as the database counts them (Unicode code points), so that a user sees
+   * how much to shorten, also when an emoji counts as more than one character.
+   */
+  titleLength: (count: number) => string;
   titleDuplicate: string;
   contentValidation: string;
+  /**
+   * Content over its size limit: `size` and `max` in bytes of UTF-8, written
+   * without digit grouping so that screen readers say each one as one number.
+   * `encrypted` names the lower limit of encrypted snippets.
+   */
+  contentTooLong: (size: number, max: number, encrypted: boolean) => string;
   passwordMismatch: string;
   wrongPassword: string;
   decryptError: string;
@@ -161,9 +172,11 @@ const en: TranslationMap = {
   of: 'of',
 
   // Validation
-  titleValidation: 'Title must be 3–50 characters',
+  titleLength: (count) => `Title must be 3–50 characters, now ${count}`,
   titleDuplicate: 'A snippet with this title already exists',
   contentValidation: 'Content must not be empty',
+  contentTooLong: (size, max, encrypted) =>
+    `Text too long${encrypted ? ' for an encrypted snippet' : ''}: ${size} bytes, at most ${max} allowed`,
   passwordMismatch: 'Passwords do not match',
   wrongPassword: 'Wrong password',
   decryptError: 'Failed to decrypt snippet',
@@ -263,6 +276,15 @@ const en: TranslationMap = {
     encrypted ? `${title} (encrypted)` : title,
 };
 
+/** The Ukrainian form of "байт" after `n`: 1 байт, 2 байти, 5 байтів, 11 байтів, 21 байт. */
+function ukBytes(n: number): string {
+  const last = n % 10;
+  const lastTwo = n % 100;
+  if (last === 1 && lastTwo !== 11) return 'байт';
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return 'байти';
+  return 'байтів';
+}
+
 const uk: TranslationMap = {
   // Search
   searchPlaceholder: 'Пошук',
@@ -295,9 +317,11 @@ const uk: TranslationMap = {
   of: 'з',
 
   // Validation
-  titleValidation: 'Назва має бути від 3 до 50 символів',
+  titleLength: (count) => `Назва має бути від 3 до 50 символів, зараз ${count}`,
   titleDuplicate: 'Сніпет з такою назвою вже існує',
   contentValidation: 'Вміст не може бути порожнім',
+  contentTooLong: (size, max, encrypted) =>
+    `Текст задовгий${encrypted ? ' для зашифрованого сніпета' : ''}: ${size} ${ukBytes(size)}, можна до ${max}`,
   passwordMismatch: 'Паролі не збігаються',
   wrongPassword: 'Невірний пароль',
   decryptError: 'Помилка розшифрування сніпета',
@@ -433,9 +457,11 @@ const de: TranslationMap = {
   of: 'von',
 
   // Validation
-  titleValidation: 'Titel muss 3–50 Zeichen lang sein',
+  titleLength: (count) => `Titel muss 3–50 Zeichen lang sein, jetzt ${count}`,
   titleDuplicate: 'Ein Snippet mit diesem Titel existiert bereits',
   contentValidation: 'Inhalt darf nicht leer sein',
+  contentTooLong: (size, max, encrypted) =>
+    `Text zu lang${encrypted ? ' für ein verschlüsseltes Snippet' : ''}: ${size} Bytes, höchstens ${max} erlaubt`,
   passwordMismatch: 'Passwörter stimmen nicht überein',
   wrongPassword: 'Falsches Passwort',
   decryptError: 'Snippet konnte nicht entschlüsselt werden',

@@ -9,7 +9,8 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { updateSnippet } from '../hooks/useIpc';
-import { ipcErrorToString } from '../utils/errors';
+import { ipcErrorToString, parseContentTooLong, parseTitleLength } from '../utils/errors';
+import { countCharacters, isTitleLengthValid } from '../utils/title';
 import type { SnippetView } from '../types';
 
 export interface EditSnippetModalProps {
@@ -31,7 +32,7 @@ export function EditSnippetModal({
   snippet,
   onSuccess,
 }: EditSnippetModalProps): React.ReactElement | null {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
@@ -52,10 +53,11 @@ export function EditSnippetModal({
 
   const validate = useCallback((): FormErrors => {
     const errs: FormErrors = {};
-    if (title.length < 3 || title.length > 50) errs.title = t('titleValidation');
+    // Counted as the database counts it: an emoji is one character, not two UTF-16 units.
+    if (!isTitleLengthValid(title)) errs.title = tf.titleLength(countCharacters(title));
     if (!snippet?.is_encrypted && content.length === 0) errs.content = t('contentValidation');
     return errs;
-  }, [title, content, snippet, t]);
+  }, [title, content, snippet, t, tf]);
 
   const handleSubmit = useCallback(async () => {
     if (!snippet) return;
@@ -74,6 +76,19 @@ export function EditSnippetModal({
       await updateSnippet(snippet.id, title, content);
     } catch (err: unknown) {
       const msg = ipcErrorToString(err);
+      // The backend measures the text in bytes; only a plain snippet's text can be edited.
+      const tooLong = parseContentTooLong(msg);
+      if (tooLong) {
+        setErrors({ content: tf.contentTooLong(tooLong.size, tooLong.max, tooLong.encrypted) });
+        contentRef.current?.focus();
+        return;
+      }
+      const titleCount = parseTitleLength(msg);
+      if (titleCount !== null) {
+        setErrors({ title: tf.titleLength(titleCount) });
+        titleRef.current?.focus();
+        return;
+      }
       const titleErr = msg.includes('Title already exists')
         ? t('titleDuplicate')
         : msg;
@@ -84,7 +99,7 @@ export function EditSnippetModal({
     // Focus returns to the list as it is after the save.
     await onSuccess();
     onClose();
-  }, [validate, snippet, title, content, onSuccess, onClose, t]);
+  }, [validate, snippet, title, content, onSuccess, onClose, t, tf]);
 
   useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });
 
@@ -100,7 +115,6 @@ export function EditSnippetModal({
           ref={titleRef}
           id="edit-title"
           type="text"
-          maxLength={50}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           autoComplete="off"
@@ -122,7 +136,6 @@ export function EditSnippetModal({
             <textarea
               ref={contentRef}
               id="edit-content"
-              maxLength={65536}
               rows={5}
               value={content}
               onChange={(e) => setContent(e.target.value)}
