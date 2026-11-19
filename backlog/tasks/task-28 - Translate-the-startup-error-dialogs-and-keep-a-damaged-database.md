@@ -1,7 +1,7 @@
 ---
 id: TASK-28
 title: Translate the startup error dialogs and keep a damaged database
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-19T16:41:00Z'
 updated_date: '2026-11-19T23:50:00Z'
@@ -101,4 +101,6 @@ Found on the way: SQLite itself discards an invalid rollback journal (and plays 
   NVDA read each dialog as: title, "діалог", the whole text, then "Так, кнопка, Alt+т". All dialogs were the foreground window. The first run of scenarios 4-5 failed because the script took the language list (en-US first) instead of the UI language (uk-UA) and missed the second dialog; fixed in the script and rerun with the user's permission: 0 failed checks.
 - `just smoke` on the release build of cd8d291 (with the user's permission): 81 of 81 steps, 301 of 301 NVDA checks. The NVDA log had the one known error of NVDA's own script_caret_newLine (Enter in a text field), as in earlier tasks.
 - Build copied to `C:\5-quicksnippets\real_db\quick-snippets-TASK-28-cd8d291.exe`, SHA-256 61E1734D...C0ABF identical to the build.
+
+Merged into develop with git flow feature finish --no-ff (32bb21f). On develop: npm run test:all (496 + 290) and npm run lint pass. Not pushed, not archived: left to the managing session.
 <!-- SECTION:NOTES:END -->
