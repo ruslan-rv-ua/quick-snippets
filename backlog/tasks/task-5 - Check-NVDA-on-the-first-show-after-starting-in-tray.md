@@ -1,7 +1,7 @@
 ---
 id: TASK-5
 title: Check NVDA on the first show after starting in tray
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T23:03:00Z'
@@ -144,6 +144,8 @@ First shows after a start in the tray, 0.3.3, all runs: 19. Read normally 3, sil
 5. The sort announcement read twice now and then (see above): seen in TASK-19 and once here.
 6. tao's set_focus() presses and releases Alt by itself when Windows refuses to bring the window to the foreground. With "Start in tray" on, set_focus() is now what activates the window after show(). In all measured shows the window was active 0.2 s after Ctrl+Alt+Space, so the plain call was enough; noted only.
 7. NVDA logs an error of its own Enter script (script_caret_newLine, IndentNav) once per run, as noted in TASK-18.
+
+After the merge into develop (a749766): npm run test:all (489 frontend, 247 Rust tests) and npm run lint pass again. Nothing was pushed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
