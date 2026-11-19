@@ -4,7 +4,7 @@ title: Investigate how NVDA reads the window right after a start
 status: To Do
 assignee: []
 created_date: '2026-11-19T16:42:00Z'
-updated_date: '2026-11-19T18:40:00Z'
+updated_date: '2026-11-19T18:45:00Z'
 labels:
   - accessibility
   - investigation
@@ -41,6 +41,7 @@ Recommended setup: Claude Fable 5.2 (`/model fable`), effort medium (`/effort me
 - [ ] #1 Both behaviours reproduced or ruled out through just smoke runs, with a default start and with a start in the tray; the findings (how many runs, what NVDA said, suspected cause) are recorded in the task notes before any code change
 - [ ] #2 If the cause is in the app and the user agrees to a fix: on the first show after a start NVDA reads the window, the search box and the first snippet, each once, as on later shows
 - [ ] #3 If fixed: just smoke and just smoke-tray require the first snippet on the first show, and both pass
+- [ ] #4 A default start with an empty browser profile (the first start of a new copy, and under Scoop the first start after each update) is read normally by NVDA and Escape hides the window: a default `just smoke` passes with an empty profile, and the Known Limitations entry about it is gone from CHANGELOG.md
 <!-- AC:END -->
 
 ## Definition of Done
