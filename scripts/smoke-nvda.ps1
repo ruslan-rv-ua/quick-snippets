@@ -65,6 +65,8 @@ $UI = @{
     TitleInvalid      = 'Назва має бути від 3 до 50 символів'
     ContentEmpty      = 'Вміст не може бути порожнім'
     PasswordMismatch  = 'Паролі не збігаються'
+    # contentTooLong(50000, 49105, true): the size of $Data.TooLongText and the encrypted limit
+    SecretTooLong     = 'Текст задовгий для зашифрованого сніпета: 50000 байтів, можна до 49105'
     # Settings dialog
     AppVersion        = 'QuickSnippets версія'
     GroupAppearance   = 'Вигляд і мова'
@@ -174,6 +176,9 @@ $Data = @{
     Password      = 'smoke-pass-42'
     WrongPassword = 'wrong-pass'
     Sentinel      = 'quick-snippets smoke: clipboard not changed'
+    # 50,000 bytes of UTF-8 (13 bytes per word: six Cyrillic letters and a space, then "xx"):
+    # more than an encrypted snippet holds (49,105 bytes), less than a plain one (65,536).
+    TooLongText   = ('секрет ' * 3846) + 'xx'
 }
 
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -905,6 +910,22 @@ try {
         Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.PasswordMismatch }
         Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
     } -ExpectCount @{ ($UI.PasswordMismatch) = 1 } -Forbid $UI.TitleInvalid, $UI.ContentEmpty
+
+    # The backend refuses the text before anything is stored. Ctrl+Enter is pressed in the
+    # confirmation field, so focus has to move to the content field with the message.
+    Invoke-Step 'Створення, задовгий зашифрований текст: повідомлення один раз, фокус у полі «Вміст»' {
+        Send-Keys 'Ctrl+A'
+        Send-Text $Data.Password
+        Send-Keys 'Shift+Tab', 'Shift+Tab'
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
+        Send-Keys 'Ctrl+A'
+        Send-Text $Data.TooLongText
+        Send-Keys 'Tab', 'Tab'
+        Wait-Until 'фокус у полі підтвердження' { & $hasFocus 'create-confirm' }
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'текст помилки' { Find-Element (& $appWin) -Name $UI.SecretTooLong }
+        Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
+    } -ExpectCount @{ ($UI.SecretTooLong) = 1 } -Forbid $UI.TitleInvalid, $UI.PasswordMismatch, 'CHECK constraint', 'Content too long'
 
     Invoke-Step 'Escape закриває діалог створення без збереження' {
         Send-Keys 'Esc'
