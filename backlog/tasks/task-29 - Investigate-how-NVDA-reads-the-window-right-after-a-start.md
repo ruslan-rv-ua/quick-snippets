@@ -4,6 +4,7 @@ title: Investigate how NVDA reads the window right after a start
 status: To Do
 assignee: []
 created_date: '2026-11-19T16:42:00Z'
+updated_date: '2026-11-19T18:40:00Z'
 labels:
   - accessibility
   - investigation
@@ -50,3 +51,17 @@ Recommended setup: Claude Fable 5.2 (`/model fable`), effort medium (`/effort me
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Found by TASK-27 (2026-11-19): an empty browser profile and the default start
+
+Since TASK-27 the WebView2 profile lies in quick-snippets-webview next to the exe. Every new copy, every test copy of just smoke and, under Scoop, the first start after every update (the folder lies in the version folder) therefore begin with an empty profile. Up to 0.3.3 all copies shared one old profile in AppData.
+
+- Default start with an empty profile: just smoke stopped at step 1 in 2 of 2 runs on the release build of 226183c (19:25, and 19:36, ten minutes after any other copy). NVDA said "QuickSnippets | QuickSnippets - Snippet Manager – веб-вміст, регіон | QuickSnippets - Snippet Manager, документ, http://tauri.localhost/ | за кліком, додаток, ...", and Escape went to NVDA, so the window did not hide.
+- The same build with an existing profile (copied next to the test exe with the new -BrowserProfileFrom switch of scripts/smoke-nvda.ps1): 81 of 81 steps, 284 of 284 checks; step 1 read the normal way, with the usual noise of a default start.
+- Start in the tray with an empty profile (just smoke-tray): 82 of 82 steps, 293 of 293 checks; the first show read normally.
+- Suspected cause: with an empty profile WebView2 needs longer before the page is ready, and NVDA meets the visible, focused window first. It may also be what lies behind the "веб-вміст, регіон" reading after a quick restart (TASK-18).
+- The user decided on 2026-11-19 that this is fixed here, before the release. A likely fix: show the window of a default start only once the page is ready. CHANGELOG [Unreleased] lists the problem under Known Limitations; remove that entry with the fix. Until then a default just smoke stops at step 1; for a run with an existing profile see DEVELOPMENT.md (-BrowserProfileFrom). Details: notes of TASK-27.
+<!-- SECTION:NOTES:END -->

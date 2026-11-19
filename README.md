@@ -66,6 +66,10 @@ Your snippets database (`snippets.db`) and settings (`settings.json`) are saved 
 
 With Scoop, that folder is kept across updates in `~\scoop\persist\quick-snippets\quick-snippets-data` — back up that folder instead.
 
+The built-in browser that draws the window (Microsoft Edge WebView2) keeps its cache in a separate `quick-snippets-webview` folder next to the executable (with Scoop, in the folder of each version). None of your data is in it, so it needs no backup; if you delete it while QuickSnippets is closed, the app creates it again.
+
+> **Upgrading from 0.3.3 or earlier** — older versions kept the browser cache in `%LOCALAPPDATA%\com.quicksnippets.app`. This version neither uses nor removes that folder, so an older copy still works. Once you no longer run version 0.3.3 or older, you can delete it.
+
 > **Upgrading from 0.2.1 or earlier** — your encrypted snippets still open. Each one is re-encrypted with stronger settings (PBKDF2-HMAC-SHA256 at 600,000 iterations instead of 100,000) the first time you copy or auto-type it with its password. After that, versions before 0.3.0 can no longer open that snippet (they report "Wrong password"); the data is not damaged, and version 0.3.0 or later opens it again. If you might go back to an older version, back up the `quick-snippets-data` folder before you upgrade.
 
 > **SHA-256 checksum** — a `.sha256` file is attached to every release for verification.
