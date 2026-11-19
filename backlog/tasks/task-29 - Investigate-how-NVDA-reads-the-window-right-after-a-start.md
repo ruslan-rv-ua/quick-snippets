@@ -1,7 +1,7 @@
 ---
 id: TASK-29
 title: Investigate how NVDA reads the window right after a start
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T16:42:00Z'
@@ -175,6 +175,8 @@ Privacy: in runs 3 and 4 NVDA read notifications of another program while the ca
 3. With every processor kept busy the window of a default start appeared only 8 to 12 s after the start (prototype runs); it was read correctly. Why it took that long was not looked into.
 4. A notification of another program that arrives during just smoke is spoken by NVDA and ends up in the report like any other speech.
 5. NVDA logged the error of its own Enter script (IndentNav) once in the first just smoke run, as in earlier tasks.
+
+After the merge into develop (6bc3955): npm run test:all (496 frontend tests, 263 Rust tests) and npm run lint pass again. Nothing was pushed; the task is not archived.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
