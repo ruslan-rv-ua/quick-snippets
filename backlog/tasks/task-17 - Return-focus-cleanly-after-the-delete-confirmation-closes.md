@@ -4,14 +4,14 @@ title: Return focus cleanly after the delete confirmation closes
 status: To Do
 assignee: []
 created_date: '2026-11-16T18:13:00Z'
-updated_date: '2026-11-16T19:17:00Z'
+updated_date: '2026-11-19T07:10:00Z'
 labels:
   - bug
   - frontend
   - accessibility
   - model-sonnet
   - effort-high
-milestone: m-2
+milestone: m-4
 dependencies: []
 references:
   - src/components/DeleteConfirmModal.tsx
@@ -19,7 +19,7 @@ references:
   - src/App.tsx
   - scripts/smoke-nvda.ps1
 priority: low
-ordinal: 11000
+ordinal: 1000
 ---
 
 ## Description

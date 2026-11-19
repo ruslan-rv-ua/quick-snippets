@@ -4,18 +4,19 @@ title: Make the F1 help focus test stable in CI
 status: To Do
 assignee: []
 created_date: '2026-11-16T23:16:00Z'
+updated_date: '2026-11-19T07:10:00Z'
 labels:
   - testing
   - frontend
   - model-sonnet
   - effort-medium
-milestone: m-2
+milestone: m-4
 dependencies: []
 references:
   - src/components/__tests__/App.test.tsx
   - src/hooks/useWindowEvents.ts
 priority: low
-ordinal: 14000
+ordinal: 3000
 ---
 
 ## Description

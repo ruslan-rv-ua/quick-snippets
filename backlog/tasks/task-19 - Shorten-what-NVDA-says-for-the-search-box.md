@@ -4,19 +4,20 @@ title: Shorten what NVDA says for the search box
 status: To Do
 assignee: []
 created_date: '2026-11-16T19:17:00Z'
+updated_date: '2026-11-19T07:10:00Z'
 labels:
   - accessibility
   - frontend
   - model-sonnet
   - effort-high
-milestone: m-2
+milestone: m-4
 dependencies: []
 references:
   - src/components/SearchBox.tsx
   - src/i18n/translations.ts
   - scripts/smoke-nvda.ps1
 priority: low
-ordinal: 13000
+ordinal: 2000
 ---
 
 ## Description
