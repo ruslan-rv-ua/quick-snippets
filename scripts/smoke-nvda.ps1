@@ -469,8 +469,10 @@ function Show-App {
 # A start in the tray. Waits until the hidden copy is ready: its window with the web content
 # exists, has stayed hidden for 0.3 s and the app holds Ctrl+Alt+Space. Then leaves the copy
 # alone for $TrayIdleSec, as a user does who presses the hotkey some time after login.
-# The app creates its window shown and hides it during startup, so the window is watched
-# from the start: the step reports whether it was on screen or took the keyboard meanwhile.
+# The window must not be on screen at any moment of the start. Up to 0.3.3 it was created
+# shown and hidden a quarter of a second later: it took the keyboard from the active program
+# and NVDA announced it. So the window is watched from the start, and the step fails (without
+# stopping the run) if it was seen on screen.
 function Wait-HiddenStart {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $wasVisible = $false
@@ -502,6 +504,7 @@ function Wait-HiddenStart {
               elseif ($wasVisible) { 'вікно на мить показалося на екрані, клавіатури не забирало' }
               else { 'вікно на екрані не показувалося' }
     $script:StepInfo = "схована програма готова за $($clock.ElapsedMilliseconds) мс; $screen"
+    if ($wasVisible) { $script:SoftFail = "під час запуску в треї $screen" }
     Start-Sleep -Seconds $TrayIdleSec
     if ($script:AppProc.HasExited) { throw "програма завершилась, код $($script:AppProc.ExitCode)" }
     if (Get-AppWindow) { throw 'вікно програми відкрилося само, без Ctrl+Alt+Space' }
@@ -738,6 +741,8 @@ function Get-SaidText($Events) {
 # ExpectSaid  - for each entry, one of its '|'-separated variants must be said on its own, as a
 #               whole utterance: a character or word NVDA reads at the caret, e.g. 'з'
 # Forbid      - must not be said (none of its '|'-separated variants)
+# ForbidSaid  - must not be said on its own, as a whole utterance (none of its '|'-separated
+#               variants), e.g. the bare title of the app window
 # Hope       - nice to hear, reported but never a failure (speech that races with the window hiding)
 function Invoke-Step {
     param(
@@ -748,6 +753,7 @@ function Invoke-Step {
         [hashtable]$ExpectCount = @{},
         [string[]]$ExpectSaid = @(),
         [string[]]$Forbid = @(),
+        [string[]]$ForbidSaid = @(),
         [string[]]$Hope = @(),
         [string]$SkipReason
     )
@@ -805,6 +811,10 @@ function Invoke-Step {
         foreach ($p in $Forbid) {
             $variants = ($p.Split('|') | ForEach-Object { "«$_»" }) -join ' чи '
             $checks += [pscustomobject]@{ Text = "не звучить $variants"; Ok = -not (Test-SaidAny $all $p); Required = $true }
+        }
+        foreach ($w in $ForbidSaid) {
+            $variants = ($w.Split('|') | ForEach-Object { "«$_»" }) -join ' чи '
+            $checks += [pscustomobject]@{ Text = "окремо не звучить $variants"; Ok = -not (Test-SaidWhole $r.Speech $w); Required = $true }
         }
         foreach ($p in $Hope) {
             $checks += [pscustomobject]@{ Text = "бажано, щоб звучало «$p»"; Ok = (Get-Count $all $p) -ge 1; Required = $false }
@@ -929,9 +939,10 @@ try {
     $firstShowNoise = $SearchBoxNoise + 'tauri.localhost'
 
     if ($StartInTray) {
-        Invoke-Step 'Запуск у треї: вікно не відкривається, фокус лишається в тестовому вікні' {
+        # NVDA says the bare window title when the app window takes the keyboard.
+        Invoke-Step 'Запуск у треї: вікно не показується ні на мить, фокус лишається в тестовому вікні' {
             Wait-HiddenStart
-        }
+        } -ForbidSaid 'QuickSnippets'
 
         # The window has never been on screen with the keyboard in it. NVDA must read the
         # search box at once, not only after the next key press.
@@ -1747,12 +1758,12 @@ try {
 
     # The same exe and data folder: what a user gets after quitting and starting again.
     if ($StartInTray) {
-        Invoke-Step 'Перезапуск тестової копії в треї: вікно не відкривається' {
+        Invoke-Step 'Перезапуск тестової копії в треї: вікно не показується ні на мить' {
             try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
             if (-not [bool](& $readSettings).start_in_tray) { throw 'перед перезапуском «Запускати згорнутим у трей» вимкнено в settings.json' }
             $script:AppProc = Start-Process $TestExe -PassThru
             Wait-HiddenStart
-        }
+        } -ForbidSaid 'QuickSnippets'
 
         # The first show after this start: the search box and, once, the only snippet.
         Invoke-Step 'Ctrl+Alt+Space вперше після перезапуску: NVDA читає поле пошуку; світла тема, видалений сніпет не повернувся' {
