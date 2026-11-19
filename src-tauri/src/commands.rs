@@ -5,7 +5,17 @@ use rusqlite::Connection;
 use zeroize::Zeroizing;
 
 // Constants for validation
+
+/// Most content a plain snippet may hold, in bytes of UTF-8: the limit of the content
+/// column (`CHECK (length(content) <= 65536)` in db.rs).
 const MAX_CONTENT_LENGTH: usize = 65536;
+
+/// Most content an encrypted snippet may hold, in bytes of UTF-8.
+///
+/// The snippet is stored as its v2 blob: `v2:` and the base64 of salt (16 bytes), nonce
+/// (12 bytes), ciphertext and tag (16 bytes). For this much content the blob is 65,535 bytes,
+/// the last size that fits the content column; one byte more makes it 65,539 bytes.
+const MAX_ENCRYPTED_CONTENT_LENGTH: usize = 49_105;
 
 // ---------------------------------------------------------------------------
 // AppState — defined at module level so it is accessible in tests
@@ -88,6 +98,15 @@ pub fn search_snippets_inner(
     Ok(search::search(query, &rows))
 }
 
+/// The error for content over its size limit; `size` and `max` are bytes of UTF-8.
+///
+/// The create and edit dialogs recognise this text and show a translated message with both
+/// numbers instead (`parseContentTooLong` in src/utils/errors.ts): change the two together.
+fn content_too_long(size: usize, max: usize, encrypted: bool) -> String {
+    let kind = if encrypted { " for an encrypted snippet" } else { "" };
+    format!("Content too long{kind} ({size} bytes, max {max} bytes)")
+}
+
 /// Maps a rusqlite error to a user-facing string.
 /// Unique constraint violations are reported as a friendly message.
 fn map_rusqlite_err(e: rusqlite::Error) -> String {
@@ -128,9 +147,13 @@ pub fn create_snippet_inner(
         return Err("Title too long (max 50 chars)".to_string());
     }
 
+    // Checked before anything is stored: the database would refuse a longer blob with a raw
+    // CHECK error.
     let content_bytes = content.as_bytes();
-    if content_bytes.len() > MAX_CONTENT_LENGTH {
-        return Err(format!("Content too long (max {} bytes)", MAX_CONTENT_LENGTH));
+    let encrypted = !password.is_empty();
+    let max = if encrypted { MAX_ENCRYPTED_CONTENT_LENGTH } else { MAX_CONTENT_LENGTH };
+    if content_bytes.len() > max {
+        return Err(content_too_long(content_bytes.len(), max, encrypted));
     }
 
     if password.is_empty() {
@@ -213,7 +236,7 @@ pub fn update_snippet_inner(
 ) -> Result<(), String> {
     let content_bytes = content.as_bytes();
     if content_bytes.len() > MAX_CONTENT_LENGTH {
-        return Err(format!("Content too long (max {} bytes)", MAX_CONTENT_LENGTH));
+        return Err(content_too_long(content_bytes.len(), MAX_CONTENT_LENGTH, false));
     }
 
     let blob = content_bytes.to_vec();
@@ -947,14 +970,28 @@ mod tests {
     }
 
     // === content length validation ===
+    //
+    // The content column holds at most 65,536 bytes. A plain snippet is stored as it is. An
+    // encrypted snippet is stored as its v2 blob, which is longer than the content: 49,105
+    // bytes of content give a 65,535-byte blob, one byte more gives 65,539 bytes. Both limits
+    // are checked before anything is written, so the user never gets a database error.
+
+    /// Text that is `bytes` long in UTF-8, written in Cyrillic: two bytes per letter, with
+    /// one "x" in front when `bytes` is odd.
+    fn cyrillic_content(bytes: usize) -> String {
+        let mut text = "x".repeat(bytes % 2);
+        text.push_str(&"я".repeat(bytes / 2));
+        assert_eq!(text.len(), bytes);
+        text
+    }
 
     #[test]
     fn test_create_snippet_content_too_long() {
         let conn = setup();
         let oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
         let result = create_snippet_inner(&conn, "title", &oversized, "");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Content too long"));
+        assert_eq!(result.unwrap_err(), "Content too long (65537 bytes, max 65536 bytes)");
+        assert!(search_snippets_inner(&conn, "").unwrap().is_empty(), "nothing is stored");
     }
 
     #[test]
@@ -966,13 +1003,82 @@ mod tests {
     }
 
     #[test]
+    fn test_create_snippet_limit_counts_bytes_not_letters() {
+        // 32,768 Cyrillic letters are 65,536 bytes: the largest plain snippet.
+        let conn = setup();
+        let largest = cyrillic_content(MAX_CONTENT_LENGTH);
+        let id = create_snippet_inner(&conn, "largest plain", &largest, "").unwrap();
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, largest.as_bytes());
+
+        // One letter more is 65,538 bytes.
+        let result = create_snippet_inner(&conn, "too large", &"я".repeat(32_769), "");
+        assert_eq!(result.unwrap_err(), "Content too long (65538 bytes, max 65536 bytes)");
+    }
+
+    #[test]
+    fn test_create_encrypted_snippet_largest_content_that_fits() {
+        let conn = setup();
+        let largest = cyrillic_content(MAX_ENCRYPTED_CONTENT_LENGTH);
+
+        let id = create_snippet_inner(&conn, "largest secret", &largest, "pass").unwrap();
+
+        let row = db::get_snippet_by_id(&conn, id).unwrap();
+        assert!(row.is_encrypted);
+        assert_eq!(row.content.len(), 65_535, "the v2 blob just fits the content column");
+        let content = activate_snippet_get_content(&conn, id, "pass").unwrap();
+        assert_eq!(*content, largest.as_bytes());
+    }
+
+    #[test]
+    fn test_create_encrypted_snippet_one_byte_over_the_limit_gets_a_clear_error() {
+        let conn = setup();
+        let oversized = cyrillic_content(MAX_ENCRYPTED_CONTENT_LENGTH + 1);
+
+        let result = create_snippet_inner(&conn, "too large secret", &oversized, "pass");
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Content too long for an encrypted snippet (49106 bytes, max 49105 bytes)"
+        );
+        assert!(search_snippets_inner(&conn, "").unwrap().is_empty(), "nothing is stored");
+    }
+
+    #[test]
+    fn test_create_encrypted_snippet_far_over_the_limit_gets_a_clear_error() {
+        // The most a plain snippet may hold is still too much for an encrypted one.
+        let conn = setup();
+        let plain_limit = "x".repeat(MAX_CONTENT_LENGTH);
+        let result = create_snippet_inner(&conn, "large secret", &plain_limit, "pass");
+        assert_eq!(
+            result.unwrap_err(),
+            "Content too long for an encrypted snippet (65536 bytes, max 49105 bytes)"
+        );
+    }
+
+    #[test]
+    fn test_max_encrypted_content_length_is_the_most_the_database_stores() {
+        // Pins the limit to the blob format and the content column: the limit itself is
+        // stored, one byte more is refused by the database. Neither too strict nor too loose.
+        assert_eq!(MAX_ENCRYPTED_CONTENT_LENGTH, 49_105);
+        let conn = setup();
+        let fits = crypto::encrypt(&vec![b'x'; MAX_ENCRYPTED_CONTENT_LENGTH], "pass").unwrap();
+        assert_eq!(fits.len(), 65_535);
+        assert!(db::create_snippet(&conn, "fits", fits, true).is_ok());
+
+        let over = crypto::encrypt(&vec![b'x'; MAX_ENCRYPTED_CONTENT_LENGTH + 1], "pass").unwrap();
+        assert_eq!(over.len(), 65_539);
+        let err = db::create_snippet(&conn, "over", over, true).unwrap_err();
+        assert!(err.to_string().contains("CHECK constraint failed"), "{err}");
+    }
+
+    #[test]
     fn test_update_snippet_content_too_long() {
         let conn = setup();
         let id = db::create_snippet(&conn, "title", b"old content".to_vec(), false).unwrap();
-        let oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
+        let oversized = cyrillic_content(MAX_CONTENT_LENGTH + 1);
         let result = update_snippet_inner(&conn, id, "title", &oversized);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Content too long"));
+        assert_eq!(result.unwrap_err(), "Content too long (65537 bytes, max 65536 bytes)");
+        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, b"old content");
     }
 
     #[test]

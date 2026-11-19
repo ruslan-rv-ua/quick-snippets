@@ -9,7 +9,7 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { updateSnippet } from '../hooks/useIpc';
-import { ipcErrorToString } from '../utils/errors';
+import { ipcErrorToString, parseContentTooLong } from '../utils/errors';
 import type { SnippetView } from '../types';
 
 export interface EditSnippetModalProps {
@@ -31,7 +31,7 @@ export function EditSnippetModal({
   snippet,
   onSuccess,
 }: EditSnippetModalProps): React.ReactElement | null {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
@@ -74,6 +74,13 @@ export function EditSnippetModal({
       await updateSnippet(snippet.id, title, content);
     } catch (err: unknown) {
       const msg = ipcErrorToString(err);
+      // The backend measures the text in bytes; only a plain snippet's text can be edited.
+      const tooLong = parseContentTooLong(msg);
+      if (tooLong) {
+        setErrors({ content: tf.contentTooLong(tooLong.size, tooLong.max, tooLong.encrypted) });
+        contentRef.current?.focus();
+        return;
+      }
       const titleErr = msg.includes('Title already exists')
         ? t('titleDuplicate')
         : msg;
@@ -84,7 +91,7 @@ export function EditSnippetModal({
     // Focus returns to the list as it is after the save.
     await onSuccess();
     onClose();
-  }, [validate, snippet, title, content, onSuccess, onClose, t]);
+  }, [validate, snippet, title, content, onSuccess, onClose, t, tf]);
 
   useModalKeyboard(isOpen, { onEscape: onClose, onCtrlEnter: handleSubmit });
 

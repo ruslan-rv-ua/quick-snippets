@@ -107,6 +107,29 @@ describe('EditSnippetModal', () => {
     });
   });
 
+  // The backend checks the size in bytes; the dialog tells it under Content, translated.
+  it('shows the too-long error from the backend under Content and focuses the textarea', async () => {
+    mockInvoke.mockRejectedValue('Content too long (65538 bytes, max 65536 bytes)');
+    const onClose = vi.fn();
+    renderModal(plainSnippet, { onClose });
+    const title = screen.getByLabelText(/title|назва/i);
+    const content = screen.getByLabelText(/content|вміст/i);
+    fireEvent.change(content, { target: { value: 'longer content' } });
+    title.focus();
+    save();
+    await waitFor(() => {
+      expect(region('edit-content-err')).toHaveTextContent(/too long|задовгий/i);
+      expect(document.activeElement).toBe(content);
+    });
+    expect(region('edit-content-err')).toHaveTextContent('65538');
+    expect(region('edit-content-err')).toHaveTextContent('65536');
+    expect(region('edit-content-err')).not.toHaveTextContent('Content too long');
+    expect(content).toHaveAttribute('aria-invalid', 'true');
+    expect(region('edit-title-err')).toBeEmptyDOMElement();
+    expect(title).not.toHaveAttribute('aria-invalid');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   // The error regions must exist before the error: screen readers announce text changes
   // in an existing live region, while a newly inserted role="alert" was read by NVDA
   // as just "alert" without its text (the app root has role="application").
