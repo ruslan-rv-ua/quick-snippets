@@ -2,6 +2,7 @@ pub mod autotype;
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod error_dialogs;
 pub mod paths;
 pub mod search;
 pub mod settings;
@@ -382,10 +383,16 @@ pub fn run() {
         "--force-renderer-accessibility",
     );
 
-    let db_path = db::get_db_path();
-    let conn = db::open_and_init_db(&db_path).expect("Failed to open database");
-
+    // Settings first: the dialog for a database that cannot be opened speaks
+    // the language chosen in them.
     let app_settings = settings::load_settings();
+
+    let db_path = db::get_db_path();
+    let conn = db::open_db_at_startup(
+        &db_path,
+        &error_dialogs::dialog_language(&app_settings.language),
+    );
+
     let startup_gate = startup::StartupGate::new(show_window_at_launch(app_settings.start_in_tray));
 
     tauri::Builder::default()

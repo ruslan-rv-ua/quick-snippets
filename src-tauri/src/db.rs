@@ -1,7 +1,8 @@
 // Database CRUD operations
 
+use crate::error_dialogs::OpenFailure;
 use rusqlite::{params, Connection, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,57 +62,181 @@ pub fn init_db(conn: &Connection) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Corruption handler
+// Opening at start-up: damaged or unavailable database
 // ---------------------------------------------------------------------------
 
-/// Open the database and initialize it; show a native corruption dialog if
-/// SQLite reports any error (open *or* first query / pragma execution).
+/// Open the database and initialize it, without any dialog.
 ///
 /// If the path is a **directory** (e.g. created by Scoop `persist` before the
 /// first run), it is silently removed so SQLite can create a proper file.
-pub fn open_and_init_db(db_path: &std::path::Path) -> Result<Connection> {
+pub fn open_and_init_db(db_path: &Path) -> Result<Connection> {
     if db_path.is_dir() {
         // Scoop creates a directory stub when the file doesn't exist in the
         // release archive and `persist` is listed in the manifest.
         std::fs::remove_dir_all(db_path).ok();
     }
-    let conn_result = Connection::open(db_path).and_then(|conn| {
+    // On an error the connection is dropped inside the closure, so the file is
+    // closed again before anyone tries to rename it.
+    Connection::open(db_path).and_then(|conn| {
         init_db(&conn)?;
         Ok(conn)
-    });
-    handle_db_corruption(conn_result, db_path)
+    })
 }
 
-pub fn handle_db_corruption(
-    conn_result: Result<Connection>,
-    db_path: &std::path::Path,
-) -> Result<Connection> {
-    match conn_result {
-        Ok(conn) => Ok(conn),
-        Err(_) => {
-            let answer = rfd::MessageDialog::new()
-                .set_title("Database Error")
-                .set_description(
-                    "File snippets.db is corrupted and cannot be opened.\n\
-                     Reset to empty database? (All snippets will be permanently lost)",
-                )
-                .set_buttons(rfd::MessageButtons::YesNo)
-                .show();
+/// Tell real damage apart from the other reasons a database cannot be opened.
+/// Only damage may lead to setting the file aside; for anything else the file
+/// is probably fine and the user can only try again or quit.
+pub fn classify_open_error(err: &rusqlite::Error) -> OpenFailure {
+    use rusqlite::ErrorCode;
+    match err {
+        rusqlite::Error::SqliteFailure(e, _) => match e.code {
+            ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase => OpenFailure::Damaged,
+            ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => OpenFailure::Busy,
+            ErrorCode::CannotOpen => OpenFailure::CannotOpen,
+            ErrorCode::PermissionDenied | ErrorCode::ReadOnly => OpenFailure::NoAccess,
+            ErrorCode::DiskFull => OpenFailure::DiskFull,
+            _ => OpenFailure::Other(err.to_string()),
+        },
+        _ => OpenFailure::Other(err.to_string()),
+    }
+}
 
-            if answer == rfd::MessageDialogResult::Yes {
-                // Remove whether it's a file *or* a directory
-                if db_path.is_dir() {
-                    std::fs::remove_dir_all(db_path).ok();
-                } else {
-                    std::fs::remove_file(db_path).ok();
+/// The local date and time for the name of a damaged database, e.g.
+/// `2026-11-20-14-35`. SQLite's own clock saves a date crate.
+pub fn local_timestamp() -> String {
+    Connection::open_in_memory()
+        .and_then(|c| {
+            c.query_row(
+                "SELECT strftime('%Y-%m-%d-%H-%M', 'now', 'localtime')",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+        })
+        .unwrap_or_else(|_| "unknown-time".to_string())
+}
+
+/// The name a damaged database gets in `folder`: `snippets-damaged-<stamp>.db`,
+/// or with `-2`, `-3`, … when that name (or its journal) is already taken, so an
+/// earlier damaged copy is never overwritten.
+pub fn damaged_db_name(stamp: &str, folder: &Path) -> String {
+    let base = format!("snippets-damaged-{stamp}");
+    let mut n = 1;
+    loop {
+        let name = if n == 1 {
+            format!("{base}.db")
+        } else {
+            format!("{base}-{n}.db")
+        };
+        let taken = folder.join(&name).exists() || folder.join(format!("{name}-journal")).exists();
+        if !taken {
+            return name;
+        }
+        n += 1;
+    }
+}
+
+fn journal_path(db_path: &Path) -> PathBuf {
+    let mut s = db_path.as_os_str().to_os_string();
+    s.push("-journal");
+    PathBuf::from(s)
+}
+
+/// Rename the damaged `db_path` to `kept_name` in the same folder, together
+/// with its rollback journal if there is one (the journal may hold the last
+/// changes, and left behind it would be applied to the new empty database).
+/// The bytes are not touched. Nothing changes when the rename fails.
+pub fn keep_damaged_db(db_path: &Path, kept_name: &str) -> std::io::Result<PathBuf> {
+    let folder = db_path.parent().unwrap_or(Path::new("."));
+    let target = folder.join(kept_name);
+    let target_journal = journal_path(&target);
+    if target.exists() || target_journal.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("{} already exists", target.display()),
+        ));
+    }
+    let journal = journal_path(db_path);
+    let journal_moved = if journal.exists() {
+        std::fs::rename(&journal, &target_journal)?;
+        true
+    } else {
+        false
+    };
+    if let Err(e) = std::fs::rename(db_path, &target) {
+        if journal_moved {
+            std::fs::rename(&target_journal, &journal).ok();
+        }
+        return Err(e);
+    }
+    Ok(target)
+}
+
+/// A question the start-up asks when the database cannot be opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DbDialog {
+    /// The file is damaged: keep it as `kept_name` and start with an empty one?
+    Damaged { kept_name: String },
+    /// It cannot be opened for another reason: try again?
+    CannotOpen(OpenFailure),
+}
+
+/// Open the database at start-up. On an error, `ask` gets the question for the
+/// user and returns true for Yes. Returns `None` when the user said No: then
+/// no file has been changed by this function.
+///
+/// * Damage: Yes renames the damaged file (see [`keep_damaged_db`]) and opens a
+///   new empty database. If the rename fails, the user is asked to try again.
+/// * Any other error: Yes tries again.
+pub fn open_db_or_ask(
+    db_path: &Path,
+    stamp: &str,
+    ask: &mut dyn FnMut(&DbDialog) -> bool,
+) -> Option<Connection> {
+    let folder = db_path.parent().unwrap_or(Path::new("."));
+    loop {
+        let err = match open_and_init_db(db_path) {
+            Ok(conn) => return Some(conn),
+            Err(e) => e,
+        };
+        eprintln!("Failed to open the database: {err}");
+        match classify_open_error(&err) {
+            OpenFailure::Damaged => {
+                let kept_name = damaged_db_name(stamp, folder);
+                if !ask(&DbDialog::Damaged { kept_name: kept_name.clone() }) {
+                    return None;
                 }
-                let conn = Connection::open(db_path)?;
-                init_db(&conn)?;
-                Ok(conn)
-            } else {
-                std::process::exit(0);
+                if let Err(e) = keep_damaged_db(db_path, &kept_name) {
+                    let failure = OpenFailure::KeepFailed(e.to_string());
+                    if !ask(&DbDialog::CannotOpen(failure)) {
+                        return None;
+                    }
+                }
+            }
+            failure => {
+                if !ask(&DbDialog::CannotOpen(failure)) {
+                    return None;
+                }
             }
         }
+    }
+}
+
+/// [`open_db_or_ask`] with the native dialogs in `lang`; No quits the app.
+#[cfg(not(test))]
+pub fn open_db_at_startup(db_path: &Path, lang: &str) -> Connection {
+    use crate::error_dialogs;
+    let folder = db_path.parent().unwrap_or(Path::new("."));
+    let stamp = local_timestamp();
+    let conn = open_db_or_ask(db_path, &stamp, &mut |dialog| {
+        let text = match dialog {
+            DbDialog::Damaged { kept_name } => error_dialogs::db_damaged(lang, kept_name, folder),
+            DbDialog::CannotOpen(failure) => error_dialogs::db_cannot_open(lang, failure, folder),
+        };
+        error_dialogs::ask_yes_no(&text)
+    });
+    match conn {
+        Some(conn) => conn,
+        None => std::process::exit(0),
     }
 }
 
@@ -930,38 +1055,344 @@ mod tests {
         assert_eq!(list[1].0, id_a);
     }
 
-    // --- handle_db_corruption ---
+    // --- opening at start-up: damaged or unavailable database ---
 
-    /// When given Ok(conn), handle_db_corruption must pass the connection
-    /// through unchanged. This is the only path that can be tested without an
-    /// rfd dialog mock.
-    ///
-    /// NOTE: The Err(_) branch invokes `rfd::MessageDialog::new().show()` which
-    /// opens a native OS dialog — it cannot be exercised in an automated test
-    /// environment without a headless dialog mock (rfd provides none as of
-    /// 0.14). That branch is therefore covered only by manual / integration
-    /// testing.
+    const STAMP: &str = "2026-11-20-14-35";
+    /// Not a SQLite file: SQLite answers "file is not a database".
+    const GARBAGE: &[u8] = b"this is not a sqlite database, just some damaged bytes........\
+                              ................................................................";
+
+    fn sqlite_failure(code: i32) -> rusqlite::Error {
+        rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None)
+    }
+
+    fn snippet_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM snippets", [], |row| row.get(0)).unwrap()
+    }
+
+    fn file_names(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A healthy database opens without any question.
     #[test]
-    fn test_handle_db_corruption_ok_passes_through() {
+    fn test_open_db_or_ask_healthy_db_asks_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let db_path = dir.path().join("snippets.db");
+        {
+            let conn = open_and_init_db(&db_path).unwrap();
+            create_snippet(&conn, "Kept snippet", b"x".to_vec(), false).unwrap();
+        }
+        let mut asked = Vec::new();
+        let conn = open_db_or_ask(&db_path, STAMP, &mut |d| {
+            asked.push(d.clone());
+            true
+        })
+        .expect("a healthy database must open");
+        assert!(asked.is_empty(), "no question for a healthy database: {asked:?}");
+        assert_eq!(snippet_count(&conn), 1);
+    }
 
-        let conn = Connection::open(&db_path).unwrap();
-        init_db(&conn).unwrap();
+    #[test]
+    fn test_classify_open_error_damage() {
+        assert_eq!(classify_open_error(&sqlite_failure(11)), OpenFailure::Damaged); // SQLITE_CORRUPT
+        assert_eq!(classify_open_error(&sqlite_failure(26)), OpenFailure::Damaged); // SQLITE_NOTADB
+    }
 
-        // Wrap in Ok and pass through the corruption handler
-        let result = handle_db_corruption(Ok(conn), &db_path);
-        assert!(result.is_ok(), "Ok(conn) must be returned unchanged");
+    #[test]
+    fn test_classify_open_error_other_reasons_are_not_damage() {
+        assert_eq!(classify_open_error(&sqlite_failure(5)), OpenFailure::Busy); // SQLITE_BUSY
+        assert_eq!(classify_open_error(&sqlite_failure(6)), OpenFailure::Busy); // SQLITE_LOCKED
+        assert_eq!(classify_open_error(&sqlite_failure(14)), OpenFailure::CannotOpen); // SQLITE_CANTOPEN
+        assert_eq!(classify_open_error(&sqlite_failure(3)), OpenFailure::NoAccess); // SQLITE_PERM
+        assert_eq!(classify_open_error(&sqlite_failure(8)), OpenFailure::NoAccess); // SQLITE_READONLY
+        assert_eq!(classify_open_error(&sqlite_failure(13)), OpenFailure::DiskFull); // SQLITE_FULL
+        assert!(matches!(
+            classify_open_error(&sqlite_failure(10)), // SQLITE_IOERR
+            OpenFailure::Other(_)
+        ));
+        assert!(matches!(
+            classify_open_error(&rusqlite::Error::QueryReturnedNoRows),
+            OpenFailure::Other(_)
+        ));
+    }
 
-        // The returned connection must still be functional
-        let conn_out = result.unwrap();
-        let count: i64 = conn_out
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='snippets'",
-                [],
-                |row| row.get(0),
-            )
+    /// A file that is not a database is reported as damage by the real open.
+    #[test]
+    fn test_classify_open_error_on_a_garbage_file_is_damage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::write(&db_path, GARBAGE).unwrap();
+        let err = open_and_init_db(&db_path).expect_err("garbage must not open");
+        assert_eq!(classify_open_error(&err), OpenFailure::Damaged, "{err}");
+    }
+
+    /// A database whose header is intact but whose first page is overwritten.
+    #[test]
+    fn test_classify_open_error_on_a_damaged_schema_is_damage() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        {
+            let conn = open_and_init_db(&db_path).unwrap();
+            create_snippet(&conn, "Some title", b"x".to_vec(), false).unwrap();
+        }
+        let mut bytes = std::fs::read(&db_path).unwrap();
+        for b in bytes.iter_mut().take(4096).skip(100) {
+            *b = 0xA5;
+        }
+        std::fs::write(&db_path, &bytes).unwrap();
+        let err = open_and_init_db(&db_path).expect_err("a damaged schema must not open");
+        assert_eq!(classify_open_error(&err), OpenFailure::Damaged, "{err}");
+    }
+
+    #[test]
+    fn test_local_timestamp_format() {
+        let stamp = local_timestamp();
+        // YYYY-MM-DD-HH-MM
+        assert_eq!(stamp.len(), 16, "{stamp}");
+        let parts: Vec<&str> = stamp.split('-').collect();
+        assert_eq!(parts.len(), 5, "{stamp}");
+        assert!(parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())), "{stamp}");
+    }
+
+    #[test]
+    fn test_damaged_db_name_says_what_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            damaged_db_name(STAMP, dir.path()),
+            "snippets-damaged-2026-11-20-14-35.db"
+        );
+    }
+
+    #[test]
+    fn test_damaged_db_name_never_reuses_a_taken_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("snippets-damaged-2026-11-20-14-35.db"), b"1").unwrap();
+        assert_eq!(
+            damaged_db_name(STAMP, dir.path()),
+            "snippets-damaged-2026-11-20-14-35-2.db"
+        );
+        // A leftover journal alone also takes the name.
+        std::fs::write(dir.path().join("snippets-damaged-2026-11-20-14-35-2.db-journal"), b"j").unwrap();
+        assert_eq!(
+            damaged_db_name(STAMP, dir.path()),
+            "snippets-damaged-2026-11-20-14-35-3.db"
+        );
+    }
+
+    #[test]
+    fn test_keep_damaged_db_renames_file_and_journal_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::write(&db_path, GARBAGE).unwrap();
+        std::fs::write(dir.path().join("snippets.db-journal"), b"journal bytes").unwrap();
+
+        let kept = keep_damaged_db(&db_path, "snippets-damaged-x.db").unwrap();
+
+        assert_eq!(kept, dir.path().join("snippets-damaged-x.db"));
+        assert_eq!(std::fs::read(&kept).unwrap(), GARBAGE, "bytes must be kept as they were");
+        assert_eq!(
+            std::fs::read(dir.path().join("snippets-damaged-x.db-journal")).unwrap(),
+            b"journal bytes"
+        );
+        assert!(!db_path.exists());
+        assert!(!dir.path().join("snippets.db-journal").exists());
+    }
+
+    #[test]
+    fn test_keep_damaged_db_never_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::write(&db_path, GARBAGE).unwrap();
+        std::fs::write(dir.path().join("snippets-damaged-x.db"), b"older copy").unwrap();
+
+        assert!(keep_damaged_db(&db_path, "snippets-damaged-x.db").is_err());
+        assert_eq!(std::fs::read(&db_path).unwrap(), GARBAGE);
+        assert_eq!(
+            std::fs::read(dir.path().join("snippets-damaged-x.db")).unwrap(),
+            b"older copy"
+        );
+    }
+
+    /// Yes in the damage dialog keeps the damaged file under the name the
+    /// dialog showed and starts with an empty, working database.
+    #[test]
+    fn test_open_db_or_ask_damaged_yes_keeps_file_and_starts_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::write(&db_path, GARBAGE).unwrap();
+
+        let mut asked = Vec::new();
+        let conn = open_db_or_ask(&db_path, STAMP, &mut |d| {
+            asked.push(d.clone());
+            true
+        })
+        .expect("Yes must give a working database");
+
+        assert_eq!(
+            asked,
+            vec![DbDialog::Damaged {
+                kept_name: "snippets-damaged-2026-11-20-14-35.db".to_string()
+            }]
+        );
+        let kept = dir.path().join("snippets-damaged-2026-11-20-14-35.db");
+        assert_eq!(std::fs::read(&kept).unwrap(), GARBAGE, "the damaged file must be kept as it was");
+        assert_eq!(snippet_count(&conn), 0);
+        create_snippet(&conn, "New snippet", b"y".to_vec(), false).unwrap();
+        assert_eq!(snippet_count(&conn), 1);
+    }
+
+    /// A second damaged file on the same minute gets its own name; the first
+    /// copy stays.
+    #[test]
+    fn test_open_db_or_ask_damaged_twice_keeps_both_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        for _ in 0..2 {
+            std::fs::write(&db_path, GARBAGE).unwrap();
+            let conn = open_db_or_ask(&db_path, STAMP, &mut |_| true).unwrap();
+            drop(conn);
+        }
+        assert_eq!(
+            file_names(dir.path()),
+            vec![
+                "snippets-damaged-2026-11-20-14-35-2.db",
+                "snippets-damaged-2026-11-20-14-35.db",
+                "snippets.db",
+            ]
+        );
+    }
+
+    /// No in the damage dialog changes no file.
+    ///
+    /// (A rollback journal next to it is SQLite's own business: on every open,
+    /// before any dialog, SQLite discards a journal it finds invalid and plays
+    /// back a valid one. This was so before the dialog changed, too.)
+    #[test]
+    fn test_open_db_or_ask_damaged_no_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::write(&db_path, GARBAGE).unwrap();
+
+        let mut asked = 0;
+        let result = open_db_or_ask(&db_path, STAMP, &mut |_| {
+            asked += 1;
+            false
+        });
+
+        assert!(result.is_none());
+        assert_eq!(asked, 1);
+        assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+        assert_eq!(std::fs::read(&db_path).unwrap(), GARBAGE);
+    }
+
+    /// A file another program holds open without sharing is not damage: the
+    /// user is asked to try again, and No changes nothing.
+    #[cfg(windows)]
+    #[test]
+    fn test_open_db_or_ask_file_in_use_asks_to_try_again() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        {
+            let conn = open_and_init_db(&db_path).unwrap();
+            create_snippet(&conn, "Kept snippet", b"x".to_vec(), false).unwrap();
+        }
+        let before = std::fs::read(&db_path).unwrap();
+
+        // Share mode 0: nobody else may open the file while this handle lives.
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&db_path)
             .unwrap();
-        assert_eq!(count, 1, "returned connection must have the snippets schema");
+        let mut asked = Vec::new();
+        let result = open_db_or_ask(&db_path, STAMP, &mut |d| {
+            asked.push(d.clone());
+            false
+        });
+        drop(holder);
+
+        assert!(result.is_none());
+        assert_eq!(asked.len(), 1);
+        assert!(
+            matches!(asked[0], DbDialog::CannotOpen(ref f) if *f != OpenFailure::Damaged),
+            "{asked:?}"
+        );
+        assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+        assert_eq!(std::fs::read(&db_path).unwrap(), before);
+    }
+
+    /// Yes in the "try again" dialog tries again: once the other program has
+    /// let go, the user's own database opens with their snippets.
+    #[cfg(windows)]
+    #[test]
+    fn test_open_db_or_ask_try_again_opens_the_same_database() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        {
+            let conn = open_and_init_db(&db_path).unwrap();
+            create_snippet(&conn, "Kept snippet", b"x".to_vec(), false).unwrap();
+        }
+        let mut holder = Some(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&db_path)
+                .unwrap(),
+        );
+        let mut asked = 0;
+        let conn = open_db_or_ask(&db_path, STAMP, &mut |_| {
+            asked += 1;
+            holder.take(); // the other program closes the file
+            true
+        })
+        .expect("the second try must open");
+        assert_eq!(asked, 1);
+        assert_eq!(snippet_count(&conn), 1, "the user's snippets must still be there");
+    }
+
+    /// When the damaged file cannot be renamed, the user is told so and nothing
+    /// changes.
+    #[cfg(windows)]
+    #[test]
+    fn test_open_db_or_ask_rename_failure_is_reported_and_changes_nothing() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 0x1;
+        const FILE_SHARE_WRITE: u32 = 0x2;
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("snippets.db");
+        std::fs::write(&db_path, GARBAGE).unwrap();
+
+        // SQLite can still open the file (read and write are shared), but it
+        // cannot be renamed (delete is not shared).
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&db_path)
+            .unwrap();
+        let mut asked = Vec::new();
+        let result = open_db_or_ask(&db_path, STAMP, &mut |d| {
+            asked.push(d.clone());
+            // Yes to keeping the damaged file, then No to trying again.
+            matches!(d, DbDialog::Damaged { .. })
+        });
+        drop(holder);
+
+        assert!(result.is_none());
+        assert_eq!(asked.len(), 2, "{asked:?}");
+        assert!(matches!(asked[0], DbDialog::Damaged { .. }));
+        assert!(
+            matches!(asked[1], DbDialog::CannotOpen(OpenFailure::KeepFailed(_))),
+            "{asked:?}"
+        );
+        assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+        assert_eq!(std::fs::read(&db_path).unwrap(), GARBAGE);
     }
 }

@@ -204,6 +204,9 @@ fn detect_language_windows() -> Option<String> {
 // Tauri-runtime helpers (not compiled during tests)
 // ------------------------------------------------------------------
 
+/// Read settings.json; when it cannot be read, ask (in the Windows display
+/// language, as the app's own language setting is unknown then) whether to
+/// reset it. No quits without changing any file.
 #[cfg(not(test))]
 pub fn load_settings() -> Settings {
     let path = get_settings_path();
@@ -211,14 +214,10 @@ pub fn load_settings() -> Settings {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to load settings: {e}");
-            let reset = rfd::MessageDialog::new()
-                .set_title("QuickSnippets — Помилка")
-                .set_description(
-                    "Файл settings.json пошкоджений.\nСкинути до стандартних налаштувань?",
-                )
-                .set_buttons(rfd::MessageButtons::YesNo)
-                .show()
-                == rfd::MessageDialogResult::Yes;
+            let lang = detect_language();
+            let reset = crate::error_dialogs::ask_yes_no(
+                &crate::error_dialogs::settings_unreadable(&lang),
+            );
 
             if reset {
                 let defaults = Settings::default();
