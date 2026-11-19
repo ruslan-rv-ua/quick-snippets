@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import React from 'react';
 import { EditSnippetModal } from '../EditSnippetModal';
@@ -158,5 +158,20 @@ describe('EditSnippetModal', () => {
         title: 'Updated Title',
       }));
     });
+  });
+
+  // The app loads the list again in onSuccess: focus comes back once, to the new list.
+  it('after a save it closes only once onSuccess has finished', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    let finish = () => {};
+    const onSuccess = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const onClose = vi.fn();
+    renderModal(plainSnippet, { onSuccess, onClose });
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => finish());
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

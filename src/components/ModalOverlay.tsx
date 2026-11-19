@@ -1,5 +1,6 @@
 import React, {
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
 } from 'react';
@@ -30,12 +31,22 @@ export function ModalOverlay({
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // Save and restore focus
-  useEffect(() => {
+  // Save focus when the dialog opens and give it back when the dialog closes. A layout effect,
+  // so that on close focus is back in the same commit that removes the dialog, while the
+  // dialog is still on the page. From a passive effect it came back only in a later task when
+  // the dialog closed after an await (Ctrl+Enter in create, edit, delete); in between focus
+  // was on the document, and NVDA said "blank" or "unknown" and "application" first.
+  useLayoutEffect(() => {
     if (!isOpen) return;
     previousFocusRef.current = document.activeElement as HTMLElement;
+    return () => {
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
 
-    // Focus first focusable element; fall back to the dialog itself
+  // Focus first focusable element; fall back to the dialog itself
+  useEffect(() => {
+    if (!isOpen) return;
     const el = dialogRef.current;
     if (el) {
       const focusable = getFocusable(el);
@@ -45,12 +56,6 @@ export function ModalOverlay({
         el.focus();
       }
     }
-
-    return () => {
-      if (previousFocusRef.current) {
-        previousFocusRef.current.focus();
-      }
-    };
   }, [isOpen]);
 
   // Re-focus dialog when the window regains focus (e.g. restored from tray)
