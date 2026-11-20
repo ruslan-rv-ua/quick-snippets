@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.5 - 2026-11-21
+
 ### Fixed
 - When Windows does not let QuickSnippets turn "Start with Windows" on or off, for example because a policy or security software blocks the change, the settings dialog now says so and stays open. The message appears under the setting and screen readers read it; the setting goes back to its previous value, so it always shows whether Windows starts QuickSnippets. Your other changes in the dialog are saved. Before, the failure went unnoticed: the dialog closed and the setting looked changed, although Windows did not do it.
 - With "Start with Windows" on, the autostart entry in the registry now holds the path to `quick-snippets.exe` in quotes. Before, it had no quotes. When the path of the QuickSnippets folder has a space, for example `C:\Portable Apps\QuickSnippets`, such an entry is ambiguous: when you sign in, Windows first tries shorter names it reads from it, such as `C:\Portable.exe`, and would start a program placed there instead of QuickSnippets. Copies installed with Scoop have no spaces in their path. An entry written by an earlier version is left as it is: to have it written with quotes, turn "Start with Windows" off and on once.
