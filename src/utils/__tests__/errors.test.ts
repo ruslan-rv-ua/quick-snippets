@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { asSentence, ipcErrorToString, parseContentTooLong, parseTitleLength } from '../errors';
+import {
+  asSentence,
+  ipcErrorToString,
+  isWrongPassword,
+  parseContentTooLong,
+  parseTitleLength,
+  WRONG_PASSWORD,
+} from '../errors';
 
 describe('ipcErrorToString', () => {
   it('keeps a string and turns anything else into one', () => {
@@ -71,5 +78,26 @@ describe('parseTitleLength', () => {
     ]) {
       expect(parseTitleLength(message), message).toBeNull();
     }
+  });
+});
+
+// WRONG_PASSWORD in src-tauri/src/crypto.rs: only that exact text is a wrong password.
+describe('isWrongPassword', () => {
+  it('is the text of the backend for a wrong password', () => {
+    expect(WRONG_PASSWORD).toBe('Wrong password');
+    expect(isWrongPassword('Wrong password')).toBe(true);
+  });
+
+  it.each([
+    'database is locked',
+    'Invalid data',
+    'Query returned no rows',
+    'Invalid UTF-8 content',
+    'wrong password',
+    'Wrong password.',
+    'Error: Wrong password',
+    '',
+  ])('is not %j', (message) => {
+    expect(isWrongPassword(message)).toBe(false);
   });
 });

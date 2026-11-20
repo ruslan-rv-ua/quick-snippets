@@ -9,7 +9,7 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { updateSnippet } from '../hooks/useIpc';
-import { ipcErrorToString, parseContentTooLong, parseTitleLength } from '../utils/errors';
+import { asSentence, ipcErrorToString, parseContentTooLong, parseTitleLength } from '../utils/errors';
 import { countCharacters, isTitleLengthValid } from '../utils/title';
 import type { SnippetView } from '../types';
 
@@ -40,6 +40,9 @@ export function EditSnippetModal({
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
+  // The backend's error of the last failed save when it is not about a field (for example a
+  // locked database): shown above the buttons, not under Title.
+  const [failure, setFailure] = useState<string | null>(null);
 
   // Populate fields when snippet changes
   useEffect(() => {
@@ -47,6 +50,7 @@ export function EditSnippetModal({
       setTitle(snippet.title);
       setContent(snippet.content);
       setErrors({});
+      setFailure(null);
       setSubmitted(false);
     }
   }, [isOpen, snippet]);
@@ -62,6 +66,8 @@ export function EditSnippetModal({
   const handleSubmit = useCallback(async () => {
     if (!snippet) return;
     setSubmitted(true);
+    // Empty the live region first, so that a repeated failure is announced again.
+    setFailure(null);
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
@@ -89,11 +95,14 @@ export function EditSnippetModal({
         titleRef.current?.focus();
         return;
       }
-      const titleErr = msg.includes('Title already exists')
-        ? t('titleDuplicate')
-        : msg;
-      setErrors({ title: titleErr });
-      titleRef.current?.focus();
+      if (msg.includes('Title already exists')) {
+        setErrors({ title: t('titleDuplicate') });
+        titleRef.current?.focus();
+        return;
+      }
+      // Not about a field: the dialog keeps everything and focus stays where it is; the
+      // message above the buttons is a live region (FieldError), read once.
+      setFailure(msg);
       return;
     }
     // Focus returns to the list as it is after the save.
@@ -145,6 +154,11 @@ export function EditSnippetModal({
           </>
         )}
       </div>
+
+      <FieldError
+        id="edit-error"
+        message={failure === null ? undefined : tf.snippetSaveFailed(asSentence(failure))}
+      />
 
       <div className="modal-actions">
         <button type="button" className="btn-secondary" onClick={onClose}>

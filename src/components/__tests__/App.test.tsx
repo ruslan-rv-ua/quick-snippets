@@ -785,6 +785,26 @@ describe('App: where focus goes after a dialog changes the list', () => {
     expect(search).toHaveFocus();
   });
 
+  // Up to 0.3.5 the app showed the backend's text as a toast outside the open aria-modal dialog,
+  // gone after 2 s. Now the dialog says it above its buttons, in the language of the app.
+  it('a failed delete: the dialog stays open and says why above its buttons; no toast', async () => {
+    const backend = mockInvoke.getMockImplementation()!;
+    mockInvoke.mockImplementation(async (cmd, args) =>
+      cmd === 'delete_snippet' ? Promise.reject('database is locked') : backend(cmd, args));
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'd', code: 'KeyD', ctrlKey: true });
+    const dialog = await screen.findByRole('dialog', { name: 'Delete snippet' });
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+    fireEvent.keyDown(cancel, { key: 'Enter', ctrlKey: true });
+
+    const message = 'Could not delete the snippet. Reason: database is locked.';
+    await waitFor(() => expect(within(dialog).getByText(message)).toBeInTheDocument());
+    expect(screen.getAllByText(/database is locked/)).toHaveLength(1);
+    expect(cancel).toHaveFocus();
+    expect(screen.getByRole('option', { name: 'Greeting' })).toBeInTheDocument();
+  });
+
   it('Ctrl+N, Ctrl+Enter: focus comes back once, to the new snippet, not first to the one selected before', async () => {
     const search = await openApp();
     const seen = recordFocus(search);

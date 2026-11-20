@@ -68,6 +68,15 @@ export interface TranslationMap {
   contentTooLong: (size: number, max: number, encrypted: boolean) => string;
   passwordMismatch: string;
   wrongPassword: string;
+  /**
+   * Above the buttons of a dialog when the backend fails for another reason than the user's input
+   * (for example the database is locked). `reason` is the backend's error, ended as a sentence.
+   */
+  snippetSaveFailed: (reason: string) => string;
+  snippetDeleteFailed: (reason: string) => string;
+  /** The password dialog, for any failure but a wrong password. */
+  snippetCopyFailed: (reason: string) => string;
+  snippetAutotypeFailed: (reason: string) => string;
   decryptError: string;
   enterPassword: string;
 
@@ -191,6 +200,10 @@ const en: TranslationMap = {
     `Text too long${encrypted ? ' for an encrypted snippet' : ''}: ${size} bytes, at most ${max} allowed`,
   passwordMismatch: 'Passwords do not match',
   wrongPassword: 'Wrong password',
+  snippetSaveFailed: (reason) => `Could not save the snippet. Reason: ${reason} Nothing was changed.`,
+  snippetDeleteFailed: (reason) => `Could not delete the snippet. Reason: ${reason}`,
+  snippetCopyFailed: (reason) => `Could not copy the snippet. Reason: ${reason}`,
+  snippetAutotypeFailed: (reason) => `Could not type the snippet. Reason: ${reason}`,
   decryptError: 'Failed to decrypt snippet',
   enterPassword: 'Enter password to decrypt',
 
@@ -342,6 +355,10 @@ const uk: TranslationMap = {
     `Текст задовгий${encrypted ? ' для зашифрованого сніпета' : ''}: ${size} ${ukBytes(size)}, можна до ${max}`,
   passwordMismatch: 'Паролі не збігаються',
   wrongPassword: 'Невірний пароль',
+  snippetSaveFailed: (reason) => `Не вдалося зберегти сніпет. Причина: ${reason} Нічого не змінено.`,
+  snippetDeleteFailed: (reason) => `Не вдалося видалити сніпет. Причина: ${reason}`,
+  snippetCopyFailed: (reason) => `Не вдалося скопіювати сніпет. Причина: ${reason}`,
+  snippetAutotypeFailed: (reason) => `Не вдалося надрукувати сніпет. Причина: ${reason}`,
   decryptError: 'Помилка розшифрування сніпета',
   enterPassword: 'Введіть пароль для розшифрування',
 
@@ -488,6 +505,10 @@ const de: TranslationMap = {
     `Text zu lang${encrypted ? ' für ein verschlüsseltes Snippet' : ''}: ${size} Bytes, höchstens ${max} erlaubt`,
   passwordMismatch: 'Passwörter stimmen nicht überein',
   wrongPassword: 'Falsches Passwort',
+  snippetSaveFailed: (reason) => `Das Snippet ließ sich nicht speichern. Grund: ${reason} Es wurde nichts geändert.`,
+  snippetDeleteFailed: (reason) => `Das Snippet ließ sich nicht löschen. Grund: ${reason}`,
+  snippetCopyFailed: (reason) => `Das Snippet ließ sich nicht kopieren. Grund: ${reason}`,
+  snippetAutotypeFailed: (reason) => `Das Snippet ließ sich nicht automatisch tippen. Grund: ${reason}`,
   decryptError: 'Snippet konnte nicht entschlüsselt werden',
   enterPassword: 'Passwort zum Entschlüsseln eingeben',
 

@@ -144,6 +144,11 @@ const V2_PBKDF2_ITERATIONS: u32 = 600_000;
 /// `:` is not a base64 character, so a legacy blob (pure base64) never starts with it.
 const V2_PREFIX: &[u8] = b"v2:";
 
+/// The text of a wrong password, exactly as the frontend gets it from `activate_snippet` and
+/// `autotype_snippet`. The password dialog says "wrong password" only for this text
+/// (`WRONG_PASSWORD` in src/utils/errors.ts): change the two together.
+pub const WRONG_PASSWORD: &str = "Wrong password";
+
 #[derive(Debug, PartialEq)]
 pub enum CryptoError {
     WrongPassword,
@@ -154,7 +159,7 @@ pub enum CryptoError {
 impl std::fmt::Display for CryptoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CryptoError::WrongPassword => write!(f, "Wrong password"),
+            CryptoError::WrongPassword => f.write_str(WRONG_PASSWORD),
             CryptoError::InvalidData => write!(f, "Invalid data"),
             CryptoError::EncryptionFailed => write!(f, "Encryption failed"),
         }

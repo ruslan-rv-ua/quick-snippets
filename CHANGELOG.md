@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- When a snippet cannot be deleted, saved, copied or typed for a reason other than what you entered, for example because another program holds the snippet database, the dialog now says so above its buttons, in the language of the app, and screen readers read it. The message says what failed and gives the reason the database or Windows reports. The dialog stays open with everything you typed and the focus where it was, so you can press Ctrl+Enter (or Enter in the password dialog) to try again. The password dialog now says "Wrong password" only when the password is wrong; after any other failure it keeps your password. Before, a failed delete showed only the bare reason (for example "database is locked") for two seconds in a notice outside the dialog; the create and edit dialogs showed it under Title and moved the focus there, as if the title were wrong; and the password dialog called every failure a wrong password and emptied the field.
+
 ## v0.3.5 - 2026-11-21
 
 ### Fixed

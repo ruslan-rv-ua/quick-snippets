@@ -363,4 +363,116 @@ describe('CreateSnippetModal', () => {
     const titleInput = screen.getByLabelText(/title|назва/i) as HTMLInputElement;
     expect(titleInput.value).toBe('');
   });
+  // An error of the backend that is not about a field (here a locked database) belongs to the
+  // whole dialog: above the buttons, not under Title, and focus stays where it was.
+  describe('a failed save that is not about a field', () => {
+    const LOCKED = 'database is locked';
+    const message = () => document.getElementById('create-error') as HTMLElement;
+    const failedText = {
+      en: 'Could not save the snippet. Reason: database is locked. Nothing was changed.',
+      uk: 'Не вдалося зберегти сніпет. Причина: database is locked. Нічого не змінено.',
+      de: 'Das Snippet ließ sich nicht speichern. Grund: database is locked. Es wurde nichts geändert.',
+    };
+    // By id: the labels are in the language of the app.
+    const fill = () => {
+      fireEvent.change(document.getElementById('create-title')!, { target: { value: 'Valid Title' } });
+      fireEvent.change(document.getElementById('create-content')!, { target: { value: 'Content here' } });
+    };
+    const saves = () => mockInvoke.mock.calls.filter(([cmd]) => cmd === 'create_snippet').length;
+
+    function backend(language: string) {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_settings') return { language };
+        if (cmd === 'get_system_language') return 'en';
+        if (cmd === 'create_snippet') throw LOCKED;
+        return undefined;
+      });
+    }
+
+    it('has an empty assertive live region above the buttons before any failure', () => {
+      renderModal();
+      const region = message();
+      expect(region).toBeEmptyDOMElement();
+      expect(region).toHaveAttribute('aria-live', 'assertive');
+      expect(region).toHaveAttribute('aria-atomic', 'true');
+      expect(region).not.toHaveAttribute('role', 'alert');
+      expect(region.nextElementSibling).toHaveClass('modal-actions');
+      expect(screen.getByRole('dialog')).toContainElement(region);
+    });
+
+    it('keeps the dialog, the text and the focus, and says why above the buttons', async () => {
+      backend('en');
+      const props = { onSuccess: vi.fn(), onClose: vi.fn() };
+      renderModal(props);
+      fill();
+      const content = screen.getByLabelText(/^content|^вміст/i);
+      content.focus();
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+
+      expect(content).toHaveFocus();
+      expect(screen.getByLabelText(/title|назва/i)).toHaveValue('Valid Title');
+      expect(content).toHaveValue('Content here');
+      for (const id of ['create-title-err', 'create-content-err', 'create-confirm-err']) expect(document.getElementById(id)).toBeEmptyDOMElement();
+      for (const field of screen.getAllByRole('textbox')) expect(field).not.toHaveAttribute('aria-invalid');
+      expect(screen.getAllByText(/database is locked/)).toEqual([message()]);
+      expect(props.onSuccess).not.toHaveBeenCalled();
+      expect(props.onClose).not.toHaveBeenCalled();
+    });
+
+    it('a second failure empties the message first, so that it is announced again', async () => {
+      backend('en');
+      renderModal();
+      fill();
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+
+      const region = message();
+      const texts: string[] = [];
+      const observer = new MutationObserver(() => texts.push(region.textContent ?? ''));
+      observer.observe(region, { childList: true, characterData: true, subtree: true });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(texts[texts.length - 1]).toBe(failedText.en));
+      observer.disconnect();
+
+      expect(texts).toContain('');
+      expect(texts.indexOf('')).toBeLessThan(texts.length - 1);
+      expect(saves()).toBe(2);
+    });
+
+    it('an error of a field afterwards takes the place of the message', async () => {
+      backend('en');
+      renderModal();
+      fill();
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+
+      fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'ab' } });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(document.getElementById('create-title-err')).not.toBeEmptyDOMElement());
+      expect(message()).toBeEmptyDOMElement();
+      expect(saves()).toBe(1);
+    });
+
+    it.each([['uk'], ['de']] as const)('says it in the language of the app (%s)', async (language) => {
+      backend(language);
+      renderModal();
+      await screen.findByRole('button', { name: language === 'uk' ? 'Скасувати' : 'Abbrechen' });
+      fill();
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText[language]));
+    });
+
+    it('opening the dialog again shows no old message', async () => {
+      backend('en');
+      const view = (open: boolean) => <LanguageProvider><CreateSnippetModal isOpen={open} onClose={vi.fn()} onSuccess={vi.fn()} /></LanguageProvider>;
+      const { rerender } = render(view(true));
+      fill();
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+      rerender(view(false));
+      rerender(view(true));
+      expect(message()).toBeEmptyDOMElement();
+    });
+  });
 });

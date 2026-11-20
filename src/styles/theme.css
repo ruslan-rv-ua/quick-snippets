@@ -547,6 +547,17 @@ input[type='checkbox'] {
   margin-top: -6px;
 }
 
+/* A failed delete, save, copy or auto-type, right above the buttons of the dialog. While empty
+   it stays in the page (see FieldError.tsx): cancel the dialog's gap so that it takes no space.
+   The settings dialog has a smaller gap (see .settings-dialog > .field-error below). */
+.modal-dialog > .field-error {
+  line-height: 1.35;
+}
+
+.modal-dialog > .field-error:empty {
+  margin-top: calc(-1 * var(--space-4));
+}
+
 /* ── Modal actions row ─────────────────────────────────────────────────────── */
 .modal-actions {
   display: flex;
