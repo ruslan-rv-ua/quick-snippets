@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-19T16:42:00Z'
-updated_date: '2026-11-20T04:41:00Z'
+updated_date: '2026-11-20T04:52:00Z'
 labels:
   - release
   - model-sonnet
@@ -53,3 +53,30 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. git flow release start 0.3.4; version 0.3.4 in package.json, tauri.conf.json, Cargo.toml and both lock files; CHANGELOG [Unreleased] becomes "v0.3.4 - 2026-11-20".
+2. On the release branch: npm run test:all, npm run lint, just final-checks, npx tauri build --no-bundle.
+3. just smoke and just smoke-tray on that release exe (a minute apart); compare the user's autostart values before and after.
+4. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-30-<short commit>.exe and compare SHA-256.
+5. git flow release finish 0.3.4 --no-ff --notag --no-push; push main and develop (no tags; CI does not run on push).
+6. Release workflow on main with version 0.3.4; check the ZIP and .sha256; release notes = the v0.3.4 CHANGELOG section.
+7. Excavator in scoop-bucket; manifest shows 0.3.4. Back up C:\scoop\persist\quick-snippets\quick-snippets-data with checksums, scoop update quick-snippets, checksums after match; the app is not started.
+8. Notes, acceptance criteria, final summary, status Done (not archived); hand-over note task-30-release-handover.md.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checks on release/0.3.4 (version bump 18457db):
+- npm run test:all: 502 Vitest tests in 26 files and 299 Rust tests (1 ignored), all pass. npm run lint: pass.
+- just final-checks: versions match (0.3.4), tsc, clippy, Rust and Vitest tests, build OK; exe 3.7 MB.
+- npx tauri build --no-bundle: OK, exe 3,864,576 bytes, file version 0.3.4, SHA-256 BA387047...01E1.
+- just smoke on that release exe: 82 of 82 steps OK, NVDA checks 301 of 301, 171 s. The settings dialog reads "QuickSnippets версія 0.3.4". The NVDA log had the one known error of NVDA's own script_caret_newLine (Enter in a text field).
+- just smoke-tray a minute later on the same exe: 83 of 83 steps OK, NVDA checks 300 of 300, 179 s. The window never appeared during the start in the tray, and NVDA read the first Ctrl+Alt+Space properly, also after the restart. No errors in the NVDA log.
+- The user's autostart values were the same before the runs and after each of them (no Run entry; the old StartupApproved mark Binary 02 00 00 00 00 00 00 00 00 00 00 00), according to the script's report and a separate read-only check.
+- CHANGELOG: [Unreleased] turned into "v0.3.4 - 2026-11-20" unchanged, with an empty [Unreleased] above it: Before you upgrade (2 entries), Changed (2) and Fixed (10), all user-facing; no Known Limitations entry. No new user-facing strings in this task.
+- The release build is copied to C:\5-quicksnippets\real_db\quick-snippets-TASK-30-18457db.exe (same SHA-256 as the build).
+<!-- SECTION:NOTES:END -->
