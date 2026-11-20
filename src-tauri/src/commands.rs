@@ -406,15 +406,28 @@ pub mod tauri_commands {
         crate::settings::detect_language()
     }
 
-    /// Enable or disable OS autostart depending on `autostart` flag.
-    fn apply_autostart(autostart: bool, app: &AppHandle) {
-        use tauri_plugin_autostart::ManagerExt;
-        let autolaunch = app.autolaunch();
-        if autostart {
-            let _ = autolaunch.enable();
-        } else {
-            let _ = autolaunch.disable();
+    /// "Start with Windows" in the registry: the plugin turns it on (the autostart entry and
+    /// Task Manager's mark); turning it off, the app itself removes both values
+    /// (`crate::autostart` has the reasons).
+    struct AppAutostart<'a>(&'a AppHandle);
+
+    impl crate::autostart::AutostartRegistry for AppAutostart<'_> {
+        fn enable(&self) -> Result<(), String> {
+            use tauri_plugin_autostart::ManagerExt;
+            self.0.autolaunch().enable().map_err(|e| e.to_string())
         }
+
+        fn remove_value(&self, key: &str, name: &str) -> Result<(), String> {
+            crate::autostart::remove_current_user_value(key, name)
+        }
+    }
+
+    /// Applies a change of "Start with Windows"; nothing happens when it did not change.
+    /// As before, a failure here does not undo the saved setting.
+    fn apply_autostart(was_on: bool, now_on: bool, app: &AppHandle) {
+        // The value name the plugin writes: the product name, "QuickSnippets".
+        let name = &app.package_info().name;
+        let _ = crate::autostart::apply_change(&AppAutostart(app), name, was_on, now_on);
     }
 
     /// Rebuild the tray context menu with labels matching `lang`.
@@ -459,14 +472,18 @@ pub mod tauri_commands {
         }
 
         let app = window.app_handle();
-        apply_autostart(new_settings.autostart, app);
 
         let path = crate::settings::get_settings_path();
         crate::settings::save_settings_to_path(&new_settings, &path)
             .map_err(|e| e.to_string())?;
         let mut s = state.settings.lock().map_err(|e| e.to_string())?;
+        let autostart_was_on = s.autostart;
         *s = new_settings.clone();
         drop(s);
+
+        // Once the settings are saved, and only if "Start with Windows" itself changed: other
+        // copies of the app write values of the same name (see `crate::autostart`).
+        apply_autostart(autostart_was_on, new_settings.autostart, app);
 
         let effective_lang = if new_settings.language.is_empty() {
             crate::settings::detect_language()
@@ -546,6 +563,13 @@ pub mod tauri_commands {
     #[tauri::command]
     pub fn cancel_close(state: State<AppState>) {
         state.set_close_pending(false);
+    }
+
+    /// The page has its first list on screen. The start-up goes on from here: with "Start in
+    /// tray" off, this is when the window opens (see `startup`).
+    #[tauri::command]
+    pub fn frontend_ready(app: AppHandle) {
+        crate::finish_startup(app);
     }
 }
 

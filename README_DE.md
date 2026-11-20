@@ -27,7 +27,7 @@ Vertrauliche Schnipsel können lokal mit AES-256-GCM verschlüsselt werden, soda
 - **Verschlüsselte Schnipsel** — schützen Sie vertrauliche Inhalte mit einem Passwort (AES-256-GCM-Verschlüsselung; der Schlüssel wird mit PBKDF2-HMAC-SHA256 und 600.000 Iterationen aus dem Passwort abgeleitet; Schlüssel verlassen nie Ihr Gerät)
 - **Vollständige Tastatursteuerung** — jede Aktion hat ein Tastenkürzel; die Maus ist optional
 - **Screenreader-Unterstützung** — entwickelt für NVDA, JAWS und Windows Narrator
-- **Portabel** — kein Installer, keine Registry, kein `AppData`; die gesamte App befindet sich in einem Ordner
+- **Portabel** — kein Installer, kein `AppData` und keine Registry-Einträge, solange „Mit Windows starten“ aus ist; die gesamte App befindet sich in einem Ordner
 - **System-Tray** — bleibt im Hintergrund, wenn nicht in Gebrauch; Rechtsklick auf das Tray-Icon für schnelle Aktionen
 - **Helles und dunkles Design** — Wechsel mit einem einzigen Tastenkürzel oder über die Einstellungen
 - **Drei Sprachen** — Englisch, Ukrainisch und Deutsch; Sprache wird automatisch vom System erkannt
@@ -56,9 +56,13 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im Ordner `quick-snippets-data` neben der ausführbaren Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner.
+Ihre Schnipsel-Datenbank (`snippets.db`) und Einstellungen (`settings.json`) werden im Ordner `quick-snippets-data` neben der ausführbaren Datei gespeichert. Um die App zu verschieben oder zu sichern, kopieren Sie den gesamten Ordner. Wenn „Mit Windows starten“ eingeschaltet ist, schalten Sie es aus, bevor Sie den Ordner verschieben oder löschen (und nach dem Verschieben wieder ein): Windows speichert den Pfad zur exe in seinem Autostart-Eintrag. Außer diesem Eintrag und der Ein/Aus-Markierung für den Task-Manager schreibt die App nichts in die Registry, und beide ändert sie nur, wenn Sie die Einstellung ein- oder ausschalten. Beim Ausschalten werden Eintrag und Markierung entfernt.
 
 Bei Scoop bleibt dieser Ordner über Updates hinweg in `~\scoop\persist\quick-snippets\quick-snippets-data` erhalten — sichern Sie diesen Ordner.
+
+Der eingebaute Browser, der das Fenster darstellt (Microsoft Edge WebView2), legt seinen Cache in einem eigenen Ordner `quick-snippets-webview` neben der ausführbaren Datei ab (bei Scoop im Ordner der jeweiligen Version). Er enthält keine Ihrer Daten und muss daher nicht gesichert werden; wenn Sie ihn löschen, während QuickSnippets geschlossen ist, legt die App ihn neu an.
+
+> **Update von Version 0.3.3 oder älter** — ältere Versionen legten den Browser-Cache in `%LOCALAPPDATA%\com.quicksnippets.app` ab. Diese Version verwendet diesen Ordner nicht und löscht ihn auch nicht, sodass eine ältere Kopie weiter funktioniert. Wenn Sie Version 0.3.3 oder älter nicht mehr verwenden, können Sie ihn löschen.
 
 > **Update von Version 0.2.1 oder älter** — Ihre verschlüsselten Schnipsel lassen sich weiterhin öffnen. Jeder von ihnen wird mit stärkeren Parametern (PBKDF2-HMAC-SHA256, 600.000 statt 100.000 Iterationen) neu verschlüsselt, sobald Sie ihn zum ersten Mal mit seinem Passwort kopieren oder automatisch tippen lassen. Danach können Versionen vor 0.3.0 diesen Schnipsel nicht mehr öffnen (sie melden „Falsches Passwort“); die Daten werden dabei nicht beschädigt, und Version 0.3.0 oder neuer öffnet ihn wieder. Falls Sie zu einer älteren Version zurückkehren könnten, sichern Sie vor dem Update den Ordner `quick-snippets-data`.
 

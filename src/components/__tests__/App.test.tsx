@@ -7,12 +7,32 @@ import App from '../../App';
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
 
-/** The handler the app registered last for the backend's `window:hidden` event. */
-function hiddenListener(): (() => void) | undefined {
-  const calls = mockListen.mock.calls.filter(([event]) => event === 'window:hidden');
+/** The handler the app registered last for an event of the backend. */
+function backendListener(name: string): (() => void) | undefined {
+  const calls = mockListen.mock.calls.filter(([event]) => event === name);
   const call = calls[calls.length - 1];
   const handler = call?.[1] as ((e: unknown) => void) | undefined;
-  return handler ? () => handler({ event: 'window:hidden', id: 0, payload: null }) : undefined;
+  return handler ? () => handler({ event: name, id: 0, payload: null }) : undefined;
+}
+
+/**
+ * Renders the app as it is once the backend has shown the window. The page is loaded while the
+ * window is still hidden; the show gives it the keyboard, which the page sees as a focus event
+ * on the window.
+ */
+function renderShownApp(): void {
+  render(<App />);
+  fireEvent.focus(window);
+}
+
+/** The handler the app registered last for the backend's `window:hidden` event. */
+function hiddenListener(): (() => void) | undefined {
+  return backendListener('window:hidden');
+}
+
+/** The handler the app registered last for the backend's `window:show` event. */
+function showListener(): (() => void) | undefined {
+  return backendListener('window:show');
 }
 
 describe('App', () => {
@@ -111,7 +131,7 @@ describe('App: keyboard shortcuts help (F1)', () => {
   });
 
   async function renderWithSearchFocused() {
-    render(<App />);
+    renderShownApp();
     const search = await screen.findByRole('combobox');
     search.focus();
     return search;
@@ -265,7 +285,7 @@ describe('App: Delete in the search box', () => {
 
   /** Searches for `text` and waits until the search has found and selected the snippet. */
   async function searchFor(text: string): Promise<HTMLInputElement> {
-    render(<App />);
+    renderShownApp();
     const search = (await screen.findByRole('combobox')) as HTMLInputElement;
     search.focus();
     fireEvent.change(search, { target: { value: text } });
@@ -303,7 +323,7 @@ describe('App: where the screen reader is', () => {
     mockInvoke.mockReset();
     mockListen.mockReset();
     mockListen.mockResolvedValue(() => void 0);
-    mockInvoke.mockImplementation(async (cmd: string) => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
       switch (cmd) {
         case 'get_settings':
           return {
@@ -317,9 +337,12 @@ describe('App: where the screen reader is', () => {
             sort_mode: 'modified',
             sort_direction: 'desc',
           };
-        case 'search_snippets':
-        case 'get_sorted_snippets':
+        case 'search_snippets': {
+          const query = String((args as { query?: string } | undefined)?.query ?? '').toLowerCase();
           // A new array each time, as from IPC.
+          return snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s }));
+        }
+        case 'get_sorted_snippets':
           return snippets.map((s) => ({ ...s }));
         default:
           return null;
@@ -329,10 +352,28 @@ describe('App: where the screen reader is', () => {
 
   const resultsLiveText = () => document.querySelector('.snippet-list-wrapper [aria-live]')?.textContent ?? '';
   const pointsAt = (search: HTMLElement) => search.getAttribute('aria-activedescendant') ?? '';
+  const searchCount = () => mockInvoke.mock.calls.filter(([cmd]) => cmd === 'search_snippets').length;
+
+  /** Holds the next answer with the whole list until the returned function is called. */
+  function holdNextWholeList(): () => void {
+    let release = (): void => void 0;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const answer = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === 'get_sorted_snippets') {
+        if (answer) mockInvoke.mockImplementation(answer);
+        await held;
+      }
+      return answer?.(cmd, args);
+    });
+    return release;
+  }
 
   /** Opens the app with the search box focused and waits until the first snippet is selected. */
   async function openApp(): Promise<HTMLInputElement> {
-    render(<App />);
+    renderShownApp();
     const search = (await screen.findByRole('combobox')) as HTMLInputElement;
     search.focus();
     await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
@@ -381,6 +422,28 @@ describe('App: where the screen reader is', () => {
     await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
   });
 
+  // The app loads the whole list again each time the window is shown or gets the keyboard back.
+  // When that list answers while a search waits for its results, it is not the results.
+  it('when the list is loaded again while a search waits for its results, the live region still says the result', async () => {
+    const search = await openApp();
+    const release = holdNextWholeList();
+    fireEvent.focus(window);
+    fireEvent.change(search, { target: { value: 'gre' } });
+    release();
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Goodbye' })).not.toBeInTheDocument());
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+  });
+
+  it('when the results are loaded again before the announcement, the live region still says the result', async () => {
+    const search = await openApp();
+    fireEvent.change(search, { target: { value: 'gre' } });
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Goodbye' })).not.toBeInTheDocument());
+    const searches = searchCount();
+    fireEvent.focus(window);
+    await waitFor(() => expect(searchCount()).toBe(searches + 1));
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+  });
+
   it('coming back from a dialog, it is on the selected snippet', async () => {
     const search = await openApp();
     expect(pointsAt(search)).toBe('');
@@ -415,6 +478,114 @@ describe('App: where the screen reader is', () => {
     fireEvent.focus(window);
     await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
     expect(pointsAt(search)).toBe('');
+  });
+
+});
+
+describe('App: telling the backend that the page is ready', () => {
+  const settings = {
+    theme: 'light',
+    start_in_tray: false,
+    autostart: false,
+    confirm_on_close: false,
+    language: 'en',
+    window_state: { x: 0, y: 0, width: 680, height: 520 },
+    autotype_delay_ms: 0,
+    sort_mode: 'alphabetical',
+    sort_direction: 'asc',
+  };
+  const snippets = [{ id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false }];
+
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    document.documentElement.classList.remove('theme-light');
+  });
+
+  const commandsSent = () => mockInvoke.mock.calls.map(([cmd]) => cmd as string);
+
+  // The backend shows the window only after this, so it has to come when the page looks as it
+  // will: the saved theme applied and the list loaded in the saved sort order.
+  it('reports once, when the saved theme is applied and the list is loaded in the saved order', async () => {
+    let themeWhenReady: boolean | undefined;
+    let lastListRequestWhenReady: unknown;
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      switch (cmd) {
+        case 'get_settings':
+          return settings;
+        case 'get_sorted_snippets':
+          lastListRequestWhenReady = args;
+          return snippets.map((s) => ({ ...s }));
+        case 'frontend_ready':
+          themeWhenReady = document.documentElement.classList.contains('theme-light');
+          return undefined;
+        default:
+          return null;
+      }
+    });
+
+    render(<App />);
+    await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+    expect(themeWhenReady).toBe(true);
+    expect(lastListRequestWhenReady).toEqual({ sortMode: 'alphabetical', sortDirection: 'asc' });
+
+    // Later reloads do not report again.
+    fireEvent.focus(window);
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toBeInTheDocument());
+    expect(commandsSent().filter((cmd) => cmd === 'frontend_ready')).toHaveLength(1);
+  });
+
+  it('reports even when the list cannot be loaded, so the window still opens', async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_sorted_snippets') throw new Error('database is locked');
+      return cmd === 'get_settings' ? settings : null;
+    });
+
+    render(<App />);
+    await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+  });
+
+  describe('the selection in the list', () => {
+    const first = () => screen.getByRole('option', { name: 'Greeting' });
+
+    beforeEach(() => {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_settings') return settings;
+        return cmd === 'get_sorted_snippets' ? snippets.map((s) => ({ ...s })) : null;
+      });
+    });
+
+    // NVDA, in the search box, reads a snippet only when it becomes the selected one. The first
+    // list is loaded while the window is still hidden, so the first snippet has to become the
+    // selected one with the show, as on every later show.
+    it('before the window is first shown, no snippet is marked as selected', async () => {
+      render(<App />);
+      await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+      // Every list request of the start has been answered by now.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(first()).toHaveAttribute('aria-selected', 'false');
+      expect(screen.getByRole('combobox')).toHaveAttribute('aria-activedescendant', '');
+    });
+
+    it('the show by the backend marks the first snippet as selected at once', async () => {
+      render(<App />);
+      await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+
+      act(() => showListener()?.());
+      expect(first()).toHaveAttribute('aria-selected', 'true');
+    });
+
+    // The window gets the keyboard a moment before the backend's event arrives.
+    it('the keyboard coming to the window does the same', async () => {
+      render(<App />);
+      await waitFor(() => expect(commandsSent()).toContain('frontend_ready'));
+
+      fireEvent.focus(window);
+      expect(first()).toHaveAttribute('aria-selected', 'true');
+    });
   });
 });
 
@@ -456,7 +627,7 @@ describe('App: the keyboard moves inside the window, or the window hides', () =>
 
   /** Opens the app and types a query that finds only the secret snippet. */
   async function searchSecret(): Promise<HTMLInputElement> {
-    render(<App />);
+    renderShownApp();
     const search = (await screen.findByRole('combobox')) as HTMLInputElement;
     search.focus();
     fireEvent.change(search, { target: { value: 'sec' } });
@@ -559,7 +730,7 @@ describe('App: where focus goes after a dialog changes the list', () => {
 
   /** Opens the app with the search box focused and waits until the first snippet is selected. */
   async function openApp(): Promise<HTMLInputElement> {
-    render(<App />);
+    renderShownApp();
     const search = (await screen.findByRole('combobox')) as HTMLInputElement;
     search.focus();
     await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));

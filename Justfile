@@ -86,6 +86,10 @@ alias tm := test-mod
 smoke:
     powershell -NoProfile -File scripts/smoke-nvda.ps1
 
+# The same smoke test with the test copy started hidden in the tray: the window is first shown by Ctrl+Alt+Space
+smoke-tray:
+    powershell -NoProfile -File scripts/smoke-nvda.ps1 -StartInTray
+
 # ═════════════════════════════════════════════════════════════════════════════
 # QUALITY   check · lint · format
 # ═════════════════════════════════════════════════════════════════════════════

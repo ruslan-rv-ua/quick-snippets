@@ -113,6 +113,14 @@ export function getPendingNotification(): Promise<string | null> {
   return invoke<string | null>('get_pending_notification');
 }
 
+/**
+ * Tells the backend that the page has its first list. The main window is created hidden;
+ * without "Start in tray" the backend shows it only after this, so it appears complete.
+ */
+export function frontendReady(): Promise<void> {
+  return invoke<void>('frontend_ready');
+}
+
 export function quitApp(): Promise<void> {
   return invoke<void>('quit_app');
 }

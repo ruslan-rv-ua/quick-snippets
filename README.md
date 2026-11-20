@@ -33,7 +33,7 @@ Sensitive snippets can be encrypted locally with AES-256-GCM so that only you �
 - **Encrypted snippets** — protect sensitive content with a password (AES-256-GCM encryption, keys never leave your device)
 - **Fully keyboard-driven** — every action has a shortcut; mouse is optional
 - **Screen reader support** — built for NVDA, JAWS, and Windows Narrator from day one
-- **Portable** — no installer, no registry, no `AppData`; the whole app lives in one folder
+- **Portable** — no installer, no `AppData`, and nothing in the registry unless you turn on "Start with Windows"; the whole app lives in one folder
 - **System tray** — stays out of your way when not in use; right-click the tray icon for quick actions
 - **Light and dark themes** — switch with a single shortcut or from Settings
 - **Three languages** — English, Ukrainian, and German; language auto-detected from your system
@@ -62,9 +62,13 @@ scoop bucket add ruslan-rv-ua https://github.com/ruslan-rv-ua/scoop-bucket
 scoop install quick-snippets
 ```
 
-Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder.
+Your snippets database (`snippets.db`) and settings (`settings.json`) are saved in the `quick-snippets-data` folder next to the executable. To move or back up the app, copy the entire folder. If "Start with Windows" is on, turn it off before you move or delete the folder (and on again after a move): Windows keeps the path to the exe in its autostart entry.
 
 With Scoop, that folder is kept across updates in `~\scoop\persist\quick-snippets\quick-snippets-data` — back up that folder instead.
+
+The built-in browser that draws the window (Microsoft Edge WebView2) keeps its cache in a separate `quick-snippets-webview` folder next to the executable (with Scoop, in the folder of each version). None of your data is in it, so it needs no backup; if you delete it while QuickSnippets is closed, the app creates it again.
+
+> **Upgrading from 0.3.3 or earlier** — older versions kept the browser cache in `%LOCALAPPDATA%\com.quicksnippets.app`. This version neither uses nor removes that folder, so an older copy still works. Once you no longer run version 0.3.3 or older, you can delete it.
 
 > **Upgrading from 0.2.1 or earlier** — your encrypted snippets still open. Each one is re-encrypted with stronger settings (PBKDF2-HMAC-SHA256 at 600,000 iterations instead of 100,000) the first time you copy or auto-type it with its password. After that, versions before 0.3.0 can no longer open that snippet (they report "Wrong password"); the data is not damaged, and version 0.3.0 or later opens it again. If you might go back to an older version, back up the `quick-snippets-data` folder before you upgrade.
 
@@ -109,7 +113,7 @@ Your privacy is paramount. QuickSnippets is designed to keep your snippets on yo
 - **Snippets from older versions keep working** — snippets encrypted by version 0.2.1 or earlier (100,000 iterations) still open, and each one is re-encrypted with the stronger setting the first time you copy or auto-type it with its password
 - **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
 - **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the `quick-snippets-data` folder next to the executable; no cloud, no telemetry, no sync
-- **No registry** — QuickSnippets does not touch Windows registry or AppData directories
+- **No AppData, registry only for autostart** — QuickSnippets keeps nothing in AppData directories. It changes the Windows registry only when you turn "Start with Windows" on or off. Turning it on writes the usual autostart entry for your user account and the on/off mark that Task Manager shows for it; turning it off removes both
 - **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
 
 ### What Is Encrypted

@@ -1,10 +1,13 @@
+pub mod autostart;
 pub mod autotype;
 pub mod commands;
 pub mod crypto;
 pub mod db;
+pub mod error_dialogs;
 pub mod paths;
 pub mod search;
 pub mod settings;
+pub mod startup;
 pub mod window_blur;
 
 // ---------------------------------------------------------------------------
@@ -79,16 +82,73 @@ pub fn generate_tray_icon_rgba() -> Vec<u8> {
     data
 }
 
+/// Whether the main window opens by itself when the app starts. It is always created hidden
+/// and without focus; without "Start in tray" it is shown once the start-up is over (see
+/// `startup`), with it only when the user asks for it (Ctrl+Alt+Space, the tray icon, a
+/// second launch).
+pub fn show_window_at_launch(start_in_tray: bool) -> bool {
+    !start_in_tray
+}
+
 // ---------------------------------------------------------------------------
 // Tauri application entry point
 // ---------------------------------------------------------------------------
+
+/// Shows the main window and gives it the keyboard. While the app is still starting the
+/// request is remembered and the show happens when the start-up is over (see `startup`).
+/// `event` is what the page is told: a plain show, or the tray's "new snippet" and "settings".
+/// Every way to show the window goes through here.
+#[cfg(not(test))]
+fn show_main_window(app: &tauri::AppHandle, event: &'static str) {
+    use tauri::Manager;
+
+    if app.state::<startup::StartupGate>().ask(event) {
+        show_main_window_now(app, event);
+    }
+}
+
+#[cfg(not(test))]
+fn show_main_window_now(app: &tauri::AppHandle, event: &'static str) {
+    use tauri::{Emitter, Manager};
+
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = win.show();
+    let _ = win.unminimize();
+    // The window was created without focus: showing it does not activate it.
+    let _ = win.set_focus();
+    let _ = win.emit(event, ());
+}
+
+/// The last part of the start-up. It runs once: when the page reports that it has its first
+/// list, or when the wait for that is over. With a screen reader running it first waits until
+/// the embedded browser has settled; then the show that is due happens (see `startup`).
+#[cfg(not(test))]
+pub(crate) fn finish_startup(app: tauri::AppHandle) {
+    use std::time::Duration;
+    use tauri::Manager;
+
+    if !app.state::<startup::StartupGate>().begin() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let pause = startup::pause_before_first_show_ms(
+            startup::screen_reader_running(),
+            app.state::<startup::StartupGate>().age_ms(),
+        );
+        std::thread::sleep(Duration::from_millis(pause));
+        if let Some(event) = app.state::<startup::StartupGate>().open() {
+            show_main_window_now(&app, event);
+        }
+    });
+}
 
 /// Build the system-tray icon, menu, and event handlers.
 #[cfg(not(test))]
 fn setup_tray(app: &mut tauri::App, lang: &str) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-    use tauri::{Emitter, Manager};
 
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
         .expect("Failed to decode embedded tray icon");
@@ -109,33 +169,12 @@ fn setup_tray(app: &mut tauri::App, lang: &str) -> tauri::Result<()> {
         .icon(icon)
         .tooltip("QuickSnippets")
         .menu(&menu)
-        .on_menu_event(|app, event| {
-            let Some(win) = app.get_webview_window("main") else {
-                return;
-            };
-            let show_focus = || {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            };
-            match event.id().as_ref() {
-                "show" => {
-                    show_focus();
-                    let _ = win.emit("window:show", ());
-                }
-                "new_snippet" => {
-                    show_focus();
-                    let _ = win.emit("tray:create-snippet", ());
-                }
-                "settings_item" => {
-                    show_focus();
-                    let _ = win.emit("tray:open-settings", ());
-                }
-                "quit" => {
-                    app.exit(0);
-                }
-                _ => {}
-            }
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_main_window(app, startup::EVENT_SHOW),
+            "new_snippet" => show_main_window(app, "tray:create-snippet"),
+            "settings_item" => show_main_window(app, "tray:open-settings"),
+            "quit" => app.exit(0),
+            _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -143,12 +182,7 @@ fn setup_tray(app: &mut tauri::App, lang: &str) -> tauri::Result<()> {
                 ..
             } = event
             {
-                if let Some(win) = tray.app_handle().get_webview_window("main") {
-                    let _ = win.show();
-                    let _ = win.unminimize();
-                    let _ = win.set_focus();
-                    let _ = win.emit("window:show", ());
-                }
+                show_main_window(tray.app_handle(), startup::EVENT_SHOW);
             }
         })
         .build(app)?;
@@ -158,9 +192,9 @@ fn setup_tray(app: &mut tauri::App, lang: &str) -> tauri::Result<()> {
 
 /// Register the global hotkey Ctrl+Alt+Space that shows the main window.
 #[cfg(not(test))]
-fn setup_hotkey(app: &mut tauri::App, win: tauri::WebviewWindow) {
+fn setup_hotkey(app: &mut tauri::App) {
     use commands::AppState;
-    use tauri::{Emitter, Manager};
+    use tauri::Manager;
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, ShortcutState};
 
     let shortcut = tauri_plugin_global_shortcut::Shortcut::new(
@@ -169,12 +203,9 @@ fn setup_hotkey(app: &mut tauri::App, win: tauri::WebviewWindow) {
     );
     let result = app
         .global_shortcut()
-        .on_shortcut(shortcut, move |_app, _s, event| {
+        .on_shortcut(shortcut, |app, _s, event| {
             if event.state() == ShortcutState::Pressed {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-                let _ = win.emit("window:show", ());
+                show_main_window(app, startup::EVENT_SHOW);
             }
         });
     if result.is_err() {
@@ -336,7 +367,7 @@ pub fn run() {
     use commands::AppState;
     use std::sync::atomic::AtomicBool;
     use std::sync::Mutex;
-    use tauri::{Emitter, Manager};
+    use tauri::Manager;
 
     // Force WebView2/Chromium to always initialise the accessibility
     // (UIA) tree.  Without this flag the renderer delays accessibility
@@ -353,10 +384,17 @@ pub fn run() {
         "--force-renderer-accessibility",
     );
 
-    let db_path = db::get_db_path();
-    let conn = db::open_and_init_db(&db_path).expect("Failed to open database");
-
+    // Settings first: the dialog for a database that cannot be opened speaks
+    // the language chosen in them.
     let app_settings = settings::load_settings();
+
+    let db_path = db::get_db_path();
+    let conn = db::open_db_at_startup(
+        &db_path,
+        &error_dialogs::dialog_language(&app_settings.language),
+    );
+
+    let startup_gate = startup::StartupGate::new(show_window_at_launch(app_settings.start_in_tray));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -366,12 +404,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-                let _ = win.emit("window:show", ());
-            }
+            show_main_window(app, startup::EVENT_SHOW);
         }))
         .manage(AppState {
             conn: Mutex::new(conn),
@@ -379,6 +412,7 @@ pub fn run() {
             pending_notification: Mutex::new(None),
             close_confirmation_pending: AtomicBool::new(false),
         })
+        .manage(startup_gate)
         .invoke_handler(tauri::generate_handler![
             commands::tauri_commands::search_snippets,
             commands::tauri_commands::get_snippet_by_id,
@@ -394,30 +428,47 @@ pub fn run() {
             commands::tauri_commands::autotype_snippet,
             commands::tauri_commands::quit_app,
             commands::tauri_commands::cancel_close,
+            commands::tauri_commands::frontend_ready,
         ])
         .setup(|app| {
-            let win = app
-                .get_webview_window("main")
-                .expect("main window not found");
+            // ── Create the main window ────────────────────────────────────
+            // Tauri does not create it by itself (`"create": false` in tauri.conf.json): it
+            // is always created hidden and without focus, and shown later. With "Start in
+            // tray" that is when the user asks for it; without it, when the start-up is over
+            // (`finish_startup`; `startup` has the reasons).
+            // Up to 0.3.3 the window was created visible. With "Start in tray" it was hidden
+            // a moment later: at every such start it was on screen for a quarter of a second,
+            // took the keyboard from the program the user was in, and a screen reader
+            // announced it. Without "Start in tray" the page got the keyboard while it was
+            // still loading, which a screen reader read with repeated phrases or, with a new
+            // browser profile, the wrong way altogether. A window that is only created hidden
+            // still takes the keyboard, invisibly, because the web content focuses itself
+            // when it is created; hence also "without focus".
+            //
+            // The embedded browser (WebView2) gets its own data folder next to the exe
+            // (`paths::get_webview_data_dir`). Without it Tauri puts the browser profile in
+            // %LOCALAPPDATA%\com.quicksnippets.app: outside the portable folder, and shared
+            // by every copy of the app on the computer. Versions up to 0.3.3 did so; that
+            // folder is left alone now, for any older copy that still uses it.
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .expect("main window is not configured")
+                .clone();
+            let win = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .visible(false)
+                .focused(false)
+                .data_directory(paths::get_webview_data_dir())
+                .build()?;
 
             // ── Apply saved window state ──────────────────────────────────
             {
                 let state: tauri::State<AppState> = app.state();
                 let s = state.settings.lock().unwrap_or_else(|e| e.into_inner());
                 settings::apply_window_state(&win, &s.window_state);
-            }
-
-            // ── start_in_tray ─────────────────────────────────────────────
-            {
-                let state: tauri::State<AppState> = app.state();
-                let start_in_tray = state
-                    .settings
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .start_in_tray;
-                if start_in_tray {
-                    let _ = win.hide();
-                }
             }
 
             // ── Resolve display language ──────────────────────────────────
@@ -437,8 +488,16 @@ pub fn run() {
             };
 
             setup_tray(app, &lang)?;
-            setup_hotkey(app, win.clone());
+            setup_hotkey(app);
             setup_window_events(win, app.handle().clone());
+
+            // The page reports when it is ready (`frontend_ready`). If it never does, the
+            // start-up goes on without it, so the window still opens.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(startup::READY_TIMEOUT_MS));
+                finish_startup(handle);
+            });
 
             Ok(())
         })
@@ -454,6 +513,18 @@ pub fn run() {
 mod tests {
     use super::*;
     use crate::commands::AppState;
+
+    // === Window at launch ===
+
+    #[test]
+    fn test_window_opens_at_launch_by_default() {
+        assert!(show_window_at_launch(false));
+    }
+
+    #[test]
+    fn test_window_stays_hidden_at_launch_with_start_in_tray() {
+        assert!(!show_window_at_launch(true));
+    }
 
     // === Tray icon ===
 

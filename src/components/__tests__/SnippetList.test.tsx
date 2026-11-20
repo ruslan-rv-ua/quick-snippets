@@ -17,6 +17,7 @@ function renderList(overrides: Partial<React.ComponentProps<typeof SnippetList>>
         snippets={mockSnippets}
         activeIndex={-1}
         query=""
+        listQuery=""
         onActiveIndexChange={vi.fn()}
         onActivate={vi.fn()}
         {...overrides}
@@ -63,6 +64,7 @@ describe('SnippetList', () => {
           snippets={[]}
           activeIndex={-1}
           query=""
+          listQuery=""
           onActiveIndexChange={vi.fn()}
           onActivate={vi.fn()}
         />
@@ -75,6 +77,7 @@ describe('SnippetList', () => {
           snippets={mockSnippets}
           activeIndex={-1}
           query="a"
+          listQuery="a"
           onActiveIndexChange={vi.fn()}
           onActivate={vi.fn()}
         />
@@ -97,6 +100,7 @@ describe('SnippetList', () => {
           snippets={[]}
           activeIndex={-1}
           query=""
+          listQuery=""
           onActiveIndexChange={vi.fn()}
           onActivate={vi.fn()}
         />
@@ -110,6 +114,7 @@ describe('SnippetList', () => {
           snippets={mockSnippets}
           activeIndex={-1}
           query="a"
+          listQuery="a"
           onActiveIndexChange={vi.fn()}
           onActivate={vi.fn()}
         />
@@ -133,6 +138,7 @@ describe('SnippetList', () => {
           snippets={newSnippets}
           activeIndex={-1}
           query="ab"
+          listQuery="ab"
           onActiveIndexChange={vi.fn()}
           onActivate={vi.fn()}
         />
@@ -150,13 +156,15 @@ describe('SnippetList', () => {
   });
   // The app changes the query at once and the results about 100 ms later (debounce + IPC).
   describe('when results arrive after the query', () => {
-    function list(snippets: SearchResult[], query: string, activeIndex: number) {
+    /** The list `snippets`, loaded for `listQuery`, while the search box holds `query`. */
+    function list(snippets: SearchResult[], query: string, activeIndex: number, listQuery = query) {
       return (
         <LanguageProvider>
           <SnippetList
             snippets={snippets}
             activeIndex={activeIndex}
             query={query}
+            listQuery={listQuery}
             onActiveIndexChange={vi.fn()}
             onActivate={vi.fn()}
           />
@@ -167,7 +175,7 @@ describe('SnippetList', () => {
 
     function search(query: string, results: SearchResult[]) {
       const view = render(list(mockSnippets, '', 0));
-      view.rerender(list(mockSnippets, query, 0));
+      view.rerender(list(mockSnippets, query, 0, ''));
       act(() => { vi.advanceTimersByTime(120); });
       view.rerender(list(results, query, results.length > 0 ? 0 : -1));
       act(() => { vi.advanceTimersByTime(200); });
@@ -220,6 +228,47 @@ describe('SnippetList', () => {
       const view = render(list(mockSnippets, '', 0));
       view.rerender(list([...mockSnippets], '', 0));
       act(() => { vi.advanceTimersByTime(400); });
+      expect(liveText()).toBe('');
+      vi.useRealTimers();
+    });
+
+    // The app also loads the list again each time the window is shown or gets the keyboard back.
+    it('waits for the results: a list loaded again for the previous query in the meantime is not them', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list(mockSnippets, 'al', 0, ''));
+      act(() => { vi.advanceTimersByTime(50); });
+      view.rerender(list([...mockSnippets], 'al', 0, ''));
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(liveText()).toBe('');
+      view.rerender(list([mockSnippets[0]], 'al', 0));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(liveText()).toContain('Alpha');
+      vi.useRealTimers();
+    });
+
+    it('still announces the first result when the results are loaded again right after they arrived', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list(mockSnippets, 'al', 0, ''));
+      act(() => { vi.advanceTimersByTime(120); });
+      view.rerender(list([mockSnippets[0]], 'al', 0));
+      act(() => { vi.advanceTimersByTime(100); });
+      view.rerender(list([{ ...mockSnippets[0] }], 'al', 0));
+      act(() => { vi.advanceTimersByTime(100); });
+      expect(liveText()).toContain('Alpha');
+      vi.useRealTimers();
+    });
+
+    it('stays silent when another snippet was selected while the results were awaited (NVDA read it)', () => {
+      vi.useFakeTimers();
+      const view = render(list(mockSnippets, '', 0));
+      view.rerender(list(mockSnippets, 'a', 0, ''));
+      // Down: the second snippet is selected, then the results select the first one again.
+      view.rerender(list(mockSnippets, 'a', 1, ''));
+      act(() => { vi.advanceTimersByTime(120); });
+      view.rerender(list([...mockSnippets], 'a', 0));
+      act(() => { vi.advanceTimersByTime(200); });
       expect(liveText()).toBe('');
       vi.useRealTimers();
     });

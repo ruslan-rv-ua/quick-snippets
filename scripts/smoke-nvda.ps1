@@ -10,6 +10,10 @@
     What it protects:
     - Your data: the test runs a copy of the exe from a temp folder with its own
       empty quick-snippets-data folder. Your snippets and settings are not touched.
+      The copy keeps its browser data in quick-snippets-webview in that temp folder.
+      The last step checks that it left %LOCALAPPDATA%\com.quicksnippets.app, where
+      0.3.3 and older keep theirs, as it was; there it reads only the number of files
+      and folders and the time of the newest change.
     - The test runs only its own copy. A running QuickSnippets is closed (the app
       allows only one copy) and is not started again afterwards. Near the end the test
       quits its own copy through the exit confirmation and starts it again with the
@@ -19,7 +23,11 @@
     - Only the part of nvda.log written during this run is read.
     - While the app is hidden, focus stays in a small test window owned by this
       script, so NVDA does not describe your other programs into the report.
-    - The autostart check is skipped if your own autostart entry exists.
+    - Autostart: every copy of QuickSnippets uses the same name, QuickSnippets, for its
+      autostart entry and for the on/off mark Task Manager keeps for it. Both values are
+      recorded before the run and put back exactly afterwards, and the report shows them.
+      The autostart steps are skipped if your own autostart entry exists; the test copy
+      must then leave both values as they are.
 
     Do not touch the keyboard or mouse while it runs (about two and a half minutes).
     Leave a minute or more between two runs (see DEVELOPMENT.md).
@@ -31,8 +39,28 @@
     The keyboard shortcuts help (F1) does not depend on that setting: every row is
     a list option whose name holds the keys and the action.
 
+    With -StartInTray the test copy starts hidden in the tray («Запускати згорнутим у трей»
+    on), as after a login with autostart. Its window is first shown by Ctrl+Alt+Space, and
+    NVDA must read the search box on that very first show. The restart near the end is a
+    start in the tray too. The other steps are the same as in the default run.
+
+.PARAMETER StartInTray
+    Start the test copy hidden in the tray and show its window with Ctrl+Alt+Space.
+
+.PARAMETER TrayIdleSec
+    With -StartInTray: how long the hidden copy is left alone before the first Ctrl+Alt+Space.
+
+.PARAMETER BrowserProfileFrom
+    A quick-snippets-webview folder left by an earlier copy that has quit. It is copied next to
+    the test exe before the first start, so the test copy starts with an existing browser
+    profile, as every start but the first after an install or update does. Without it the test
+    copy starts with an empty one.
+
 .EXAMPLE
     just smoke
+
+.EXAMPLE
+    just smoke-tray
 
 .EXAMPLE
     powershell -NoProfile -File scripts/smoke-nvda.ps1 -Exe path\to\quick-snippets.exe
@@ -43,7 +71,10 @@ param(
     [string]$NvdaLog,
     [int]$TimeoutSec = 8,
     [int]$SpeechWaitSec = 5,
-    [int]$SettleMs = 700
+    [int]$SettleMs = 700,
+    [switch]$StartInTray,
+    [int]$TrayIdleSec = 5,
+    [string]$BrowserProfileFrom
 )
 
 $ErrorActionPreference = 'Stop'
@@ -149,6 +180,8 @@ $Role = @{
     ComboBox   = 'комбінований список|combo box|Kombinationsfeld'
     CheckBox   = 'прапорець|check box|Kontrollfeld'
     NotChecked = 'не позначено|not checked|nicht aktiviert'
+    # Also part of every "not checked" phrase: forbid NotChecked next to it.
+    Checked    = 'позначено|checked|aktiviert'
     SpinButton = 'кнопка прокрутки|spin button|Drehschalter'
     Button     = 'кнопка|button|Schalter'
     List       = 'список|list|Liste'
@@ -190,6 +223,10 @@ $Data = @{
 }
 
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+# Task Manager's on/off mark for each autostart entry, under the same name (REG_BINARY).
+$MarkKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+# The mark that turning autostart on writes: "enabled".
+$MarkEnabled = '02 00 00 00 00 00 00 00 00 00 00 00'
 $TargetTitle = 'QuickSnippets smoke target'
 $ReportPath = Join-Path $env:TEMP 'quick-snippets-smoke-report.txt'
 
@@ -224,6 +261,26 @@ public static class QsSmokeNative {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder text, int max);
     delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int max);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hWnd, uint cmd);
+
+    // The top-level window of this process with this title and at least one child window
+    // (the web content), shown or hidden. UI Automation does not list a hidden window.
+    public static IntPtr FindProcessWindow(uint processId, string title) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr h, IntPtr l) {
+            uint pid;
+            GetWindowThreadProcessId(h, out pid);
+            if (pid != processId) return true;
+            System.Text.StringBuilder text = new System.Text.StringBuilder(256);
+            GetWindowText(h, text, 256);
+            if (text.ToString() != title || GetWindow(h, 5) == IntPtr.Zero) return true;  // GW_CHILD
+            found = h;
+            return false;
+        }, IntPtr.Zero);
+        return found;
+    }
 
     // The first window of this class anywhere inside the given window.
     public static IntPtr FindDescendant(IntPtr parent, string className) {
@@ -245,6 +302,13 @@ public static class QsSmokeNative {
         public RECT rcCaret;
     }
     [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO info);
+
+    public static string ClassOf(IntPtr hwnd) {
+        if (hwnd == IntPtr.Zero) return "";
+        System.Text.StringBuilder name = new System.Text.StringBuilder(128);
+        GetClassName(hwnd, name, 128);
+        return name.ToString();
+    }
 
     // The window that has the keyboard right now (in the thread of the foreground window).
     public static IntPtr KeyboardWindow() {
@@ -414,11 +478,77 @@ function Test-AppReady {
     return (Test-HasFocus (Get-SearchBox)) -or ($null -ne (Get-FocusedListItem))
 }
 
+# Waits, without UI Automation, until the app window is on screen and in the foreground, then
+# gives NVDA time to read it. For the first show after a start, which is what these steps
+# measure: the test keeps its own queries out of the web content until NVDA has read the
+# window, so that they cannot change what NVDA does with it.
+# Returns $false if the window did not come to the foreground.
+function Wait-ShownQuietly([int]$Seconds = 20, [int]$ReadMs = 1500) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    do {
+        $h = [QsSmokeNative]::FindProcessWindow([uint32]$script:AppProc.Id, 'QuickSnippets')
+        if ($h -ne [IntPtr]::Zero -and [QsSmokeNative]::IsWindowVisible($h) -and [QsSmokeNative]::GetForegroundWindow() -eq $h) {
+            $script:ShownAfterMs = [int]((Get-Date) - $script:AppProc.StartTime).TotalMilliseconds
+            Start-Sleep -Milliseconds $ReadMs
+            return $true
+        }
+        Start-Sleep -Milliseconds 20
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
 # Shows the app with the hotkey, or, once the hotkey is known to be broken, by starting
 # the exe again (single instance: a second launch brings up the running window).
-function Show-App {
+# -Quiet: the first show after a start (see Wait-ShownQuietly).
+function Show-App([switch]$Quiet) {
     if ($script:HotkeyBroken) { Start-Process $TestExe } else { Send-Keys 'Ctrl+Alt+Space' }
+    if ($Quiet) { $null = Wait-ShownQuietly 8 }
     Wait-Until 'вікно програми з фокусом' { Test-AppReady }
+}
+
+# A start in the tray. Waits until the hidden copy is ready: its window with the web content
+# exists, has stayed hidden for 0.3 s and the app holds Ctrl+Alt+Space. Then leaves the copy
+# alone for $TrayIdleSec, as a user does who presses the hotkey some time after login.
+# The window must not be on screen at any moment of the start. Up to 0.3.3 it was created
+# shown and hidden a quarter of a second later: it took the keyboard from the active program
+# and NVDA announced it. So the window is watched from the start, and the step fails (without
+# stopping the run) if it was seen on screen.
+function Wait-HiddenStart {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $wasVisible = $false
+    $wasForeground = $false
+    $hiddenAt = $null
+    $ready = $false
+    while ($clock.Elapsed.TotalSeconds -lt 20) {
+        if ($script:AppProc.HasExited) { throw "програма завершилась, код $($script:AppProc.ExitCode)" }
+        $h = [QsSmokeNative]::FindProcessWindow([uint32]$script:AppProc.Id, 'QuickSnippets')
+        if ($h -ne [IntPtr]::Zero) {
+            if ([QsSmokeNative]::IsWindowVisible($h)) {
+                $wasVisible = $true
+                $hiddenAt = $null
+                if ([QsSmokeNative]::GetForegroundWindow() -eq $h) { $wasForeground = $true }
+            } elseif ($null -eq $hiddenAt) {
+                $hiddenAt = $clock.ElapsedMilliseconds
+            } elseif (($clock.ElapsedMilliseconds - $hiddenAt) -ge 300) {
+                if (-not [QsSmokeNative]::HotkeyFree()) { $ready = $true; break }
+                Start-Sleep -Milliseconds 300
+            }
+        }
+        Start-Sleep -Milliseconds 10
+    }
+    if (-not $ready) {
+        if ($wasVisible -and $null -eq $hiddenAt) { throw 'вікно програми лишилося на екрані, хоча увімкнено запуск у треї' }
+        throw 'не дочекався, доки схована програма зареєструє Ctrl+Alt+Space'
+    }
+    $screen = if ($wasForeground) { 'вікно на мить показалося на екрані й забрало клавіатуру' }
+              elseif ($wasVisible) { 'вікно на мить показалося на екрані, клавіатури не забирало' }
+              else { 'вікно на екрані не показувалося' }
+    $script:StepInfo = "схована програма готова за $($clock.ElapsedMilliseconds) мс; $screen"
+    if ($wasVisible) { $script:SoftFail = "під час запуску в треї $screen" }
+    Start-Sleep -Seconds $TrayIdleSec
+    if ($script:AppProc.HasExited) { throw "програма завершилась, код $($script:AppProc.ExitCode)" }
+    if (Get-AppWindow) { throw 'вікно програми відкрилося само, без Ctrl+Alt+Space' }
+    Enter-Target
 }
 
 function Find-TextLike([string]$Pattern) {
@@ -458,6 +588,71 @@ function Set-Toggle($Element, [bool]$On) {
 
 function Get-RunValue {
     return (Get-ItemProperty -Path $RunKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue).QuickSnippets
+}
+
+function Get-AutostartMark {
+    return (Get-ItemProperty -Path $MarkKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue).QuickSnippets
+}
+
+function Format-Bytes([byte[]]$Bytes) {
+    if ($null -eq $Bytes) { return '' }
+    return (@($Bytes) | ForEach-Object { $_.ToString('X2') }) -join ' '
+}
+
+# Every copy of QuickSnippets writes its autostart entry and Task Manager's mark under the same
+# name, QuickSnippets, so the test copy writes and removes the values of your own copy. Both are
+# recorded before the run and put back exactly afterwards: the same kind and data, or no value.
+function Get-AutostartValue([string]$Key) {
+    $k = Get-Item -LiteralPath $Key -ErrorAction SilentlyContinue
+    if ($null -eq $k -or @($k.GetValueNames()) -notcontains 'QuickSnippets') { return $null }
+    $kind = $k.GetValueKind('QuickSnippets')
+    $data = $k.GetValue('QuickSnippets', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $text = if ($data -is [byte[]]) { Format-Bytes $data } else { "«$data»" }
+    return [pscustomobject]@{ Kind = $kind; Data = $data; Text = "$kind $text" }
+}
+
+function Get-AutostartState {
+    $entry = Get-AutostartValue $RunKey
+    $mark = Get-AutostartValue $MarkKey
+    $entryText = if ($entry) { $entry.Text } else { 'немає' }
+    $markText = if ($mark) { $mark.Text } else { 'немає' }
+    return [pscustomobject]@{
+        Entry = $entry
+        Mark  = $mark
+        Text  = "запис автозапуску: $entryText; позначка Диспетчера завдань: $markText"
+    }
+}
+
+function Restore-AutostartValue([string]$Key, $Value) {
+    if ($null -eq $Value) {
+        Remove-ItemProperty -LiteralPath $Key -Name 'QuickSnippets' -ErrorAction SilentlyContinue
+    } else {
+        $null = New-ItemProperty -LiteralPath $Key -Name 'QuickSnippets' -PropertyType "$($Value.Kind)" -Value $Value.Data -Force
+    }
+}
+
+function Restore-AutostartState($State) {
+    Restore-AutostartValue $RunKey $State.Entry
+    Restore-AutostartValue $MarkKey $State.Mark
+}
+
+# The folder where QuickSnippets 0.3.3 and older keep the data of their embedded browser,
+# shared by every copy on the computer. A newer copy must neither create nor change it.
+# Only whether it exists, how many files and folders it holds and when the newest of them
+# changed are read: no names, no contents. Read only while no other copy of the app runs.
+$OldBrowserDir = Join-Path $env:LOCALAPPDATA 'com.quicksnippets.app'
+function Get-OldBrowserState {
+    if (-not (Test-Path -LiteralPath $OldBrowserDir)) {
+        return [pscustomobject]@{ Key = 'none'; Text = 'теки немає' }
+    }
+    $items = @(Get-ChildItem -LiteralPath $OldBrowserDir -Recurse -Force -ErrorAction SilentlyContinue)
+    $newest = (Get-Item -LiteralPath $OldBrowserDir -Force).LastWriteTimeUtc.Ticks
+    foreach ($i in $items) { if ($i.LastWriteTimeUtc.Ticks -gt $newest) { $newest = $i.LastWriteTimeUtc.Ticks } }
+    $when = (New-Object DateTime $newest, ([DateTimeKind]::Utc)).ToLocalTime()
+    return [pscustomobject]@{
+        Key  = "$($items.Count)|$newest"
+        Text = '{0} файлів і тек, остання зміна {1:dd.MM.yyyy HH:mm:ss}' -f $items.Count, $when
+    }
 }
 
 # ── Home window ──────────────────────────────────────────────────────────────
@@ -651,6 +846,8 @@ function Get-SaidText($Events) {
 # ExpectSaid  - for each entry, one of its '|'-separated variants must be said on its own, as a
 #               whole utterance: a character or word NVDA reads at the caret, e.g. 'з'
 # Forbid      - must not be said (none of its '|'-separated variants)
+# ForbidSaid  - must not be said on its own, as a whole utterance (none of its '|'-separated
+#               variants), e.g. the bare title of the app window
 # Hope       - nice to hear, reported but never a failure (speech that races with the window hiding)
 function Invoke-Step {
     param(
@@ -661,19 +858,22 @@ function Invoke-Step {
         [hashtable]$ExpectCount = @{},
         [string[]]$ExpectSaid = @(),
         [string[]]$Forbid = @(),
+        [string[]]$ForbidSaid = @(),
         [string[]]$Hope = @(),
         [string]$SkipReason
     )
-    $r = [pscustomobject]@{ N = $Results.Count + 1; Title = $Title; Status = 'OK'; Detail = ''; Speech = @(); Checks = @() }
+    $r = [pscustomobject]@{ N = $Results.Count + 1; Title = $Title; Status = 'OK'; Detail = ''; Info = ''; Speech = @(); Checks = @() }
     if ($SkipReason) { $r.Status = 'ПРОПУЩЕНО'; $r.Detail = $SkipReason; $Results.Add($r); return }
     if ($script:Aborted) { $r.Status = 'ПРОПУЩЕНО'; $r.Detail = 'попередній крок не вдався'; $Results.Add($r); return }
 
     $from = Get-LogLength
     $script:SoftFail = $null  # a step sets this to fail without stopping the remaining steps
     $script:SpeechUntil = $null  # a step sets this log offset to ignore what NVDA says after it
+    $script:StepInfo = $null  # a step sets this to add a line of measurements to the report
     try { $null = & $Action }
     catch { $r.Status = 'ПОМИЛКА'; $r.Detail = $_.Exception.Message; $script:Aborted = $true }
     if ($r.Status -eq 'OK' -and $script:SoftFail) { $r.Status = 'ПОМИЛКА'; $r.Detail = $script:SoftFail }
+    if ($script:StepInfo) { $r.Info = $script:StepInfo }
 
     if ($script:LogPath -and $r.Status -eq 'OK' -and ($Expect.Count -or $ExpectAny.Count -or $ExpectCount.Count -or $ExpectSaid.Count)) {
         # NVDA can lag behind the app: wait until it has said what we expect.
@@ -716,6 +916,10 @@ function Invoke-Step {
         foreach ($p in $Forbid) {
             $variants = ($p.Split('|') | ForEach-Object { "«$_»" }) -join ' чи '
             $checks += [pscustomobject]@{ Text = "не звучить $variants"; Ok = -not (Test-SaidAny $all $p); Required = $true }
+        }
+        foreach ($w in $ForbidSaid) {
+            $variants = ($w.Split('|') | ForEach-Object { "«$_»" }) -join ' чи '
+            $checks += [pscustomobject]@{ Text = "окремо не звучить $variants"; Ok = -not (Test-SaidWhole $r.Speech $w); Required = $true }
         }
         foreach ($p in $Hope) {
             $checks += [pscustomobject]@{ Text = "бажано, щоб звучало «$p»"; Ok = (Get-Count $all $p) -ge 1; Required = $false }
@@ -766,6 +970,9 @@ Start-Sleep -Seconds 4
 # Closed before the test and not started again: the test runs only its own copy.
 $UserApps = @(Get-Process quick-snippets -ErrorAction SilentlyContinue)
 $UserRunValue = Get-RunValue
+$AutostartBefore = Get-AutostartState
+$AutostartAtEnd = $null
+$AutostartAfter = $null
 $ClipBackup = $null
 $ClipHadText = $true
 if ($IsSta) { $ClipHadText = [System.Windows.Forms.Clipboard]::ContainsText() }
@@ -790,9 +997,15 @@ try {
     $dataDir = Join-Path $Work 'quick-snippets-data'
     $null = New-Item -ItemType Directory -Force -Path $dataDir
     Copy-Item $Exe $TestExe
+    if ($BrowserProfileFrom) {
+        Copy-Item -LiteralPath $BrowserProfileFrom -Destination (Join-Path $Work 'quick-snippets-webview') -Recurse
+        $Notes.Add("тестова копія стартує з готовим профілем браузера з $BrowserProfileFrom")
+    }
+    $trayAtStart = [bool]$StartInTray
     $settings = [ordered]@{
         # Like a default install: the window opens at launch (start_in_tray off).
-        theme = 'dark'; start_in_tray = $false; autostart = $false; confirm_on_close = $false; language = 'uk'
+        # With -StartInTray: hidden at launch, as after a login with autostart.
+        theme = 'dark'; start_in_tray = $trayAtStart; autostart = $false; confirm_on_close = $false; language = 'uk'
         window_state = [ordered]@{ x = 100; y = 100; width = 680; height = 520 }
         # 7: a value that no label or hint of the settings dialog contains, so the
         # settings steps can check that NVDA reads the value of the delay field.
@@ -800,6 +1013,16 @@ try {
     }
     # No BOM: serde_json rejects it.
     [IO.File]::WriteAllText((Join-Path $dataDir 'settings.json'), ($settings | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+
+    # The old browser folder before the test copy first starts. A copy closed just now may
+    # still be writing there for a moment: wait until two reads half a second apart agree.
+    $oldBrowserBefore = Get-OldBrowserState
+    for ($i = 0; $i -lt 10; $i++) {
+        Start-Sleep -Milliseconds 500
+        $again = Get-OldBrowserState
+        if ($again.Key -eq $oldBrowserBefore.Key) { break }
+        $oldBrowserBefore = $again
+    }
 
     # The home window first: the app window then opens over it, and focus returns to it
     # whenever the app hides.
@@ -810,21 +1033,11 @@ try {
     }
     $script:AppProc = Start-Process $TestExe -PassThru
 
-    # NVDA may stay silent about the very first show of a freshly started window until the
-    # next key press, so this step only hopes for speech; later shows are checked strictly.
-    Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, Escape його ховає' {
-        $null = Wait-Until 'вікно програми після запуску' { Get-AppWindow } 20
-        if (-not (Test-AppReady)) {
-            $w = Get-AppWindow
-            $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
-        }
-        $null = Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
-        Send-Keys 'Esc'
-        Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
-    } -Hope $UI.SearchPlaceholder
-
-    Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' {
+    $hotkeyShowsWindow = {
+        # -Quiet: the first show after a start (see Wait-ShownQuietly).
+        param([switch]$Quiet)
         Send-Keys 'Ctrl+Alt+Space'
+        if ($Quiet) { $null = Wait-ShownQuietly 6 }
         $shown = $true
         try { $null = Wait-Until 'вікно програми' { Get-AppWindow } 6 }
         catch {
@@ -845,7 +1058,51 @@ try {
             $script:SoftFail += '; далі вікно відкривається повторним запуском exe'
         }
         Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
-    } -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
+    }
+    # The first show after a start is read as any later show: the window and its document once,
+    # then the search box once, with its states. When the web content gets the keyboard while
+    # the embedded browser is still starting up, NVDA reads the window through UI Automation
+    # instead (see DEVELOPMENT.md): it then names the browser pane («веб-вміст») or the document
+    # address, says the search box twice or without its states, and keeps Escape for itself.
+    $firstShowNoise = $SearchBoxNoise + 'tauri.localhost' + 'веб-вміст|web content|Webinhalt'
+    $firstShowOnce = @{ ($UI.SearchPlaceholder) = 1; 'Snippet Manager' = 1 }
+    $editable = 'можливо редагувати|editable|bearbeitbar'
+
+    if ($StartInTray) {
+        # NVDA says the bare window title when the app window takes the keyboard.
+        Invoke-Step 'Запуск у треї: вікно не показується ні на мить, фокус лишається в тестовому вікні' {
+            Wait-HiddenStart
+        } -ForbidSaid 'QuickSnippets'
+
+        # The window has never been on screen with the keyboard in it. NVDA must read the
+        # search box at once, not only after the next key press.
+        Invoke-Step 'Ctrl+Alt+Space вперше показує вікно: NVDA читає поле пошуку' {
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            $null = & $hotkeyShowsWindow -Quiet
+            $script:StepInfo = 'від Ctrl+Alt+Space до перевірки фокуса в полі пошуку {0} мс (з них 1500 мс тест чекав, доки NVDA прочитає вікно); клавіатура у вікні класу {1}' -f
+                $clock.ElapsedMilliseconds, [QsSmokeNative]::ClassOf([QsSmokeNative]::KeyboardWindow())
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount $firstShowOnce -Forbid $firstShowNoise
+    } else {
+        # The window opens by itself, once the page is ready and, with a screen reader running,
+        # the embedded browser has settled (about a second and a half after the start). NVDA
+        # must read it at once and the usual way, and the first Escape must hide it.
+        Invoke-Step 'Запуск: вікно відкривається з фокусом у полі пошуку, NVDA читає його один раз, Escape його ховає' {
+            $script:ShownAfterMs = $null
+            $byItself = Wait-ShownQuietly
+            $null = Wait-Until 'вікно програми після запуску' { Get-AppWindow } 20
+            $script:StepInfo = if ($byItself) { "вікно з'явилося на передньому плані через $($script:ShownAfterMs) мс після запуску процесу" }
+                               else { 'вікно не вийшло на передній план саме, його вивів тест' }
+            if (-not (Test-AppReady)) {
+                $w = Get-AppWindow
+                $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+            }
+            $null = Wait-Until 'фокус у полі пошуку' { Test-HasFocus (Get-SearchBox) }
+            Send-Keys 'Esc'
+            Wait-Until 'вікно сховалось' { -not (Get-AppWindow) } 3
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount $firstShowOnce -Forbid $firstShowNoise
+
+        Invoke-Step 'Ctrl+Alt+Space показує вікно, фокус у полі пошуку' $hotkeyShowsWindow -ExpectAny $Role.ComboBox -ExpectCount @{ ($UI.SearchPlaceholder) = 1 } -Forbid $SearchBoxNoise
+    }
 
     Invoke-Step 'Ctrl+N відкриває діалог створення, фокус у полі «Назва»' {
         Send-Keys 'Ctrl+N'
@@ -1084,9 +1341,11 @@ try {
         & $tabTo 'settings-autostart' $UI.Autostart
     } -Expect $UI.GroupStartup, $UI.Autostart, $UI.AutostartHint -ExpectAny $Role.Grouping, $Role.CheckBox, $Role.NotChecked
 
+    $trayBoxState = if ($trayAtStart) { @{ ExpectAny = $Role.CheckBox, $Role.Checked; Forbid = $Role.NotChecked } }
+                    else { @{ ExpectAny = $Role.CheckBox, $Role.NotChecked } }
     Invoke-Step 'Tab: прапорець «Запускати згорнутим у трей» з підказкою' {
         & $tabTo 'settings-tray' $UI.StartInTray
-    } -Expect $UI.StartInTray, $UI.StartInTrayHint -ExpectAny $Role.CheckBox, $Role.NotChecked
+    } -Expect $UI.StartInTray, $UI.StartInTrayHint @trayBoxState
 
     Invoke-Step 'Tab: прапорець «Питати перед закриттям програми» з підказкою' {
         & $tabTo 'settings-confirm' $UI.ConfirmOnClose
@@ -1184,7 +1443,7 @@ try {
         return "$state, клавіатура в процесі $(Get-ForegroundProcessName)"
     }
 
-    Invoke-Step 'Автозапуск вмикається в налаштуваннях' {
+    Invoke-Step 'Автозапуск вмикається в налаштуваннях: запис і позначка «увімкнено» для Диспетчера завдань' {
         Show-App
         Send-Keys 'Ctrl+Comma'
         $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-autostart' }
@@ -1198,13 +1457,36 @@ try {
         } catch {
             throw "$($_.Exception.Message) ($(& $whereThingsAre))"
         }
+        # Task Manager lists the entry as enabled.
+        $null = Wait-Until 'позначка «увімкнено» для Диспетчера завдань' { (Format-Bytes (Get-AutostartMark)) -eq $MarkEnabled } 3
         # What the next start reads: the new value, and the other settings unchanged.
         $null = Wait-Until 'автозапуск у settings.json' { (& $readSettings).autostart -eq $true } 3
         & $assertSaved 'dark' 'uk'
         if ((& $readSettings).autotype_delay_ms -ne 7) { throw 'збереження змінило затримку автодруку' }
     } -Expect $UI.Settings -SkipReason $autostartSkip
 
-    Invoke-Step 'Автозапуск вимикається' {
+    # Saving another setting must leave both values alone, also a mark that Task Manager set to
+    # "Disabled". Up to 0.3.3 every save turned autostart on or off again: it overwrote that mark
+    # with "enabled", and a copy with autostart off removed the entry of another copy.
+    Invoke-Step 'Зміна теми не чіпає автозапуск: позначка «вимкнено» з Диспетчера завдань лишається' {
+        Wait-Until 'налаштування закрито, фокус у головному вікні' { -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady) }
+        # What Task Manager writes for "Disabled": 03 00 00 00 and the time it was set.
+        $disabled = [byte[]](@(3, 0, 0, 0) + [BitConverter]::GetBytes([DateTime]::UtcNow.ToFileTimeUtc()))
+        Set-ItemProperty -LiteralPath $MarkKey -Name 'QuickSnippets' -Value $disabled -Type Binary
+        $entry = Get-RunValue
+        Send-Keys 'Ctrl+Shift+T'
+        $null = Wait-Until 'світла тема в settings.json' { (& $readSettings).theme -eq 'light' }
+        Send-Keys 'Ctrl+Shift+T'
+        $null = Wait-Until 'темна тема в settings.json' { (& $readSettings).theme -eq 'dark' }
+        # The app writes settings.json first and the registry after it.
+        Start-Sleep -Milliseconds 500
+        if ((& $readSettings).autostart -ne $true) { throw 'зміна теми вимкнула автозапуск у settings.json' }
+        if ((Get-RunValue) -ne $entry) { throw 'зміна теми змінила запис автозапуску' }
+        $mark = Format-Bytes (Get-AutostartMark)
+        if ($mark -ne (Format-Bytes $disabled)) { throw "зміна теми переписала позначку Диспетчера завдань: $mark" }
+    } -SkipReason $autostartSkip
+
+    Invoke-Step 'Автозапуск вимикається: запис і позначка Диспетчера завдань зникають' {
         Send-Keys 'Ctrl+Alt+Space'
         $null = Wait-Until 'вікно програми' { Get-AppWindow }
         Send-Keys 'Ctrl+Comma'
@@ -1212,12 +1494,13 @@ try {
         Set-Toggle $box $false
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'запис автозапуску зник' { -not (Get-RunValue) }
+        Wait-Until 'позначка Диспетчера завдань зникла' { -not (Get-AutostartMark) } 3
         $null = Wait-Until 'автозапуск вимкнено в settings.json' { (& $readSettings).autostart -eq $false } 3
     } -SkipReason $autostartSkip
 
     # The same sequence as in the autostart steps, repeated, because the keyboard stays away
     # from the content only now and then (before the fix: in 2 of 7 repeats). An even number
-    # of repeats leaves «Запускати згорнутим у трей» off for the restart near the end.
+    # of repeats leaves «Запускати згорнутим у трей» as it was for the restart near the end.
     Invoke-Step 'Вікно відкрите, Ctrl+Alt+Space, Ctrl+кома, зміна через UI Automation, Ctrl+Enter: шість разів поспіль зміну збережено' {
         for ($i = 1; $i -le 6; $i++) {
             $want = -not [bool](& $readSettings).start_in_tray
@@ -1237,15 +1520,15 @@ try {
         }
         & $assertSaved 'dark' 'uk'
         $s = & $readSettings
-        if ($s.start_in_tray -ne $false -or $s.autotype_delay_ms -ne 7) { throw 'після шести змін інші налаштування не такі, як були' }
+        if ($s.start_in_tray -ne $trayAtStart -or $s.autotype_delay_ms -ne 7) { throw 'після шести змін інші налаштування не такі, як були' }
     } -Expect $UI.Settings, $UI.StartInTray
 
     # The same failure, made to happen every time: the keyboard is put on the internal WebView2
     # window that holds the accessibility tree, where a UI Automation action leaves it now and
     # then. Before the fix the app hid its window 0.2 s later, every time. Twice, so that
-    # «Запускати згорнутим у трей» ends up off again.
+    # «Запускати згорнутим у трей» ends up as it was again.
     Invoke-Step 'Клавіатура на внутрішньому вікні WebView2, налаштування відкриті: вікно лишається, Ctrl+Enter зберігає' {
-        foreach ($want in $true, $false) {
+        foreach ($want in (-not $trayAtStart), $trayAtStart) {
             Show-App
             Send-Keys 'Ctrl+Comma'
             $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-tray' }
@@ -1633,18 +1916,44 @@ try {
     } -Expect $UI.ExitTitle
 
     # The same exe and data folder: what a user gets after quitting and starting again.
-    Invoke-Step 'Перезапуск тестової копії: світла тема, видалений сніпет не повернувся' {
-        try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
-        $script:AppProc = Start-Process $TestExe -PassThru
-        $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
-        if (-not (Test-AppReady)) {
-            $w = Get-AppWindow
-            $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
-        }
-        Wait-Until 'вікно з фокусом' { Test-AppReady }
-        Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
-        if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
-    } -Hope $UI.SearchPlaceholder
+    if ($StartInTray) {
+        Invoke-Step 'Перезапуск тестової копії в треї: вікно не показується ні на мить' {
+            try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
+            if (-not [bool](& $readSettings).start_in_tray) { throw 'перед перезапуском «Запускати згорнутим у трей» вимкнено в settings.json' }
+            $script:AppProc = Start-Process $TestExe -PassThru
+            Wait-HiddenStart
+        } -ForbidSaid 'QuickSnippets'
+
+        # The first show after this start: the window, the search box and, once, the only
+        # snippet, exactly as on every later show.
+        Invoke-Step 'Ctrl+Alt+Space вперше після перезапуску: NVDA читає поле пошуку й перший сніпет; світла тема, видалений сніпет не повернувся' {
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            Show-App -Quiet
+            $script:StepInfo = 'від Ctrl+Alt+Space до перевірки фокуса у вікні {0} мс (з них 1500 мс тест чекав, доки NVDA прочитає вікно); клавіатура у вікні класу {1}' -f
+                $clock.ElapsedMilliseconds, [QsSmokeNative]::ClassOf([QsSmokeNative]::KeyboardWindow())
+            Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
+            if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount ($firstShowOnce + @{ ($Data.SecretTitle) = 1 }) -Forbid $firstShowNoise
+    } else {
+        # The window opens by itself again, now with a snippet in the list: NVDA reads the
+        # window, the search box and that snippet, each once.
+        Invoke-Step 'Перезапуск тестової копії: NVDA читає вікно, поле пошуку й перший сніпет; світла тема, видалений сніпет не повернувся' {
+            try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
+            $script:AppProc = Start-Process $TestExe -PassThru
+            $script:ShownAfterMs = $null
+            $byItself = Wait-ShownQuietly
+            $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
+            $script:StepInfo = if ($byItself) { "вікно з'явилося на передньому плані через $($script:ShownAfterMs) мс після запуску процесу" }
+                               else { 'вікно не вийшло на передній план саме, його вивів тест' }
+            if (-not (Test-AppReady)) {
+                $w = Get-AppWindow
+                $null = [QsSmokeNative]::Activate([IntPtr]$w.Current.NativeWindowHandle)
+            }
+            Wait-Until 'вікно з фокусом' { Test-AppReady }
+            Wait-Until 'у списку лише зашифрований сніпет' { & $listIs @($secretName) }
+            if ((& $readSettings).theme -ne 'light') { throw 'тема в settings.json змінилася під час перезапуску' }
+        } -ExpectAny $Role.ComboBox, $editable -ExpectCount ($firstShowOnce + @{ ($Data.SecretTitle) = 1 }) -Forbid $firstShowNoise
+    }
 
     Invoke-Step 'Ctrl+, після перезапуску: тема світла' {
         Send-Keys 'Ctrl+Comma'
@@ -1653,6 +1962,21 @@ try {
         Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'light' 'uk'
     } -Expect $UI.Settings, $UI.Theme, $UI.Light -Forbid (@($UI.Dark) + $FocusNoise)
+
+    # The embedded browser keeps its data next to the exe, outside the user's data folder.
+    # Up to 0.3.3 every copy kept it in AppData, shared with all other copies.
+    Invoke-Step 'Дані браузера лише в quick-snippets-webview поруч із тестовою копією; %LOCALAPPDATA%\com.quicksnippets.app не змінено' {
+        $webviewDir = Join-Path $Work 'quick-snippets-webview'
+        if (-not (Test-Path -LiteralPath (Join-Path $webviewDir 'EBWebView'))) { throw 'поруч із тестовою копією немає quick-snippets-webview\EBWebView' }
+        if (Test-Path -LiteralPath (Join-Path $dataDir 'EBWebView')) { throw 'дані браузера потрапили в quick-snippets-data' }
+        $files = @(Get-ChildItem -LiteralPath $webviewDir -Recurse -Force -File -ErrorAction SilentlyContinue)
+        $mb = ($files | Measure-Object Length -Sum).Sum / 1MB
+        $after = Get-OldBrowserState
+        $script:StepInfo = 'quick-snippets-webview: {0} файлів, {1:0.0} МБ; %LOCALAPPDATA%\com.quicksnippets.app: {2}' -f $files.Count, $mb, $after.Text
+        if ($after.Key -ne $oldBrowserBefore.Key) {
+            throw "тестова копія змінила %LOCALAPPDATA%\com.quicksnippets.app (до запуску: $($oldBrowserBefore.Text); тепер: $($after.Text))"
+        }
+    }
 }
 finally {
     Stop-Target
@@ -1660,10 +1984,11 @@ finally {
         Stop-Process -Id $script:AppProc.Id -Force -ErrorAction SilentlyContinue
         $null = $script:AppProc.WaitForExit(5000)
     }
-    $v = Get-RunValue
-    if ($v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-        Remove-ItemProperty -Path $RunKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue
-    }
+    # Your autostart values exactly as they were before the run (see Get-AutostartValue).
+    $AutostartAtEnd = Get-AutostartState
+    try { Restore-AutostartState $AutostartBefore }
+    catch { $Notes.Add("не вдалося відновити значення автозапуску: $($_.Exception.Message)") }
+    $AutostartAfter = Get-AutostartState
     if ($null -ne $ClipBackup) { Set-ClipText $ClipBackup }
     elseif ($IsSta) { [System.Windows.Forms.Clipboard]::Clear() }
     for ($i = 0; $i -lt 10 -and (Test-Path $Work); $i++) {
@@ -1675,8 +2000,22 @@ finally {
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add(('Звіт перевірки QuickSnippets з NVDA, {0:dd.MM.yyyy HH:mm}' -f (Get-Date)))
 $lines.Add(('Exe: {0}, зібрано {1:dd.MM.yyyy HH:mm}' -f $Exe, $exeTime))
+if ($StartInTray) { $lines.Add("Режим: запуск у треї, перед першим Ctrl+Alt+Space програма $TrayIdleSec с лишається схованою") }
 if ($script:LogPath) { $lines.Add("Лог NVDA: $script:LogPath") } else { $lines.Add('NVDA: мовлення не перевірялось') }
 if ($script:SetupError) { $lines.Add("Підготовка: ПОМИЛКА ($script:SetupError)") }
+# The autostart values before the run, as the test copy left them, and after restoring them.
+$autostartRestored = $AutostartAfter -and $AutostartAfter.Text -eq $AutostartBefore.Text
+# With the autostart steps skipped the test copy never changed the setting, so it must not
+# have touched your values at all.
+$autostartUntouched = (-not $autostartSkip) -or ($AutostartAtEnd -and $AutostartAtEnd.Text -eq $AutostartBefore.Text)
+$lines.Add("Автозапуск у реєстрі до тесту: $($AutostartBefore.Text)")
+if ($AutostartAtEnd) { $lines.Add("Наприкінці тесту: $($AutostartAtEnd.Text)") }
+if ($autostartRestored) { $lines.Add('Після тесту відновлено як до тесту.') }
+else {
+    $afterText = if ($AutostartAfter) { $AutostartAfter.Text } else { 'не прочитано' }
+    $lines.Add("ПОМИЛКА: після тесту значення автозапуску не такі, як до тесту ($afterText).")
+}
+if (-not $autostartUntouched) { $lines.Add('ПОМИЛКА: тестова копія змінила ваші значення автозапуску, хоча автозапуск не вмикала й не вимикала.') }
 foreach ($note in $Notes) { $lines.Add("Увага: $note") }
 $lines.Add('')
 
@@ -1685,6 +2024,7 @@ foreach ($r in $Results) {
     $line = 'Крок {0}. {1}: {2}' -f $r.N, $r.Title, $r.Status
     if ($r.Detail) { $line += " ($($r.Detail))" }
     $lines.Add($line)
+    if ($r.Info) { $lines.Add("  Виміри: $($r.Info)") }
     switch ($r.Status) { 'OK' { $appOk++ } 'ПОМИЛКА' { $appFail++ } default { $skipped++ } }
     if ($r.Speech.Count) {
         $anySpeech = $true
@@ -1735,4 +2075,4 @@ $lines | ForEach-Object { Write-Host $_ }
 Write-Host "Звіт збережено: $ReportPath"
 Write-Host 'Готово.'
 
-if ($script:SetupError -or $appFail -gt 0 -or $nvdaOk -ne $nvdaAll) { exit 1 } else { exit 0 }
+if ($script:SetupError -or $appFail -gt 0 -or $nvdaOk -ne $nvdaAll -or -not $autostartRestored -or -not $autostartUntouched) { exit 1 } else { exit 0 }
