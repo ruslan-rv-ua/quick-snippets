@@ -113,7 +113,7 @@ Your privacy is paramount. QuickSnippets is designed to keep your snippets on yo
 - **Snippets from older versions keep working** — snippets encrypted by version 0.2.1 or earlier (100,000 iterations) still open, and each one is re-encrypted with the stronger setting the first time you copy or auto-type it with its password
 - **Unique salt and nonce** — every encryption uses random values, so the same snippet encrypted twice produces different ciphertexts
 - **Local storage only** — your database (`snippets.db`) and settings (`settings.json`) live in the `quick-snippets-data` folder next to the executable; no cloud, no telemetry, no sync
-- **No AppData, registry only for autostart** — QuickSnippets keeps nothing in AppData directories. It writes to the Windows registry only when you turn on "Start with Windows": the usual autostart entry for your user account and the on/off mark that Task Manager shows for it. Turning the setting off removes the entry; the mark stays, and Windows ignores it
+- **No AppData, registry only for autostart** — QuickSnippets keeps nothing in AppData directories. It changes the Windows registry only when you turn "Start with Windows" on or off. Turning it on writes the usual autostart entry for your user account and the on/off mark that Task Manager shows for it; turning it off removes both
 - **Portable** — copy your entire QuickSnippets folder to back up or migrate everything
 
 ### What Is Encrypted
