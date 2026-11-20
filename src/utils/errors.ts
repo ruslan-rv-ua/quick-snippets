@@ -6,6 +6,15 @@ export function ipcErrorToString(err: unknown): string {
   return typeof err === 'string' ? err : String(err);
 }
 
+/**
+ * Ends an error text taken from the backend as a sentence, so that a message can go on after
+ * it: "Access is denied. (os error 5)" becomes "Access is denied. (os error 5)."
+ */
+export function asSentence(text: string): string {
+  const trimmed = text.trim();
+  return trimmed === '' || /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 /** Content over its size limit, as the backend reports it. */
 export interface ContentTooLong {
   /** Size of the text in bytes of UTF-8. */

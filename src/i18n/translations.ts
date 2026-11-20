@@ -102,6 +102,12 @@ export interface TranslationMap {
    */
   autostartTurnOnFailed: string;
   autostartTurnOffFailed: string;
+  /**
+   * Said above Cancel and Save when the settings could not be saved (settings.json could not
+   * be written). `reason` is the error as Windows gives it, in the language of Windows.
+   * Nothing was saved.
+   */
+  settingsSaveFailed: (reason: string) => string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
@@ -215,6 +221,8 @@ const en: TranslationMap = {
     'Could not turn on "Start with Windows": the change was blocked, for example by a policy or security software. The other settings are saved.',
   autostartTurnOffFailed:
     'Could not turn off "Start with Windows": the change was blocked, for example by a policy or security software. QuickSnippets will still start with Windows. The other settings are saved.',
+  settingsSaveFailed: (reason) =>
+    `Could not save the settings: the file settings.json in the quick-snippets-data folder next to the program cannot be written. Reason: ${reason} Nothing was changed.`,
   darkTheme: 'Dark',
   lightTheme: 'Light',
   autoLanguage: 'Same as Windows',
@@ -364,6 +372,8 @@ const uk: TranslationMap = {
     'Не вдалося ввімкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. Інші налаштування збережено.',
   autostartTurnOffFailed:
     'Не вдалося вимкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. QuickSnippets і далі запускатиметься разом з Windows. Інші налаштування збережено.',
+  settingsSaveFailed: (reason) =>
+    `Не вдалося зберегти налаштування: файл settings.json у теці quick-snippets-data поруч із програмою не записується. Причина: ${reason} Нічого не змінено.`,
   darkTheme: 'Темна',
   lightTheme: 'Світла',
   autoLanguage: 'Як у Windows',
@@ -508,6 +518,8 @@ const de: TranslationMap = {
     '„Mit Windows starten“ ließ sich nicht einschalten: Die Änderung wurde blockiert, zum Beispiel durch eine Richtlinie oder Sicherheitssoftware. Die anderen Einstellungen sind gespeichert.',
   autostartTurnOffFailed:
     '„Mit Windows starten“ ließ sich nicht ausschalten: Die Änderung wurde blockiert, zum Beispiel durch eine Richtlinie oder Sicherheitssoftware. QuickSnippets startet weiterhin mit Windows. Die anderen Einstellungen sind gespeichert.',
+  settingsSaveFailed: (reason) =>
+    `Die Einstellungen ließen sich nicht speichern: Die Datei settings.json im Ordner quick-snippets-data neben dem Programm kann nicht geschrieben werden. Grund: ${reason} Es wurde nichts geändert.`,
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
   autoLanguage: 'Wie in Windows',

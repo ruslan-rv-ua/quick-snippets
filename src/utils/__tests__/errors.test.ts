@@ -1,10 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { ipcErrorToString, parseContentTooLong, parseTitleLength } from '../errors';
+import { asSentence, ipcErrorToString, parseContentTooLong, parseTitleLength } from '../errors';
 
 describe('ipcErrorToString', () => {
   it('keeps a string and turns anything else into one', () => {
     expect(ipcErrorToString('Title already exists')).toBe('Title already exists');
     expect(ipcErrorToString(new Error('boom'))).toBe('Error: boom');
+  });
+});
+
+describe('asSentence', () => {
+  it('adds a full stop after an error of Windows, which ends with its number', () => {
+    expect(asSentence('Access is denied. (os error 5)')).toBe('Access is denied. (os error 5).');
+  });
+
+  it('keeps an error that already ends a sentence, and trims spaces', () => {
+    expect(asSentence(' Disk full. ')).toBe('Disk full.');
+    expect(asSentence('Wirklich?')).toBe('Wirklich?');
+    expect(asSentence('Зачекайте…')).toBe('Зачекайте…');
+  });
+
+  it('leaves an empty text empty', () => {
+    expect(asSentence('  ')).toBe('');
   });
 });
 

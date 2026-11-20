@@ -712,6 +712,16 @@ input[type='checkbox'] {
   outline-offset: 2px;
 }
 
+/* A failed save, above the footer. While empty it stays in the page (see FieldError.tsx):
+   cancel the dialog's gap so that it takes no space. */
+.settings-dialog > .field-error {
+  line-height: 1.35;
+}
+
+.settings-dialog > .field-error:empty {
+  margin-top: calc(-1 * var(--space-3));
+}
+
 /* Footer: version on the left, Cancel and Save on the right */
 .settings-footer {
   display: flex;
