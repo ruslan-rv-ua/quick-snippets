@@ -40,6 +40,11 @@
     - To check what NVDA says when the settings cannot be saved, the test makes the settings.json
       of its own copy read-only for two steps, and writable again afterwards (also when a step
       fails). Your own settings file is never touched.
+    - To check what NVDA says when a delete, a save or a decryption fails, the test locks the
+      snippets.db of its own copy for a few seconds, with byte-range locks as SQLite takes them
+      (see Lock-TestDatabase), and frees it right after (also when a step fails). The copy then
+      waits its busy timeout of 5 s and gets "database is locked". Your own database is never
+      touched.
 
     Do not touch the keyboard or mouse while it runs (about two and a half minutes).
     Leave a minute or more between two runs (see DEVELOPMENT.md).
@@ -137,6 +142,12 @@ $UI = @{
     # its end; the reason between them is the error of Windows, in the language of Windows.
     SaveFailedStart   = 'Не вдалося зберегти налаштування'
     NothingChanged    = 'Нічого не змінено'
+    # Above the buttons of the delete, create and password dialogs when the backend fails for
+    # another reason than the input (snippetDeleteFailed, snippetSaveFailed, snippetCopyFailed);
+    # the reason after them is SQLite's own text, $Locked.
+    DeleteFailedStart = 'Не вдалося видалити сніпет'
+    SnippetSaveFailedStart = 'Не вдалося зберегти сніпет'
+    CopyFailedStart   = 'Не вдалося скопіювати сніпет'
     StartInTray       = 'Запускати згорнутим у трей'
     StartInTrayHint   = 'Діє з наступного запуску. Вікно відкривається клавішами Ctrl+Alt+Space'
     ConfirmOnClose    = 'Питати перед закриттям програми'
@@ -803,6 +814,31 @@ function Stop-Target {
 
 # ── NVDA log ─────────────────────────────────────────────────────────────────
 # Positions are byte offsets in nvda.log: each step reads only what NVDA wrote during it.
+# ── Test copy's database ─────────────────────────────────────────────────────
+# SQLite on Windows locks byte ranges of the database file far beyond its end (os_win.c):
+# a writer needs the RESERVED byte, a reader a shared lock on the SHARED range. Holding them
+# from here makes every write (Kind 'write') or every access (Kind 'read') of the test copy
+# wait its busy timeout (5 s) and then fail with "database is locked". Nothing is written.
+$Locked = 'database is locked'
+$script:DbLock = $null
+$script:DbLockRange = $null
+
+function Lock-TestDatabase([string]$Kind) {
+    if ($script:DbLock) { throw 'база тестової копії вже заблокована' }
+    $fs = [IO.File]::Open($script:DbFile, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]'ReadWrite, Delete')
+    $range = if ($Kind -eq 'write') { @(0x40000001, 1) } else { @(0x40000002, 510) }
+    try { $fs.Lock($range[0], $range[1]) } catch { $fs.Dispose(); throw }
+    $script:DbLock = $fs
+    $script:DbLockRange = $range
+}
+
+function Unlock-TestDatabase {
+    if (-not $script:DbLock) { return }
+    try { $script:DbLock.Unlock($script:DbLockRange[0], $script:DbLockRange[1]) } catch { }
+    $script:DbLock.Dispose()
+    $script:DbLock = $null
+}
+
 function Get-LogLength {
     if (-not $script:LogPath) { return 0 }
     $fs = [IO.File]::Open($script:LogPath, 'Open', 'Read', 'ReadWrite')
@@ -1077,6 +1113,7 @@ try {
     catch { $Notes.Add('Ctrl+Alt+Space зайнята іншою програмою ще до запуску тестової копії QuickSnippets.') }
 
     $dataDir = Join-Path $Work 'quick-snippets-data'
+    $script:DbFile = Join-Path $dataDir 'snippets.db'
     $null = New-Item -ItemType Directory -Force -Path $dataDir
     Copy-Item $Exe $TestExe
     Copy-Item $Exe $Decoy
@@ -1376,13 +1413,30 @@ try {
         Wait-Until 'фокус знову в полі пароля' { Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input') }
     } -ExpectCount @{ ($UI.WrongPassword) = 1 }
 
-    Invoke-Step 'Правильний пароль копіює розшифрований текст' {
+    # The right password, but the database cannot be read: that is no wrong password. Up to 0.3.5
+    # the dialog said «Невірний пароль» for every failure and emptied the field.
+    Invoke-Step 'Правильний пароль, база тестової копії заблокована: повідомлення над кнопками один раз, не «Невірний пароль», фокус у полі, буфер обміну без змін' {
         Send-Keys 'Ctrl+A'
         Send-Text $Data.Password
+        # Send-Text pastes through the clipboard: put the sentinel back for the check below.
+        Set-ClipText $Data.Sentinel
+        Lock-TestDatabase 'read'
+        try {
+            Send-Keys 'Enter'
+            Wait-Until 'повідомлення над кнопками' { Find-TextLike "$($UI.CopyFailedStart)*" } 12
+        } finally { Unlock-TestDatabase }
+        $script:StepInfo = "повідомлення: $((Find-TextLike "$($UI.CopyFailedStart)*").Current.Name)"
+        if (-not (Test-HasFocus (Find-Element (Get-AppWindow) -Id 'pwd-input'))) { throw 'фокус пішов з поля пароля' }
+        if (Find-Element (Get-AppWindow) -Name $UI.WrongPassword) { throw 'діалог показує «Невірний пароль»' }
+        if ((Get-ClipText) -ne $Data.Sentinel) { throw 'буфер обміну змінився' }
+    } -ExpectCount @{ ($UI.CopyFailedStart) = 1; $Locked = 1 } -Forbid (@($UI.WrongPassword, $UI.Copied) + $FocusNoise)
+
+    # The password stays in the field after such a failure: Enter alone tries again.
+    Invoke-Step 'База знову вільна: Enter без повторного введення копіює розшифрований текст' {
         Send-Keys 'Enter'
         Wait-Until 'розшифрований текст у буфері обміну' { (Get-ClipText) -eq $Data.SecretText }
         Wait-Until 'вікно сховалось' { -not (Get-AppWindow) }
-    } -Hope $UI.Copied
+    } -Hope $UI.Copied -Forbid $UI.CopyFailedStart
 
     # The window opens with NVDA in the search box, so a query typed at once is read as in any
     # text field. NVDA then reads the first snippet once, as the newly selected option of the
@@ -1919,6 +1973,19 @@ try {
         Wait-Until 'фокус у полі «Вміст»' { & $hasFocus 'create-content' }
     } -Expect $UI.CreateTitle
 
+    # A save that fails for another reason than a field: the message above the buttons, focus
+    # stays in «Вміст». Up to 0.3.5 the raw text stood under «Назва» and focus jumped there.
+    Invoke-Step 'База тестової копії заблокована: Ctrl+Enter лишає діалог і фокус у полі «Вміст», NVDA один раз читає повідомлення над кнопками, сніпет не додано' {
+        Lock-TestDatabase 'write'
+        try {
+            Send-Keys 'Ctrl+Enter'
+            Wait-Until 'повідомлення над кнопками' { Find-TextLike "$($UI.SnippetSaveFailedStart)*" } 12
+        } finally { Unlock-TestDatabase }
+        $script:StepInfo = "повідомлення: $((Find-TextLike "$($UI.SnippetSaveFailedStart)*").Current.Name)"
+        if (-not (& $hasFocus 'create-content')) { throw 'фокус пішов з поля «Вміст»' }
+        if (-not (& $listIs @($Data.PlainTitle, $secretName))) { throw 'список змінився' }
+    } -Expect $UI.NothingChanged -ExpectCount @{ ($UI.SnippetSaveFailedStart) = 1; $Locked = 1 } -Forbid (@($UI.Saved, $UI.TitleLabel) + $FocusNoise)
+
     Invoke-Step 'Ctrl+Enter зберігає: «Збережено» один раз, потім NVDA одразу на вибраному сніпеті' {
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'новий сніпет у списку' { & $listIs @($Data.PlainTitle, $secretName, $Data.TempTitle) }
@@ -1933,6 +2000,18 @@ try {
         Wait-Until 'фокус на «Скасувати»' { Test-HasFocus (& $cancelButton) }
         if (-not (Find-TextLike "*$($Data.TempTitle)*")) { throw 'у діалозі немає назви сніпета' }
     } -Expect $UI.DeleteTitle, $UI.Cancel
+
+    # Up to 0.3.5 a failed delete was a toast with the raw text outside the dialog, gone in 2 s.
+    Invoke-Step 'База тестової копії заблокована: Ctrl+Enter лишає діалог і фокус на «Скасувати», NVDA один раз читає повідомлення над кнопками, сніпет лишився' {
+        Lock-TestDatabase 'write'
+        try {
+            Send-Keys 'Ctrl+Enter'
+            Wait-Until 'повідомлення над кнопками' { Find-TextLike "$($UI.DeleteFailedStart)*" } 12
+        } finally { Unlock-TestDatabase }
+        $script:StepInfo = "повідомлення: $((Find-TextLike "$($UI.DeleteFailedStart)*").Current.Name)"
+        if (-not (Test-HasFocus (& $cancelButton))) { throw 'фокус пішов з «Скасувати»' }
+        if (-not (& $listIs @($Data.PlainTitle, $secretName, $Data.TempTitle))) { throw 'список змінився' }
+    } -ExpectCount @{ ($UI.DeleteFailedStart) = 1; $Locked = 1 } -Forbid (@($UI.Deleted, $UI.Cancel) + $FocusNoise)
 
     # NVDA says the deletion once, then where focus is: the first snippet, selected now. The
     # deleted snippet is not read again, and focus does not pass through the document.
@@ -2172,6 +2251,8 @@ try {
     }
 }
 finally {
+    # The steps with a failing delete, save or decryption lock the test copy's database.
+    Unlock-TestDatabase
     # The settings steps make the test copy's settings.json read-only for a moment.
     $testSettings = Join-Path $Work 'quick-snippets-data\settings.json'
     if (Test-Path -LiteralPath $testSettings) {

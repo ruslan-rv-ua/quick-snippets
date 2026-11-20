@@ -15,6 +15,17 @@ export function asSentence(text: string): string {
   return trimmed === '' || /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
+/** `WRONG_PASSWORD` in src-tauri/src/crypto.rs: change the two together. */
+export const WRONG_PASSWORD = 'Wrong password';
+
+/**
+ * Whether an error of activate_snippet or autotype_snippet means a wrong password. Any other
+ * error (a locked database, damaged content, the clipboard) is not one, whatever its text.
+ */
+export function isWrongPassword(message: string): boolean {
+  return message === WRONG_PASSWORD;
+}
+
 /** Content over its size limit, as the backend reports it. */
 export interface ContentTooLong {
   /** Size of the text in bytes of UTF-8. */

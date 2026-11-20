@@ -5,9 +5,11 @@ import React, {
   useCallback,
 } from 'react';
 import { ModalOverlay } from './ModalOverlay';
+import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { activateSnippet, autotypeSnippet } from '../hooks/useIpc';
+import { asSentence, ipcErrorToString, isWrongPassword } from '../utils/errors';
 
 export interface PasswordModalProps {
   isOpen: boolean;
@@ -26,7 +28,7 @@ export function PasswordModal({
   onSuccess,
   action = 'copy',
 }: PasswordModalProps): React.ReactElement | null {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const pwdRef = useRef<HTMLInputElement>(null);
   // Guards against a second submit while decryption runs; a ref, so the check
   // never sees a stale `loading` value captured by an older callback.
@@ -34,6 +36,9 @@ export function PasswordModal({
 
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  // The backend's error of the last attempt when it is not a wrong password (for example a
+  // locked database): shown above the buttons, the password stays in the field.
+  const [failure, setFailure] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -41,6 +46,7 @@ export function PasswordModal({
       busyRef.current = false;
       setPassword('');
       setErrorMsg('');
+      setFailure(null);
       setLoading(false);
       setTimeout(() => pwdRef.current?.focus(), 10);
     }
@@ -48,6 +54,7 @@ export function PasswordModal({
 
   const handleSubmit = useCallback(async () => {
     if (busyRef.current) return;
+    setFailure(null);
     if (!password) {
       setErrorMsg(t('enterPassword'));
       setTimeout(() => pwdRef.current?.focus(), 10);
@@ -63,13 +70,22 @@ export function PasswordModal({
       setLoading(false);
       onSuccess();
       onClose();
-    } catch {
+    } catch (err: unknown) {
       setLoading(false);
-      setPassword('');
-      setErrorMsg(t('wrongPassword'));
-      // Focus stays in the field (it is never disabled); this only matters when the
-      // password was submitted with the button.
-      setTimeout(() => pwdRef.current?.focus(), 10);
+      const msg = ipcErrorToString(err);
+      if (isWrongPassword(msg)) {
+        setPassword('');
+        setErrorMsg(t('wrongPassword'));
+        // Focus stays in the field (it is never disabled); this only matters when the
+        // password was submitted with the button.
+        setTimeout(() => pwdRef.current?.focus(), 10);
+      } else {
+        // Not the password's fault (for example a locked database or a busy clipboard): the
+        // password stays, so Enter tries again, and the field is not marked invalid. Focus goes
+        // to the field before the message is set, so the screen reader reads the message once.
+        pwdRef.current?.focus();
+        setFailure(msg);
+      }
     } finally {
       busyRef.current = false;
     }
@@ -130,6 +146,15 @@ export function PasswordModal({
           {t('decrypting')}
         </p>
       )}
+
+      <FieldError
+        id="pwd-failure"
+        message={
+          failure === null
+            ? undefined
+            : (action === 'autotype' ? tf.snippetAutotypeFailed : tf.snippetCopyFailed)(asSentence(failure))
+        }
+      />
 
       <div className="modal-actions">
         {/* aria-disabled instead of disabled: the buttons keep focus while decrypting. */}

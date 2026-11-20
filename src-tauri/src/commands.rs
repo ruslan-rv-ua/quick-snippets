@@ -755,7 +755,80 @@ mod tests {
         let encrypted = crypto::encrypt(b"secret data", "mypass").unwrap();
         let id = db::create_snippet(&conn, "encrypted", encrypted, true).unwrap();
         let result = activate_snippet_get_content(&conn, id, "wrongpass");
-        assert!(result.is_err());
+        // Exactly this text: the password dialog says "wrong password" only for it.
+        assert_eq!(result.unwrap_err(), crypto::WRONG_PASSWORD);
+    }
+
+    #[test]
+    fn test_activate_damaged_encrypted_content_is_not_a_wrong_password() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "damaged", b"v2:not base64 at all".to_vec(), true).unwrap();
+        let err = activate_snippet_get_content(&conn, id, "mypass").unwrap_err();
+        assert_eq!(err, "Invalid data");
+        assert_ne!(err, crypto::WRONG_PASSWORD);
+    }
+
+    #[test]
+    fn test_activate_missing_snippet_is_not_a_wrong_password() {
+        let conn = setup();
+        let err = activate_snippet_get_content(&conn, 99999, "mypass").unwrap_err();
+        assert_ne!(err, crypto::WRONG_PASSWORD);
+    }
+
+    /// A database file locked by another connection, as when another program holds it: every
+    /// change and every read fails with SQLite's "database is locked". The app's connection
+    /// gives up at once here instead of after its busy timeout of 5 s.
+    fn locked_database() -> (tempfile::TempDir, Connection, Connection, i64, i64) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snippets.db");
+        let conn = db::open_and_init_db(&path).unwrap();
+        let plain = db::create_snippet(&conn, "plain", b"plain text".to_vec(), false).unwrap();
+        let secret = crypto::encrypt(b"secret data", "mypass").unwrap();
+        let encrypted = db::create_snippet(&conn, "encrypted", secret, true).unwrap();
+        conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let other = Connection::open(&path).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+        (dir, conn, other, plain, encrypted)
+    }
+
+    #[test]
+    fn test_locked_database_fails_delete_create_and_update_with_the_reason() {
+        let (_dir, conn, _other, plain, _) = locked_database();
+        assert_eq!(delete_snippet_inner(&conn, plain).unwrap_err(), "database is locked");
+        assert_eq!(
+            create_snippet_inner(&conn, "new one", "text", "").unwrap_err(),
+            "database is locked"
+        );
+        assert_eq!(
+            update_snippet_inner(&conn, plain, "renamed", "text").unwrap_err(),
+            "database is locked"
+        );
+    }
+
+    #[test]
+    fn test_locked_database_with_the_right_password_is_not_a_wrong_password() {
+        let (_dir, conn, _other, _, encrypted) = locked_database();
+        let err = activate_snippet_get_content(&conn, encrypted, "mypass").unwrap_err();
+        assert_eq!(err, "database is locked");
+        assert_ne!(err, crypto::WRONG_PASSWORD);
+    }
+
+    /// The error goes to the frontend: it never holds the password or the decrypted text.
+    #[test]
+    fn test_activate_errors_never_hold_the_password_or_the_content() {
+        let conn = setup();
+        let secret = crypto::encrypt(b"secret data", "mypass").unwrap();
+        let id = db::create_snippet(&conn, "encrypted", secret, true).unwrap();
+        let damaged = db::create_snippet(&conn, "damaged", b"v2:@@@".to_vec(), true).unwrap();
+        let errors = [
+            activate_snippet_get_content(&conn, id, "wrong mypass").unwrap_err(),
+            activate_snippet_get_content(&conn, damaged, "mypass").unwrap_err(),
+            activate_snippet_get_content(&conn, 99999, "mypass").unwrap_err(),
+        ];
+        for err in errors {
+            assert!(!err.contains("mypass"), "{err}");
+            assert!(!err.contains("secret data"), "{err}");
+        }
     }
 
     // === activate_snippet: snippets in the legacy encryption format (0.1.0 to 0.2.1) ===

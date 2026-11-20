@@ -333,7 +333,6 @@ function AppInner(): React.ReactElement {
           addToast(t('deleteSuccess'), 'success');
           return reload();
         }}
-        onError={(err) => addToast(err, 'error')}
       />
 
       {passwordSnippet && (
