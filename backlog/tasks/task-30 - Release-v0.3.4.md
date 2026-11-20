@@ -4,7 +4,7 @@ title: Release v0.3.4
 status: To Do
 assignee: []
 created_date: '2026-11-19T16:42:00Z'
-updated_date: '2026-11-19T19:06:00Z'
+updated_date: '2026-11-20T01:27:00Z'
 labels:
   - release
   - model-sonnet
@@ -15,6 +15,7 @@ dependencies:
   - TASK-28
   - TASK-29
   - TASK-31
+  - TASK-35
 references:
   - DEVELOPMENT.md
   - CHANGELOG.md
