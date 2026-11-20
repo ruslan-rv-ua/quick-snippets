@@ -1,11 +1,11 @@
 ---
 id: TASK-37
 title: Quote the exe path in the autostart entry
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:27:00Z'
-updated_date: '2026-11-20T16:30:00Z'
+updated_date: '2026-11-20T16:31:00Z'
 labels:
   - bug backend security model-sonnet effort-medium
 milestone: m-2
@@ -30,18 +30,18 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With Start with Windows on, the autostart entry holds the exe path in quotes, and that command line starts the right exe from a folder whose path has spaces (checked with a test copy)
-- [ ] #2 Turning the setting off still removes both values, and the registry still changes only when the setting itself changes
-- [ ] #3 Unit tests cover the written entry without touching the real registry; just smoke checks the quoted entry in its autostart steps
+- [x] #1 With Start with Windows on, the autostart entry holds the exe path in quotes, and that command line starts the right exe from a folder whose path has spaces (checked with a test copy)
+- [x] #2 Turning the setting off still removes both values, and the registry still changes only when the setting itself changes
+- [x] #3 Unit tests cover the written entry without touching the real registry; just smoke checks the quoted entry in its autostart steps
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 `npm run test:all` passes
-- [ ] #2 `npm run lint` passes
-- [ ] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
-- [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
-- [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
+- [x] #1 `npm run test:all` passes
+- [x] #2 `npm run lint` passes
+- [x] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
+- [x] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
+- [x] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -105,4 +105,22 @@ Definition of Done #4: the task adds no strings (src/i18n/translations.ts unchan
 
 1. The first smoke run failed at step 17 (Ctrl+A and Delete did not reach the script's test window). Not seen before; the second run passed. Possibly a one-off (a notification arrived in the same run).
 2. A Windows notification was read by NVDA in each run (steps 8 and 6), although the user was advised to turn on Do Not Disturb.
+
+## After the merge into develop (merge commit 245b6f9)
+
+- The tree of 245b6f9 is the same as that of the tested branch tip f5e20c9 (the build 3c8ab57 differs from it only in the Backlog notes).
+- `npm run test:all` (513 frontend tests, 321 Rust tests, 1 ignored) and `npm run lint` pass on develop.
+- The merge commit has git flow's default message, as the earlier feature merges (07280ec). Nothing pushed; develop is 5 commits ahead of origin/develop.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Tauri's autostart plugin (tauri-plugin-autostart 2.5.1 / auto-launch 0.5.0) wrote the autostart entry as the exe path and a space, without quotes. With a space in the path, Windows reads such a command line by trying shorter names first (C:\Portable.exe for C:\Portable Apps\...) and would start a program found there. No released version of the plugin quotes the path.
+
+By the user's choice (question dialog, all recommended options): the app now writes both values itself, the Run entry as the exe path in quotes and nothing after it (REG_SZ) and Task Manager's "enabled" mark (only where its key exists), and the plugin is removed (six crates fewer, exe 5.6 KB smaller). A write Windows refuses, of the entry or the mark, is a failed turn-on: the entry just written is removed again, the setting stays off and the existing message says so (no new strings). An unquoted entry left by 0.3.4 or older is not rewritten (the registry changes only when the setting changes); turning the setting off and on once rewrites it, as the CHANGELOG says. Turning off still removes both values.
+
+Verified: npm run test:all (513 frontend, 321 Rust) and npm run lint on the branch and on develop; in-memory registry tests check the exact string written, and a mutation to the plugin's format fails them; just smoke on the release build 3c8ab57 with the user's permission: the first run stopped at step 17 (keys did not reach the script's test window, unrelated), the second passed 86 of 86 steps and 322 of 322 NVDA checks, with step 39 finding the quoted entry of the test copy in a folder with a space and Windows taking the test copy from it, not the test.exe placed one folder up; the user's autostart values were the same before and after both runs (entry absent, old mark 02 00 00 00 00 00 00 00 00 00 00 00); build copied to real_db as quick-snippets-TASK-37-3c8ab57.exe.
+
+Follow-ups for review: a real sign-in with the quoted entry was not tried (the check uses CreateProcess's reading of the command line); the one-off step 17 failure of the first smoke run; NVDA read a Windows notification in both runs.
+<!-- SECTION:FINAL_SUMMARY:END -->
