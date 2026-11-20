@@ -37,6 +37,9 @@
       runs with the variable QUICK_SNIPPETS_TEST_AUTOSTART_ERROR: it then pretends that
       Windows refused to turn autostart on and leaves the registry alone, so that the test
       can check what NVDA says after such a failure without breaking anything.
+    - To check what NVDA says when the settings cannot be saved, the test makes the settings.json
+      of its own copy read-only for two steps, and writable again afterwards (also when a step
+      fails). Your own settings file is never touched.
 
     Do not touch the keyboard or mouse while it runs (about two and a half minutes).
     Leave a minute or more between two runs (see DEVELOPMENT.md).
@@ -130,6 +133,10 @@ $UI = @{
     AutostartOnFailed = 'Не вдалося ввімкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. Інші налаштування збережено.'
     AutostartOnFailedStart = 'Не вдалося ввімкнути'
     OthersSaved       = 'Інші налаштування збережено'
+    # Above Cancel and Save when settings.json cannot be written (settingsSaveFailed): its start and
+    # its end; the reason between them is the error of Windows, in the language of Windows.
+    SaveFailedStart   = 'Не вдалося зберегти налаштування'
+    NothingChanged    = 'Нічого не змінено'
     StartInTray       = 'Запускати згорнутим у трей'
     StartInTrayHint   = 'Діє з наступного запуску. Вікно відкривається клавішами Ctrl+Alt+Space'
     ConfirmOnClose    = 'Питати перед закриттям програми'
@@ -2113,6 +2120,40 @@ try {
         & $assertRegistryAsBefore
     } -Forbid (@($UI.AutostartOnFailedStart) + $FocusNoise)
 
+    # The settings file cannot be written (here: read-only; also a full disk, or a file another
+    # program holds). Nothing is saved; the dialog stays open with the change in it, focus stays,
+    # and NVDA reads the message above the buttons once, with the reason Windows gives. Rust ends
+    # that reason with "(os error N)": said once, so the error is not also read from somewhere
+    # else (up to 0.3.4 it was a toast outside the dialog, with only that reason).
+    $settingsBytes = { [IO.File]::ReadAllBytes($settingsFile) }
+    $saveFailedMessage = { Find-TextLike "$($UI.SaveFailedStart)*" }
+    $assertSettingsAsBefore = {
+        $now = & $settingsBytes
+        if ([Convert]::ToBase64String($now) -ne [Convert]::ToBase64String($script:SettingsBeforeFailure)) { throw 'settings.json змінився' }
+    }
+
+    Invoke-Step 'settings.json лише для читання: Ctrl+, і стрілка вниз показують світлу тему, Ctrl+Enter лишає діалог і фокус у списку «Тема», NVDA один раз читає повідомлення, файл не змінено' {
+        $script:SettingsBeforeFailure = & $settingsBytes
+        Send-Keys 'Ctrl+Comma'
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        # Down in the theme list shows the light theme at once.
+        Send-Keys 'Down'
+        Set-ItemProperty -LiteralPath $settingsFile -Name IsReadOnly -Value $true
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'повідомлення над кнопками' { & $saveFailedMessage }
+        if (-not (& $hasFocus 'settings-theme')) { throw 'фокус пішов зі списку «Тема»' }
+        $script:StepInfo = "повідомлення: $((& $saveFailedMessage).Current.Name)"
+        & $assertSettingsAsBefore
+    } -Expect $UI.NothingChanged -ExpectCount @{ ($UI.SaveFailedStart) = 1; 'os error' = 1 } -Forbid $FocusNoise
+
+    Invoke-Step 'Escape закриває налаштування: тема знову темна, файл не змінено; settings.json знову записується' {
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито, фокус у головному вікні' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
+        & $assertSettingsAsBefore
+        & $assertSaved 'dark' 'uk'
+        Set-ItemProperty -LiteralPath $settingsFile -Name IsReadOnly -Value $false
+    } -Forbid (@($UI.SaveFailedStart, 'os error') + $FocusNoise)
+
     # The embedded browser keeps its data next to the exe, outside the user's data folder.
     # Up to 0.3.3 every copy kept it in AppData, shared with all other copies.
     Invoke-Step 'Дані браузера лише в quick-snippets-webview поруч із тестовою копією; %LOCALAPPDATA%\com.quicksnippets.app не змінено' {
@@ -2129,6 +2170,11 @@ try {
     }
 }
 finally {
+    # The settings steps make the test copy's settings.json read-only for a moment.
+    $testSettings = Join-Path $Work 'quick-snippets-data\settings.json'
+    if (Test-Path -LiteralPath $testSettings) {
+        try { Set-ItemProperty -LiteralPath $testSettings -Name IsReadOnly -Value $false } catch { }
+    }
     Stop-Target
     if ($script:AppProc -and -not $script:AppProc.HasExited) {
         Stop-Process -Id $script:AppProc.Id -Force -ErrorAction SilentlyContinue
