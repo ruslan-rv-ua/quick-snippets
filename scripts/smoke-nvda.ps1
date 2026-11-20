@@ -23,7 +23,11 @@
     - Only the part of nvda.log written during this run is read.
     - While the app is hidden, focus stays in a small test window owned by this
       script, so NVDA does not describe your other programs into the report.
-    - The autostart check is skipped if your own autostart entry exists.
+    - Autostart: every copy of QuickSnippets uses the same name, QuickSnippets, for its
+      autostart entry and for the on/off mark Task Manager keeps for it. Both values are
+      recorded before the run and put back exactly afterwards, and the report shows them.
+      The autostart steps are skipped if your own autostart entry exists; the test copy
+      must then leave both values as they are.
 
     Do not touch the keyboard or mouse while it runs (about two and a half minutes).
     Leave a minute or more between two runs (see DEVELOPMENT.md).
@@ -219,6 +223,10 @@ $Data = @{
 }
 
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+# Task Manager's on/off mark for each autostart entry, under the same name (REG_BINARY).
+$MarkKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+# The mark that turning autostart on writes: "enabled".
+$MarkEnabled = '02 00 00 00 00 00 00 00 00 00 00 00'
 $TargetTitle = 'QuickSnippets smoke target'
 $ReportPath = Join-Path $env:TEMP 'quick-snippets-smoke-report.txt'
 
@@ -582,6 +590,52 @@ function Get-RunValue {
     return (Get-ItemProperty -Path $RunKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue).QuickSnippets
 }
 
+function Get-AutostartMark {
+    return (Get-ItemProperty -Path $MarkKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue).QuickSnippets
+}
+
+function Format-Bytes([byte[]]$Bytes) {
+    if ($null -eq $Bytes) { return '' }
+    return (@($Bytes) | ForEach-Object { $_.ToString('X2') }) -join ' '
+}
+
+# Every copy of QuickSnippets writes its autostart entry and Task Manager's mark under the same
+# name, QuickSnippets, so the test copy writes and removes the values of your own copy. Both are
+# recorded before the run and put back exactly afterwards: the same kind and data, or no value.
+function Get-AutostartValue([string]$Key) {
+    $k = Get-Item -LiteralPath $Key -ErrorAction SilentlyContinue
+    if ($null -eq $k -or @($k.GetValueNames()) -notcontains 'QuickSnippets') { return $null }
+    $kind = $k.GetValueKind('QuickSnippets')
+    $data = $k.GetValue('QuickSnippets', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $text = if ($data -is [byte[]]) { Format-Bytes $data } else { "«$data»" }
+    return [pscustomobject]@{ Kind = $kind; Data = $data; Text = "$kind $text" }
+}
+
+function Get-AutostartState {
+    $entry = Get-AutostartValue $RunKey
+    $mark = Get-AutostartValue $MarkKey
+    $entryText = if ($entry) { $entry.Text } else { 'немає' }
+    $markText = if ($mark) { $mark.Text } else { 'немає' }
+    return [pscustomobject]@{
+        Entry = $entry
+        Mark  = $mark
+        Text  = "запис автозапуску: $entryText; позначка Диспетчера завдань: $markText"
+    }
+}
+
+function Restore-AutostartValue([string]$Key, $Value) {
+    if ($null -eq $Value) {
+        Remove-ItemProperty -LiteralPath $Key -Name 'QuickSnippets' -ErrorAction SilentlyContinue
+    } else {
+        $null = New-ItemProperty -LiteralPath $Key -Name 'QuickSnippets' -PropertyType "$($Value.Kind)" -Value $Value.Data -Force
+    }
+}
+
+function Restore-AutostartState($State) {
+    Restore-AutostartValue $RunKey $State.Entry
+    Restore-AutostartValue $MarkKey $State.Mark
+}
+
 # The folder where QuickSnippets 0.3.3 and older keep the data of their embedded browser,
 # shared by every copy on the computer. A newer copy must neither create nor change it.
 # Only whether it exists, how many files and folders it holds and when the newest of them
@@ -916,6 +970,9 @@ Start-Sleep -Seconds 4
 # Closed before the test and not started again: the test runs only its own copy.
 $UserApps = @(Get-Process quick-snippets -ErrorAction SilentlyContinue)
 $UserRunValue = Get-RunValue
+$AutostartBefore = Get-AutostartState
+$AutostartAtEnd = $null
+$AutostartAfter = $null
 $ClipBackup = $null
 $ClipHadText = $true
 if ($IsSta) { $ClipHadText = [System.Windows.Forms.Clipboard]::ContainsText() }
@@ -1386,7 +1443,7 @@ try {
         return "$state, клавіатура в процесі $(Get-ForegroundProcessName)"
     }
 
-    Invoke-Step 'Автозапуск вмикається в налаштуваннях' {
+    Invoke-Step 'Автозапуск вмикається в налаштуваннях: запис і позначка «увімкнено» для Диспетчера завдань' {
         Show-App
         Send-Keys 'Ctrl+Comma'
         $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-autostart' }
@@ -1400,13 +1457,36 @@ try {
         } catch {
             throw "$($_.Exception.Message) ($(& $whereThingsAre))"
         }
+        # Task Manager lists the entry as enabled.
+        $null = Wait-Until 'позначка «увімкнено» для Диспетчера завдань' { (Format-Bytes (Get-AutostartMark)) -eq $MarkEnabled } 3
         # What the next start reads: the new value, and the other settings unchanged.
         $null = Wait-Until 'автозапуск у settings.json' { (& $readSettings).autostart -eq $true } 3
         & $assertSaved 'dark' 'uk'
         if ((& $readSettings).autotype_delay_ms -ne 7) { throw 'збереження змінило затримку автодруку' }
     } -Expect $UI.Settings -SkipReason $autostartSkip
 
-    Invoke-Step 'Автозапуск вимикається' {
+    # Saving another setting must leave both values alone, also a mark that Task Manager set to
+    # "Disabled". Up to 0.3.3 every save turned autostart on or off again: it overwrote that mark
+    # with "enabled", and a copy with autostart off removed the entry of another copy.
+    Invoke-Step 'Зміна теми не чіпає автозапуск: позначка «вимкнено» з Диспетчера завдань лишається' {
+        Wait-Until 'налаштування закрито, фокус у головному вікні' { -not (Find-Element (Get-AppWindow) -Id 'settings-theme') -and (Test-AppReady) }
+        # What Task Manager writes for "Disabled": 03 00 00 00 and the time it was set.
+        $disabled = [byte[]](@(3, 0, 0, 0) + [BitConverter]::GetBytes([DateTime]::UtcNow.ToFileTimeUtc()))
+        Set-ItemProperty -LiteralPath $MarkKey -Name 'QuickSnippets' -Value $disabled -Type Binary
+        $entry = Get-RunValue
+        Send-Keys 'Ctrl+Shift+T'
+        $null = Wait-Until 'світла тема в settings.json' { (& $readSettings).theme -eq 'light' }
+        Send-Keys 'Ctrl+Shift+T'
+        $null = Wait-Until 'темна тема в settings.json' { (& $readSettings).theme -eq 'dark' }
+        # The app writes settings.json first and the registry after it.
+        Start-Sleep -Milliseconds 500
+        if ((& $readSettings).autostart -ne $true) { throw 'зміна теми вимкнула автозапуск у settings.json' }
+        if ((Get-RunValue) -ne $entry) { throw 'зміна теми змінила запис автозапуску' }
+        $mark = Format-Bytes (Get-AutostartMark)
+        if ($mark -ne (Format-Bytes $disabled)) { throw "зміна теми переписала позначку Диспетчера завдань: $mark" }
+    } -SkipReason $autostartSkip
+
+    Invoke-Step 'Автозапуск вимикається: запис і позначка Диспетчера завдань зникають' {
         Send-Keys 'Ctrl+Alt+Space'
         $null = Wait-Until 'вікно програми' { Get-AppWindow }
         Send-Keys 'Ctrl+Comma'
@@ -1414,6 +1494,7 @@ try {
         Set-Toggle $box $false
         Send-Keys 'Ctrl+Enter'
         Wait-Until 'запис автозапуску зник' { -not (Get-RunValue) }
+        Wait-Until 'позначка Диспетчера завдань зникла' { -not (Get-AutostartMark) } 3
         $null = Wait-Until 'автозапуск вимкнено в settings.json' { (& $readSettings).autostart -eq $false } 3
     } -SkipReason $autostartSkip
 
@@ -1903,10 +1984,11 @@ finally {
         Stop-Process -Id $script:AppProc.Id -Force -ErrorAction SilentlyContinue
         $null = $script:AppProc.WaitForExit(5000)
     }
-    $v = Get-RunValue
-    if ($v -and $v.IndexOf($TestExe, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
-        Remove-ItemProperty -Path $RunKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue
-    }
+    # Your autostart values exactly as they were before the run (see Get-AutostartValue).
+    $AutostartAtEnd = Get-AutostartState
+    try { Restore-AutostartState $AutostartBefore }
+    catch { $Notes.Add("не вдалося відновити значення автозапуску: $($_.Exception.Message)") }
+    $AutostartAfter = Get-AutostartState
     if ($null -ne $ClipBackup) { Set-ClipText $ClipBackup }
     elseif ($IsSta) { [System.Windows.Forms.Clipboard]::Clear() }
     for ($i = 0; $i -lt 10 -and (Test-Path $Work); $i++) {
@@ -1921,6 +2003,19 @@ $lines.Add(('Exe: {0}, зібрано {1:dd.MM.yyyy HH:mm}' -f $Exe, $exeTime))
 if ($StartInTray) { $lines.Add("Режим: запуск у треї, перед першим Ctrl+Alt+Space програма $TrayIdleSec с лишається схованою") }
 if ($script:LogPath) { $lines.Add("Лог NVDA: $script:LogPath") } else { $lines.Add('NVDA: мовлення не перевірялось') }
 if ($script:SetupError) { $lines.Add("Підготовка: ПОМИЛКА ($script:SetupError)") }
+# The autostart values before the run, as the test copy left them, and after restoring them.
+$autostartRestored = $AutostartAfter -and $AutostartAfter.Text -eq $AutostartBefore.Text
+# With the autostart steps skipped the test copy never changed the setting, so it must not
+# have touched your values at all.
+$autostartUntouched = (-not $autostartSkip) -or ($AutostartAtEnd -and $AutostartAtEnd.Text -eq $AutostartBefore.Text)
+$lines.Add("Автозапуск у реєстрі до тесту: $($AutostartBefore.Text)")
+if ($AutostartAtEnd) { $lines.Add("Наприкінці тесту: $($AutostartAtEnd.Text)") }
+if ($autostartRestored) { $lines.Add('Після тесту відновлено як до тесту.') }
+else {
+    $afterText = if ($AutostartAfter) { $AutostartAfter.Text } else { 'не прочитано' }
+    $lines.Add("ПОМИЛКА: після тесту значення автозапуску не такі, як до тесту ($afterText).")
+}
+if (-not $autostartUntouched) { $lines.Add('ПОМИЛКА: тестова копія змінила ваші значення автозапуску, хоча автозапуск не вмикала й не вимикала.') }
 foreach ($note in $Notes) { $lines.Add("Увага: $note") }
 $lines.Add('')
 
@@ -1980,4 +2075,4 @@ $lines | ForEach-Object { Write-Host $_ }
 Write-Host "Звіт збережено: $ReportPath"
 Write-Host 'Готово.'
 
-if ($script:SetupError -or $appFail -gt 0 -or $nvdaOk -ne $nvdaAll) { exit 1 } else { exit 0 }
+if ($script:SetupError -or $appFail -gt 0 -or $nvdaOk -ne $nvdaAll -or -not $autostartRestored -or -not $autostartUntouched) { exit 1 } else { exit 0 }
