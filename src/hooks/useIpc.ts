@@ -3,7 +3,7 @@
  * One function per Rust `#[tauri::command]`, all returning Promise.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { SearchResult, SnippetView, Settings } from '../types';
+import type { SearchResult, SnippetView, Settings, SaveSettingsOutcome } from '../types';
 
 // ── Snippets ──────────────────────────────────────────────────────────────
 
@@ -81,8 +81,12 @@ export function getSystemLanguage(): Promise<string> {
   return invoke<string>('get_system_language');
 }
 
-export function saveSettings(settings: Settings): Promise<void> {
-  return invoke<void>('save_settings', { settings });
+/**
+ * Saves the settings. The result says when Windows refused to turn "Start with Windows" on
+ * or off: that setting then keeps its previous value, everything else is saved.
+ */
+export function saveSettings(settings: Settings): Promise<SaveSettingsOutcome> {
+  return invoke<SaveSettingsOutcome>('save_settings', { settings });
 }
 
 // Read-modify-write updates run one after another, so two quick updates
@@ -93,11 +97,12 @@ let settingsUpdateQueue: Promise<unknown> = Promise.resolve();
 /**
  * Changes only the given fields of the saved settings and keeps the rest.
  * Updates are serialised; a failed update does not block later ones.
+ * The result is that of `saveSettings`.
  */
-export function updateSettings(patch: Partial<Settings>): Promise<void> {
+export function updateSettings(patch: Partial<Settings>): Promise<SaveSettingsOutcome> {
   const run = settingsUpdateQueue.then(async () => {
     const current = await getSettings();
-    await saveSettings({ ...current, ...patch });
+    return saveSettings({ ...current, ...patch });
   });
   settingsUpdateQueue = run.catch(() => undefined);
   return run;

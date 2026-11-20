@@ -96,6 +96,12 @@ export interface TranslationMap {
   startInTrayHint: string;
   confirmOnCloseHint: string;
   autotypeDelayHint: string;
+  /**
+   * Said under "Start with Windows" when Windows refused to turn it on or off. The setting
+   * then keeps its previous value, and the other settings of the dialog are saved.
+   */
+  autostartTurnOnFailed: string;
+  autostartTurnOffFailed: string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
@@ -205,6 +211,10 @@ const en: TranslationMap = {
   startInTrayHint: 'Takes effect at the next start. Open the window with Ctrl+Alt+Space.',
   confirmOnCloseHint: "Applies to Alt+F4 and the window's close button.",
   autotypeDelayHint: '0 is the fastest. If characters go missing, try 10–50.',
+  autostartTurnOnFailed:
+    'Could not turn on "Start with Windows": the change was blocked, for example by a policy or security software. The other settings are saved.',
+  autostartTurnOffFailed:
+    'Could not turn off "Start with Windows": the change was blocked, for example by a policy or security software. QuickSnippets will still start with Windows. The other settings are saved.',
   darkTheme: 'Dark',
   lightTheme: 'Light',
   autoLanguage: 'Same as Windows',
@@ -350,6 +360,10 @@ const uk: TranslationMap = {
   startInTrayHint: 'Діє з наступного запуску. Вікно відкривається клавішами Ctrl+Alt+Space.',
   confirmOnCloseHint: 'Стосується Alt+F4 і кнопки закриття вікна.',
   autotypeDelayHint: '0 — найшвидше. Якщо символи губляться, спробуйте 10–50.',
+  autostartTurnOnFailed:
+    'Не вдалося ввімкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. Інші налаштування збережено.',
+  autostartTurnOffFailed:
+    'Не вдалося вимкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. QuickSnippets і далі запускатиметься разом з Windows. Інші налаштування збережено.',
   darkTheme: 'Темна',
   lightTheme: 'Світла',
   autoLanguage: 'Як у Windows',
@@ -490,6 +504,10 @@ const de: TranslationMap = {
   startInTrayHint: 'Gilt ab dem nächsten Start. Das Fenster öffnet sich mit Strg+Alt+Space.',
   confirmOnCloseHint: 'Gilt für Alt+F4 und die Schließen-Schaltfläche des Fensters.',
   autotypeDelayHint: '0 ist am schnellsten. Wenn Zeichen fehlen, 10–50 versuchen.',
+  autostartTurnOnFailed:
+    '„Mit Windows starten“ ließ sich nicht einschalten: Die Änderung wurde blockiert, zum Beispiel durch eine Richtlinie oder Sicherheitssoftware. Die anderen Einstellungen sind gespeichert.',
+  autostartTurnOffFailed:
+    '„Mit Windows starten“ ließ sich nicht ausschalten: Die Änderung wurde blockiert, zum Beispiel durch eine Richtlinie oder Sicherheitssoftware. QuickSnippets startet weiterhin mit Windows. Die anderen Einstellungen sind gespeichert.',
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
   autoLanguage: 'Wie in Windows',

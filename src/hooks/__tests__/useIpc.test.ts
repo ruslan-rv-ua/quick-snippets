@@ -367,12 +367,14 @@ describe('saveSettings', () => {
     expect(mockInvoke).toHaveBeenCalledWith('save_settings', { settings });
   });
 
-  it('resolves with undefined on success', async () => {
-    mockInvoke.mockResolvedValueOnce(undefined);
+  it('resolves with what the backend could not do', async () => {
+    mockInvoke.mockResolvedValueOnce({ autostart_error: null });
+    expect(await saveSettings(makeSettings())).toEqual({ autostart_error: null });
 
-    const result = await saveSettings(makeSettings());
-
-    expect(result).toBeUndefined();
+    mockInvoke.mockResolvedValueOnce({ autostart_error: 'cannot_turn_on' });
+    expect(await saveSettings(makeSettings({ autostart: true }))).toEqual({
+      autostart_error: 'cannot_turn_on',
+    });
   });
 
   it('propagates errors on save failure', async () => {
@@ -564,6 +566,18 @@ describe('updateSettings', () => {
       theme: 'light',
       sort_mode: 'last_used',
       sort_direction: 'desc',
+    });
+  });
+
+  it('passes on what save_settings reports', async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_settings') return makeSettings();
+      if (cmd === 'save_settings') return { autostart_error: 'cannot_turn_off' };
+      return undefined;
+    });
+
+    await expect(updateSettings({ autostart: false })).resolves.toEqual({
+      autostart_error: 'cannot_turn_off',
     });
   });
 

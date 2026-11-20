@@ -27,7 +27,10 @@
       autostart entry and for the on/off mark Task Manager keeps for it. Both values are
       recorded before the run and put back exactly afterwards, and the report shows them.
       The autostart steps are skipped if your own autostart entry exists; the test copy
-      must then leave both values as they are.
+      must then leave both values as they are. After the restart near the end the test copy
+      runs with the variable QUICK_SNIPPETS_TEST_AUTOSTART_ERROR: it then pretends that
+      Windows refused to turn autostart on and leaves the registry alone, so that the test
+      can check what NVDA says after such a failure without breaking anything.
 
     Do not touch the keyboard or mouse while it runs (about two and a half minutes).
     Leave a minute or more between two runs (see DEVELOPMENT.md).
@@ -116,6 +119,11 @@ $UI = @{
     German            = 'Deutsch'
     Autostart         = 'Запускати разом з Windows'
     AutostartHint     = 'Діє з наступного входу в Windows'
+    # Under «Запускати разом з Windows» when Windows refuses to turn it on (autostartTurnOnFailed);
+    # its start and its last sentence for the speech checks, in case NVDA says them apart.
+    AutostartOnFailed = 'Не вдалося ввімкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. Інші налаштування збережено.'
+    AutostartOnFailedStart = 'Не вдалося ввімкнути'
+    OthersSaved       = 'Інші налаштування збережено'
     StartInTray       = 'Запускати згорнутим у трей'
     StartInTrayHint   = 'Діє з наступного запуску. Вікно відкривається клавішами Ctrl+Alt+Space'
     ConfirmOnClose    = 'Питати перед закриттям програми'
@@ -227,6 +235,10 @@ $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $MarkKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
 # The mark that turning autostart on writes: "enabled".
 $MarkEnabled = '02 00 00 00 00 00 00 00 00 00 00 00'
+# With this variable set, the app pretends that Windows refused every change of «Запускати разом з
+# Windows» and leaves the registry alone (TEST_REFUSAL_VAR in src-tauri/src/autostart.rs). Only the
+# restart near the end uses it (Start-RefusingCopy).
+$TestRefusalVar = 'QUICK_SNIPPETS_TEST_AUTOSTART_ERROR'
 $TargetTitle = 'QuickSnippets smoke target'
 $ReportPath = Join-Path $env:TEMP 'quick-snippets-smoke-report.txt'
 
@@ -588,6 +600,14 @@ function Set-Toggle($Element, [bool]$On) {
 
 function Get-RunValue {
     return (Get-ItemProperty -Path $RunKey -Name 'QuickSnippets' -ErrorAction SilentlyContinue).QuickSnippets
+}
+
+# Starts the test copy with $TestRefusalVar in its environment, and only in its own: the variable
+# is removed from this script's process right after the start.
+function Start-RefusingCopy {
+    [Environment]::SetEnvironmentVariable($TestRefusalVar, '1', 'Process')
+    try { return Start-Process $TestExe -PassThru }
+    finally { [Environment]::SetEnvironmentVariable($TestRefusalVar, $null, 'Process') }
 }
 
 function Get-AutostartMark {
@@ -1031,6 +1051,8 @@ try {
         $script:Aborted = $true
         $script:SetupError = "не вдалося відкрити тестове вікно: $($_.Exception.Message)"
     }
+    # Until the restart the test copy changes the real autostart values, as a user's copy does.
+    [Environment]::SetEnvironmentVariable($TestRefusalVar, $null, 'Process')
     $script:AppProc = Start-Process $TestExe -PassThru
 
     $hotkeyShowsWindow = {
@@ -1915,12 +1937,13 @@ try {
         Start-Sleep -Milliseconds 1500  # let NVDA finish with the windows it passed on the way
     } -Expect $UI.ExitTitle
 
-    # The same exe and data folder: what a user gets after quitting and starting again.
+    # The same exe and data folder: what a user gets after quitting and starting again. From here
+    # on the copy runs with $TestRefusalVar, for the steps where Windows refuses autostart.
     if ($StartInTray) {
         Invoke-Step 'Перезапуск тестової копії в треї: вікно не показується ні на мить' {
             try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
             if (-not [bool](& $readSettings).start_in_tray) { throw 'перед перезапуском «Запускати згорнутим у трей» вимкнено в settings.json' }
-            $script:AppProc = Start-Process $TestExe -PassThru
+            $script:AppProc = Start-RefusingCopy
             Wait-HiddenStart
         } -ForbidSaid 'QuickSnippets'
 
@@ -1939,7 +1962,7 @@ try {
         # window, the search box and that snippet, each once.
         Invoke-Step 'Перезапуск тестової копії: NVDA читає вікно, поле пошуку й перший сніпет; світла тема, видалений сніпет не повернувся' {
             try { $null = Wait-Until 'Ctrl+Alt+Space вільна' { [QsSmokeNative]::HotkeyFree() } 10 } catch { }
-            $script:AppProc = Start-Process $TestExe -PassThru
+            $script:AppProc = Start-RefusingCopy
             $script:ShownAfterMs = $null
             $byItself = Wait-ShownQuietly
             $null = Wait-Until 'вікно програми після перезапуску' { Get-AppWindow } 20
@@ -1962,6 +1985,67 @@ try {
         Wait-Until 'діалог закрито' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
         & $assertSaved 'light' 'uk'
     } -Expect $UI.Settings, $UI.Theme, $UI.Light -Forbid (@($UI.Dark) + $FocusNoise)
+
+    # Windows refuses «Запускати разом з Windows»: since the restart the test copy runs with
+    # $TestRefusalVar, so it fails as when a policy or security software blocks the change, and the
+    # registry stays as it is (the real values are shared by every copy and never broken for a
+    # test). The dialog stays open, the box goes back, gets the focus, and NVDA reads the message
+    # once; the other change of the same save is kept. All from the keyboard: a toggle through UI
+    # Automation may move the keyboard inside WebView2 and make NVDA say "application".
+    $autostartState = {
+        $box = Find-Element (& $appWin) -Id 'settings-autostart'
+        $box.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState.ToString()
+    }
+    $refusedMessage = { Find-Element (& $appWin) -Name $UI.AutostartOnFailed }
+    $assertRegistryAsBefore = {
+        if ((Get-AutostartState).Text -ne $script:AutostartBeforeRefusal) { throw 'тестова копія змінила значення автозапуску в реєстрі' }
+    }
+
+    Invoke-Step 'Налаштування: темна тема, пробіл позначає «Запускати разом з Windows», Shift+Tab до «Зберегти»' {
+        $script:AutostartBeforeRefusal = (Get-AutostartState).Text
+        Send-Keys 'Ctrl+Comma'
+        Wait-Until 'фокус у списку «Тема»' { & $hasFocus 'settings-theme' }
+        # Up in the theme list shows the dark theme at once.
+        Send-Keys 'Up'
+        & $tabTo 'settings-lang' $UI.Language
+        & $tabTo 'settings-autostart' $UI.Autostart
+        Send-Keys 'Space'
+        Wait-Until 'прапорець позначено' { (& $autostartState) -eq 'On' }
+        # Back to the theme list, and from the first control round to the last button.
+        Send-Keys 'Shift+Tab', 'Shift+Tab', 'Shift+Tab'
+        Wait-Until 'фокус на «Зберегти»' { & $hasFocus 'settings-save' }
+    } -Expect $UI.Dark, $UI.Autostart, $UI.Save -ExpectAny $Role.Button
+
+    Invoke-Step 'Windows не дозволяє ввімкнути автозапуск: Enter на «Зберегти» лишає діалог, фокус на знятому прапорці, NVDA один раз читає повідомлення' {
+        Send-Keys 'Enter'
+        Wait-Until 'повідомлення під прапорцем' { & $refusedMessage }
+        Wait-Until 'фокус на «Запускати разом з Windows»' { & $hasFocus 'settings-autostart' }
+        if ((& $autostartState) -ne 'Off') { throw 'прапорець «Запускати разом з Windows» лишився позначеним' }
+        # Saved: the dark theme, and autostart off, as Windows has it.
+        $null = Wait-Until 'темна тема в settings.json' { (& $readSettings).theme -eq 'dark' } 3
+        if ((& $readSettings).autostart -ne $false) { throw 'автозапуск увімкнено в settings.json' }
+        & $assertRegistryAsBefore
+    } -Expect $UI.Autostart, $UI.OthersSaved -ExpectAny $Role.CheckBox, $Role.NotChecked -ExpectCount @{ ($UI.AutostartOnFailedStart) = 1 } -Forbid $FocusNoise
+
+    # The message is emptied at every save, so the same message is read again.
+    Invoke-Step 'Ще раз: пробіл і Ctrl+Enter на прапорці, NVDA знову один раз читає повідомлення' {
+        Send-Keys 'Space'
+        Wait-Until 'прапорець позначено' { (& $autostartState) -eq 'On' }
+        Send-Keys 'Ctrl+Enter'
+        Wait-Until 'прапорець знову знято' { (& $autostartState) -eq 'Off' }
+        Wait-Until 'повідомлення під прапорцем' { & $refusedMessage }
+        if (-not (& $hasFocus 'settings-autostart')) { throw 'фокус пішов з прапорця «Запускати разом з Windows»' }
+        if ((& $readSettings).autostart -ne $false) { throw 'автозапуск увімкнено в settings.json' }
+        & $assertRegistryAsBefore
+    } -ExpectAny $Role.NotChecked -ExpectCount @{ ($UI.AutostartOnFailedStart) = 1 } -Forbid $FocusNoise
+
+    Invoke-Step 'Escape закриває налаштування: темна тема лишається збереженою, автозапуск вимкнено, реєстр не змінено' {
+        Send-Keys 'Esc'
+        Wait-Until 'діалог закрито, фокус у головному вікні' { -not (Find-Element (& $appWin) -Id 'settings-theme') -and (Test-AppReady) }
+        & $assertSaved 'dark' 'uk'
+        if ((& $readSettings).autostart -ne $false) { throw 'автозапуск увімкнено в settings.json' }
+        & $assertRegistryAsBefore
+    } -Forbid (@($UI.AutostartOnFailedStart) + $FocusNoise)
 
     # The embedded browser keeps its data next to the exe, outside the user's data folder.
     # Up to 0.3.3 every copy kept it in AppData, shared with all other copies.

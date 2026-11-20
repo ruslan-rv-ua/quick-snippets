@@ -675,6 +675,17 @@ input[type='checkbox'] {
   color: var(--color-text-muted);
 }
 
+/* A message under a setting: a live region that stays in the page while empty (see
+   FieldError.tsx). Empty, it takes no space: the column's 1px gap is cancelled. */
+.settings-row-text .field-error {
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.settings-row-text .field-error:empty {
+  margin-top: -1px;
+}
+
 .settings-row-control {
   flex-shrink: 0;
   display: flex;
