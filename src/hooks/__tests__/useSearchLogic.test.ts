@@ -270,6 +270,38 @@ describe('useSearchLogic', () => {
       }
     });
 
+    // A list loaded again before the search runs is not its results (see SnippetList).
+    it('remembers the query each list was loaded for', async () => {
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([greeting, goodbye]);
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue([greeting]);
+      vi.useFakeTimers();
+      try {
+        const { result } = renderHook(() => useSearchLogic());
+        await act(async () => {
+          await vi.runAllTimersAsync();
+        });
+        expect(result.current.listQuery).toBe('');
+
+        act(() => result.current.setQuery('gre'));
+        let reloaded: Promise<void> = Promise.resolve();
+        act(() => {
+          reloaded = result.current.reload();
+        });
+        await act(async () => reloaded);
+        expect(useIpc.searchSnippets).not.toHaveBeenCalled();
+        expect(result.current.listQuery).toBe('');
+
+        await act(async () => {
+          await vi.runAllTimersAsync();
+        });
+        expect(useIpc.searchSnippets).toHaveBeenCalledWith('gre');
+        expect(result.current.snippets).toEqual([greeting]);
+        expect(result.current.listQuery).toBe('gre');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('resolves when loading fails, so a dialog still closes', async () => {
       const { result } = renderHook(() => useSearchLogic());
       await act(async () => {});

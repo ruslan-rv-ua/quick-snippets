@@ -90,6 +90,7 @@ function AppInner(): React.ReactElement {
     query,
     setQuery,
     snippets,
+    listQuery,
     activeIndex,
     setActiveIndex,
     listFocused,
@@ -297,6 +298,7 @@ function AppInner(): React.ReactElement {
         snippets={snippets}
         activeIndex={markedIndex}
         query={query}
+        listQuery={listQuery}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
       />

@@ -323,7 +323,7 @@ describe('App: where the screen reader is', () => {
     mockInvoke.mockReset();
     mockListen.mockReset();
     mockListen.mockResolvedValue(() => void 0);
-    mockInvoke.mockImplementation(async (cmd: string) => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
       switch (cmd) {
         case 'get_settings':
           return {
@@ -337,9 +337,12 @@ describe('App: where the screen reader is', () => {
             sort_mode: 'modified',
             sort_direction: 'desc',
           };
-        case 'search_snippets':
-        case 'get_sorted_snippets':
+        case 'search_snippets': {
+          const query = String((args as { query?: string } | undefined)?.query ?? '').toLowerCase();
           // A new array each time, as from IPC.
+          return snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s }));
+        }
+        case 'get_sorted_snippets':
           return snippets.map((s) => ({ ...s }));
         default:
           return null;
@@ -349,6 +352,24 @@ describe('App: where the screen reader is', () => {
 
   const resultsLiveText = () => document.querySelector('.snippet-list-wrapper [aria-live]')?.textContent ?? '';
   const pointsAt = (search: HTMLElement) => search.getAttribute('aria-activedescendant') ?? '';
+  const searchCount = () => mockInvoke.mock.calls.filter(([cmd]) => cmd === 'search_snippets').length;
+
+  /** Holds the next answer with the whole list until the returned function is called. */
+  function holdNextWholeList(): () => void {
+    let release = (): void => void 0;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const answer = mockInvoke.getMockImplementation();
+    mockInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === 'get_sorted_snippets') {
+        if (answer) mockInvoke.mockImplementation(answer);
+        await held;
+      }
+      return answer?.(cmd, args);
+    });
+    return release;
+  }
 
   /** Opens the app with the search box focused and waits until the first snippet is selected. */
   async function openApp(): Promise<HTMLInputElement> {
@@ -398,6 +419,28 @@ describe('App: where the screen reader is', () => {
     fireEvent.change(search, { target: { value: 'g' } });
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith('search_snippets', { query: 'g' }));
     expect(pointsAt(search)).toBe('');
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+  });
+
+  // The app loads the whole list again each time the window is shown or gets the keyboard back.
+  // When that list answers while a search waits for its results, it is not the results.
+  it('when the list is loaded again while a search waits for its results, the live region still says the result', async () => {
+    const search = await openApp();
+    const release = holdNextWholeList();
+    fireEvent.focus(window);
+    fireEvent.change(search, { target: { value: 'gre' } });
+    release();
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Goodbye' })).not.toBeInTheDocument());
+    await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
+  });
+
+  it('when the results are loaded again before the announcement, the live region still says the result', async () => {
+    const search = await openApp();
+    fireEvent.change(search, { target: { value: 'gre' } });
+    await waitFor(() => expect(screen.queryByRole('option', { name: 'Goodbye' })).not.toBeInTheDocument());
+    const searches = searchCount();
+    fireEvent.focus(window);
+    await waitFor(() => expect(searchCount()).toBe(searches + 1));
     await waitFor(() => expect(resultsLiveText()).toBe('Greeting'));
   });
 
