@@ -154,7 +154,7 @@ Das Anwendungssymbol befindet sich im System-Tray. Klicken Sie mit der rechten M
 
 ### Start und Beenden
 
-- **Mit Windows starten**: QuickSnippets startet bei der Anmeldung bei Windows. Gilt ab der nächsten Anmeldung.
+- **Mit Windows starten**: QuickSnippets startet bei der Anmeldung bei Windows. Gilt ab der nächsten Anmeldung. Lässt Windows die Änderung nicht zu (zum Beispiel, weil eine Richtlinie oder Sicherheitssoftware sie blockiert), bleibt der Einstellungsdialog offen und meldet das unter der Einstellung: Die Einstellung behält ihren bisherigen Wert, Ihre anderen Änderungen werden gespeichert.
 - **Minimiert im Infobereich starten**: Beim Start ist nur das Symbol im Infobereich zu sehen. Gilt ab dem nächsten Start; das Fenster öffnet sich mit **Strg+Alt+Space**.
 - **Vor dem Beenden nachfragen**: Alt+F4 und die Schließen-Schaltfläche des Fensters fragen zuerst nach. **Esc** blendet das Fenster nur aus, und **Beenden** im Tray-Menü schließt die App ohne Nachfrage.
 

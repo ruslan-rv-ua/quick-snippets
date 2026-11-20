@@ -1,11 +1,11 @@
 ---
 id: TASK-30
 title: Release v0.3.4
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T16:42:00Z'
-updated_date: '2026-11-20T04:52:00Z'
+updated_date: '2026-11-20T05:04:00Z'
 labels:
   - release
   - model-sonnet
@@ -37,21 +37,21 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Version 0.3.4 in src-tauri/Cargo.toml, src-tauri/tauri.conf.json and package.json; `just final-checks` passes
-- [ ] #2 CHANGELOG.md has a v0.3.4 section with user-facing notes only, and the GitHub release notes are that section
-- [ ] #3 `just smoke` and `just smoke-tray` pass on the release build (run only with the user's permission)
-- [ ] #4 git flow release finished with --no-ff: main and develop contain the release and main has a release merge commit; tag v0.3.4 created by the Release workflow
-- [ ] #5 The GitHub release has the ZIP and its .sha256, and the Scoop manifest shows 0.3.4 after Excavator runs
-- [ ] #6 The release build is copied to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-30-<short commit>.exe
+- [x] #1 Version 0.3.4 in src-tauri/Cargo.toml, src-tauri/tauri.conf.json and package.json; `just final-checks` passes
+- [x] #2 CHANGELOG.md has a v0.3.4 section with user-facing notes only, and the GitHub release notes are that section
+- [x] #3 `just smoke` and `just smoke-tray` pass on the release build (run only with the user's permission)
+- [x] #4 git flow release finished with --no-ff: main and develop contain the release and main has a release merge commit; tag v0.3.4 created by the Release workflow
+- [x] #5 The GitHub release has the ZIP and its .sha256, and the Scoop manifest shows 0.3.4 after Excavator runs
+- [x] #6 The release build is copied to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-30-<short commit>.exe
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 `npm run test:all` passes
-- [ ] #2 `npm run lint` passes
-- [ ] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
-- [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
-- [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
+- [x] #1 `npm run test:all` passes
+- [x] #2 `npm run lint` passes
+- [x] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
+- [x] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
+- [x] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -79,4 +79,18 @@ Checks on release/0.3.4 (version bump 18457db):
 - The user's autostart values were the same before the runs and after each of them (no Run entry; the old StartupApproved mark Binary 02 00 00 00 00 00 00 00 00 00 00 00), according to the script's report and a separate read-only check.
 - CHANGELOG: [Unreleased] turned into "v0.3.4 - 2026-11-20" unchanged, with an empty [Unreleased] above it: Before you upgrade (2 entries), Changed (2) and Fixed (10), all user-facing; no Known Limitations entry. No new user-facing strings in this task.
 - The release build is copied to C:\5-quicksnippets\real_db\quick-snippets-TASK-30-18457db.exe (same SHA-256 as the build).
+
+Release:
+- git flow release finish 0.3.4 --no-ff --notag --no-push: main got the release merge commit eb981c5 "Merge branch 'release/0.3.4'" (parents 04c2f78 and f089d0d); develop got merge 1f109ac. main and develop have the same tree, and no local tag was created. Pushed main and develop (no tags); CI did not start on the push, as intended.
+- Release workflow run 44677306941 on main eb981c5 passed in 8.3 min: build, lint, Vitest and Rust tests, Tauri build, ZIP, tag push and the release step all succeeded. Tag v0.3.4 is on eb981c5 (a later git fetch --tags brought it here too; it matches GitHub).
+- Release https://github.com/ruslan-rv-ua/quick-snippets/releases/tag/v0.3.4 (Latest, not a pre-release) has quick-snippets-0.3.4-windows-x64.zip (2,004,061 bytes) and its .sha256; the checksum 85a02ccc...0ce5 matches the downloaded ZIP. The ZIP holds quick-snippets.exe (file version 0.3.4, 3,850,752 bytes), LICENSE and README.md. The generated notes ("Full Changelog" link only) were replaced with the v0.3.4 CHANGELOG section; checked to be identical to that section on main.
+- Excavator run 44678330922 in scoop-bucket passed: commit aa5ee63 "quick-snippets: Update to version 0.3.4"; bucket/quick-snippets.json shows 0.3.4, the v0.3.4 URL and the same hash.
+- Scoop copy updated: the data folder was first copied to C:\scoop\persist\quick-snippets\quick-snippets-data-backup-0.3.3-2026-11-20 (SHA-256 of both files identical). scoop update quick-snippets went 0.3.3 -> 0.3.4 with the hash check OK; current points to 0.3.4, its exe is the one from the release ZIP, quick-snippets-data is still the junction to the persist folder, and the SHA-256 of both data files is the same before and after the update. The app was not running and was not started. The 0.3.3 folder stays, so scoop reset quick-snippets@0.3.3 can go back.
+- real_db has the local release build from 18457db; eb981c5 has the same code (the later commits only add these Backlog notes and the merge). The user's autostart values are still the same as before the task.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Released v0.3.4, a patch release with the fixes made after 0.3.3: the built-in browser's data next to the exe (TASK-27); translated start-up dialogs and a damaged database that is kept, not deleted (TASK-28); a window that appears complete and is read properly by screen readers after a start, also with "Start in tray" (TASK-5, TASK-29); autostart that removes the Task Manager mark and changes the registry only when the setting changes (TASK-31); and a search announcement that is no longer lost when the list reloads (TASK-35). The database and settings format are unchanged, so going back to 0.3.x stays safe. Version bumped in the three files and both lock files, [Unreleased] turned into the v0.3.4 CHANGELOG section, git flow release finished with --no-ff so main has the release merge commit eb981c5. The Release workflow passed, created tag v0.3.4 and published the ZIP and .sha256; the release notes are the changelog section, and Excavator updated the Scoop manifest to 0.3.4 with the matching hash. Verified with npm run test:all (502 Vitest, 299 Rust), npm run lint, just final-checks, just smoke (82/82 steps, 301/301 NVDA checks), just smoke-tray (83/83, 300/300) and the published checksum. The user's Scoop copy is updated to 0.3.4 after a backup of its data folder; the data checksums match before and after. No follow-ups.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -675,6 +675,17 @@ input[type='checkbox'] {
   color: var(--color-text-muted);
 }
 
+/* A message under a setting: a live region that stays in the page while empty (see
+   FieldError.tsx). Empty, it takes no space: the column's 1px gap is cancelled. */
+.settings-row-text .field-error {
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.settings-row-text .field-error:empty {
+  margin-top: -1px;
+}
+
 .settings-row-control {
   flex-shrink: 0;
   display: flex;
@@ -699,6 +710,16 @@ input[type='checkbox'] {
 .settings-dialog button:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/* A failed save, above the footer. While empty it stays in the page (see FieldError.tsx):
+   cancel the dialog's gap so that it takes no space. */
+.settings-dialog > .field-error {
+  line-height: 1.35;
+}
+
+.settings-dialog > .field-error:empty {
+  margin-top: calc(-1 * var(--space-3));
 }
 
 /* Footer: version on the left, Cancel and Save on the right */

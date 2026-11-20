@@ -5,19 +5,23 @@ import React, {
   useContext,
   useRef,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { ModalOverlay } from './ModalOverlay';
+import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { ThemeContext, type Theme } from '../contexts/ThemeContext';
 import { LanguageContext, resolveLanguage } from '../contexts/LanguageContext';
 import { getVersion } from '@tauri-apps/api/app';
 import { getSettings, updateSettings } from '../hooks/useIpc';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
-import { ipcErrorToString } from '../utils/errors';
-import type { LangCode } from '../types';
+import { asSentence, ipcErrorToString } from '../utils/errors';
+import type { AutostartError, LangCode } from '../types';
 
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** The saved settings could not be read when the dialog opened; it then closes. A failed
+   *  Save is shown inside the dialog instead. */
   onError?: (msg: string) => void;
 }
 
@@ -71,17 +75,20 @@ function SettingsGroup({
 /**
  * One setting: the label (and an optional hint under it) on the left, the
  * control on the right. The control must use `controlId` as its id and, when
- * there is a hint, `aria-describedby={hintId(controlId)}`.
+ * there is a hint, `aria-describedby={hintId(controlId)}`. `message` goes under
+ * the hint: a live region about this setting (see FieldError).
  */
 function SettingsRow({
   controlId,
   label,
   hint,
+  message,
   children,
 }: {
   controlId: string;
   label: string;
   hint?: string;
+  message?: React.ReactNode;
   children: React.ReactNode;
 }): React.ReactElement {
   return (
@@ -93,6 +100,7 @@ function SettingsRow({
             {hint}
           </p>
         )}
+        {message}
       </div>
       <div className="settings-row-control">{children}</div>
     </div>
@@ -117,10 +125,17 @@ export function SettingsModal({
   const [saving, setSaving] = useState(false);
   // Theme and language shown when the dialog opened; Cancel brings them back.
   const shownAtOpen = useRef<{ theme: Theme; language: LangCode } | null>(null);
+  // Which change of "Start with Windows" Windows refused at the last Save, if any.
+  const [autostartError, setAutostartError] = useState<AutostartError | null>(null);
+  const autostartRef = useRef<HTMLInputElement>(null);
+  // Why the last Save could not write the settings (the backend's error), if it failed.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setValues(null);
+      setAutostartError(null);
+      setSaveError(null);
       return;
     }
     // Read once, as they are at the moment the dialog opens.
@@ -166,16 +181,41 @@ export function SettingsModal({
   const handleSave = useCallback(async () => {
     if (!values || saving) return;
     setSaving(true);
+    // The message of an earlier Save goes first, so that a new one is announced again.
+    setAutostartError(null);
+    setSaveError(null);
     try {
       // Only this dialog's fields; sort order and window size stay as they are.
-      await updateSettings(values);
-      onClose();
+      const outcome = await updateSettings(values);
+      const refused = outcome?.autostart_error ?? null;
+      if (!refused) {
+        onClose();
+        return;
+      }
+      // Windows refused to turn "Start with Windows" on or off. It keeps its previous value
+      // and everything else is saved, so Cancel no longer brings back the theme and language
+      // from before. The dialog stays open: the check box shows the saved value before it gets
+      // the focus, so that the screen reader reads its new state once, and only then the
+      // message is set, as in the create dialog (FieldError).
+      shownAtOpen.current = {
+        theme: values.theme,
+        language: resolveLanguage(values.language, systemLanguage),
+      };
+      const keptOn = refused === 'cannot_turn_off';
+      flushSync(() => setValues((v) => (v ? { ...v, autostart: keptOn } : v)));
+      autostartRef.current?.focus();
+      setAutostartError(refused);
     } catch (err: unknown) {
-      onError?.(ipcErrorToString(err));
+      // The settings file could not be written: nothing is saved, in the file or in memory.
+      // The dialog stays open with every change in it, so that Save can be tried again, and
+      // Cancel still brings back the theme and language from before. Focus stays where it is;
+      // the message above the buttons is a live region (FieldError), read once. A toast would
+      // be outside the dialog and gone after 2 s.
+      setSaveError(ipcErrorToString(err));
     } finally {
       setSaving(false);
     }
-  }, [values, saving, onClose, onError]);
+  }, [values, saving, onClose, systemLanguage]);
 
   useModalKeyboard(isOpen, { onEscape: handleCancel, onCtrlEnter: handleSave });
 
@@ -239,8 +279,21 @@ export function SettingsModal({
           controlId="settings-autostart"
           label={t('autostartLabel')}
           hint={t('autostartHint')}
+          message={
+            <FieldError
+              id="settings-autostart-error"
+              message={
+                autostartError === 'cannot_turn_on'
+                  ? t('autostartTurnOnFailed')
+                  : autostartError === 'cannot_turn_off'
+                    ? t('autostartTurnOffFailed')
+                    : undefined
+              }
+            />
+          }
         >
           <input
+            ref={autostartRef}
             id="settings-autostart"
             type="checkbox"
             aria-describedby={hintId('settings-autostart')}
@@ -296,6 +349,11 @@ export function SettingsModal({
           />
         </SettingsRow>
       </SettingsGroup>
+
+      <FieldError
+        id="settings-save-error"
+        message={saveError === null ? undefined : tf.settingsSaveFailed(asSentence(saveError))}
+      />
 
       <div className="settings-footer">
         {appVersion && (
