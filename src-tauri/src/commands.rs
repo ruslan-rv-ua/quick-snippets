@@ -309,9 +309,9 @@ pub struct SaveSettingsOutcome {
 }
 
 /// Saves `new_settings` to `path` and in `current`, then applies a change of "Start with
-/// Windows" through `registry`, for the values called `name`: only after the file is written,
-/// and only if that setting itself changed (other copies of the app write values of the same
-/// name, see `crate::autostart`).
+/// Windows" through `registry`, for the values called `name` and the exe at `exe`: only after
+/// the file is written, and only if that setting itself changed (other copies of the app write
+/// values of the same name, see `crate::autostart`).
 ///
 /// When Windows refuses the change, the setting keeps its previous value, in the file and in
 /// memory, so that it shows what Windows does; the other settings stay saved, and the result
@@ -322,6 +322,7 @@ pub fn save_settings_inner(
     path: &std::path::Path,
     registry: &impl crate::autostart::AutostartRegistry,
     name: &str,
+    exe: &std::path::Path,
 ) -> Result<SaveSettingsOutcome, String> {
     use crate::settings::save_settings_to_path;
 
@@ -331,7 +332,7 @@ pub fn save_settings_inner(
         std::mem::replace(&mut *s, new_settings.clone()).autostart
     };
     let now_on = new_settings.autostart;
-    if crate::autostart::apply_change(registry, name, was_on, now_on).is_ok() {
+    if crate::autostart::apply_change(registry, name, exe, was_on, now_on).is_ok() {
         return Ok(SaveSettingsOutcome::default());
     }
 
@@ -466,26 +467,6 @@ pub mod tauri_commands {
         crate::settings::detect_language()
     }
 
-    /// "Start with Windows" in the registry: the plugin turns it on (the autostart entry and
-    /// Task Manager's mark); turning it off, the app itself removes both values
-    /// (`crate::autostart` has the reasons).
-    struct AppAutostart<'a>(&'a AppHandle);
-
-    impl crate::autostart::AutostartRegistry for AppAutostart<'_> {
-        fn enable(&self) -> Result<(), String> {
-            use tauri_plugin_autostart::ManagerExt;
-            self.0.autolaunch().enable().map_err(|e| e.to_string())
-        }
-
-        fn remove_value(&self, key: &str, name: &str) -> Result<(), String> {
-            crate::autostart::remove_current_user_value(key, name)
-        }
-
-        fn value_exists(&self, key: &str, name: &str) -> bool {
-            crate::autostart::current_user_value_exists(key, name)
-        }
-    }
-
     /// Rebuild the tray context menu with labels matching `lang`.
     fn rebuild_tray_menu(app: &AppHandle, lang: &str) -> Result<(), String> {
         use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -537,13 +518,18 @@ pub mod tauri_commands {
         };
 
         let path = crate::settings::get_settings_path();
-        // The value name the plugin writes: the product name, "QuickSnippets".
+        // The value name of the autostart values: the product name, "QuickSnippets", the one
+        // tauri-plugin-autostart used up to 0.3.4.
         let name = &app.package_info().name;
+        // An unknown path makes turning on fail instead of writing a wrong entry
+        // (`crate::autostart::command_line`).
+        let exe = std::env::current_exe().unwrap_or_default();
         let outcome = if crate::autostart::test_refusal_requested() {
             let registry = crate::autostart::RefusingRegistry;
-            save_settings_inner(new_settings, &state.settings, &path, &registry, name)?
+            save_settings_inner(new_settings, &state.settings, &path, &registry, name, &exe)?
         } else {
-            save_settings_inner(new_settings, &state.settings, &path, &AppAutostart(app), name)?
+            let registry = crate::autostart::WindowsRegistry;
+            save_settings_inner(new_settings, &state.settings, &path, &registry, name, &exe)?
         };
 
         rebuild_tray_menu(app, &effective_lang)?;
@@ -1364,7 +1350,7 @@ mod tests {
     // Only the registry in memory of crate::autostart: the real autostart values are shared by
     // every copy of the app, so no test touches them.
 
-    use crate::autostart::memory::{MemoryRegistry, NAME};
+    use crate::autostart::memory::{exe, MemoryRegistry, Value, EXE, NAME};
     use crate::autostart::{RUN_KEY, TASK_MANAGER_MARK_KEY};
     use crate::settings::{load_settings_from_path, Settings};
 
@@ -1391,12 +1377,13 @@ mod tests {
         let path = dir.path().join("settings.json");
         let (saved, changed) = saved_and_changed(false, true);
         let current = Mutex::new(saved);
+        // The entry in quotes cannot be written.
         let registry = MemoryRegistry {
-            failing_enable: true,
+            failing_key: Some(RUN_KEY),
             ..MemoryRegistry::default()
         };
 
-        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME, exe());
 
         let kept = Settings {
             autostart: false,
@@ -1424,7 +1411,7 @@ mod tests {
             ..MemoryRegistry::with(&[(RUN_KEY, NAME), (TASK_MANAGER_MARK_KEY, NAME)])
         };
 
-        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME, exe());
 
         let kept = Settings {
             autostart: true,
@@ -1451,7 +1438,7 @@ mod tests {
         let current = Mutex::new(saved);
         let registry = crate::autostart::RefusingRegistry;
 
-        let outcome = save_settings_inner(changed, &current, &path, &registry, NAME).unwrap();
+        let outcome = save_settings_inner(changed, &current, &path, &registry, NAME, exe()).unwrap();
 
         assert_eq!(outcome.autostart_error, Some(AutostartError::CannotTurnOn));
         assert!(!load_settings_from_path(&path).unwrap().autostart);
@@ -1465,16 +1452,20 @@ mod tests {
         let current = Mutex::new(saved);
         let registry = MemoryRegistry::default();
 
-        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME, exe());
         assert_eq!(outcome, Ok(SaveSettingsOutcome::default()));
         assert_eq!(load_settings_from_path(&path).unwrap(), changed);
-        assert!(registry.has(RUN_KEY, NAME));
+        // The path of this exe, in quotes.
+        assert_eq!(
+            registry.value(RUN_KEY, NAME),
+            Some(Value::String(format!("\"{EXE}\"")))
+        );
 
         let off = Settings {
             autostart: false,
             ..changed
         };
-        let outcome = save_settings_inner(off.clone(), &current, &path, &registry, NAME);
+        let outcome = save_settings_inner(off.clone(), &current, &path, &registry, NAME, exe());
         assert_eq!(outcome, Ok(SaveSettingsOutcome::default()));
         assert_eq!(*current.lock().unwrap(), off);
         assert!(registry.is_empty());
@@ -1487,12 +1478,11 @@ mod tests {
         let (saved, changed) = saved_and_changed(true, true);
         let current = Mutex::new(saved);
         let registry = MemoryRegistry {
-            failing_enable: true,
             failing_key: Some(RUN_KEY),
             ..MemoryRegistry::default()
         };
 
-        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME, exe());
 
         assert_eq!(outcome, Ok(SaveSettingsOutcome::default()));
         assert_eq!(load_settings_from_path(&path).unwrap(), changed);
@@ -1507,7 +1497,7 @@ mod tests {
         let current = Mutex::new(saved.clone());
         let registry = MemoryRegistry::default();
 
-        let outcome = save_settings_inner(changed, &current, dir.path(), &registry, NAME);
+        let outcome = save_settings_inner(changed, &current, dir.path(), &registry, NAME, exe());
 
         assert!(outcome.is_err());
         assert_eq!(*current.lock().unwrap(), saved);
