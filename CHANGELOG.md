@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.4 - 2026-11-20
+
 ### Before you upgrade
 - Versions 0.3.3 and older kept the data of the built-in browser that draws the window (Microsoft Edge WebView2: its cache and its own state, no snippets or settings) in `%LOCALAPPDATA%\com.quicksnippets.app`. This version no longer uses that folder and leaves it as it is, so an older copy can still use it. Once you no longer run version 0.3.3 or older on that computer, you can delete it.
 - Going back to 0.3.3 is safe: snippets and settings are stored exactly as before, and 0.3.3 simply uses its old folder in `%LOCALAPPDATA%` again.
