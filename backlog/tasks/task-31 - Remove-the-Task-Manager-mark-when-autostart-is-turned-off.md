@@ -1,11 +1,11 @@
 ---
 id: TASK-31
 title: Remove the Task Manager mark when autostart is turned off
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T19:03:00Z'
-updated_date: '2026-11-20T01:15:00Z'
+updated_date: '2026-11-20T01:18:00Z'
 labels:
   - bug
   - backend
@@ -102,4 +102,27 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - After the run (compared by the same script, independently of the smoke's own restore): exactly the same, kind and data. The leftover mark stays as the user had it; turning autostart on and off once in 0.3.4 would remove it.
 
 Definition of Done #4: the task adds no strings to the interface (src/i18n/translations.ts unchanged); the user-facing texts it changes are the READMEs, in en, uk and de.
+
+## After the merge into develop (merge commit 805d84d)
+
+- `npm run test:rust` (299 passed, 1 ignored) and `npm run lint` pass on develop.
+- `npm run test`: the frontend suite failed once in the first run on develop and once in four more runs, each time on the same test, `src/components/__tests__/App.test.tsx` > "App: where the screen reader is" > "when a search keeps the same snippet selected, the live region says it" (`expected '' to be 'Greeting'`; it waits for the announcement with waitFor's default 1 s, after the 100 ms search debounce). The other 5 runs passed with 496 of 496, and both runs on the branch passed. src/ is byte for byte the same as before this task (`git diff 11ffa3c develop -- src` is empty), so this flakiness is older than TASK-31. Not fixed here; no task created.
+
+## Noticed, no task created
+
+1. The plugin writes the exe path into the Run entry without quotes (the path and a space). Windows usually still starts it from a path with spaces, but such an entry is ambiguous. The option "own code instead of the plugin" would have fixed it; the user chose to complement the plugin.
+2. A consequence of "only when the setting changes": if the box is checked but the entry is gone (removed by another copy or by the user) or points to an old place after the folder was moved, a later save no longer rewrites it silently. Turning the setting off and on does; the README already says so for a move.
+3. Registry errors while turning autostart on or off are still ignored silently: the setting is saved, and the user is not told that the registry write failed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Turning off "Start with Windows" now removes both HKCU values named QuickSnippets: the Run entry and Task Manager's Explorer\StartupApproved\Run mark (tauri-plugin-autostart's disable() removed only the entry, so the mark stayed for good). By the user's choice the registry now changes only when the setting itself changes: saving the theme, the sort order or the settings dialog no longer removes another copy's entry, points the entry at the saving copy, or undoes Task Manager's "Disabled". Turning on still uses the plugin's enable(), which writes both.
+
+New module src-tauri/src/autostart.rs with 9 unit tests on an in-memory registry; save_settings applies a change after writing settings.json. just smoke checks both values, a new step checks that two theme saves leave a "Disabled" mark alone, and the script records the user's two values before every run and restores them exactly afterwards. README (en, uk, de), CHANGELOG, CLAUDE.md and DEVELOPMENT.md updated.
+
+Verified: npm run test:all and npm run lint; just smoke on the release build dd93519 with the user's permission, 82 of 82 steps and 301 of 301 NVDA checks; the user's autostart values were the same before and after (Run entry absent, an old mark 02 00 00 00 00 00 00 00 00 00 00 00); build copied to real_db as quick-snippets-TASK-31-dd93519.exe.
+
+Follow-ups for review: a mark left by 0.3.3 or older stays until the setting is turned on and off once; a checked box no longer rewrites a missing or moved entry at the next save; the Run entry path is unquoted (plugin); a pre-existing flaky frontend test (App.test.tsx, "the live region says it") failed in 2 of 9 runs.
+<!-- SECTION:FINAL_SUMMARY:END -->
