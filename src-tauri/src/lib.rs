@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod autotype;
 pub mod commands;
 pub mod crypto;
