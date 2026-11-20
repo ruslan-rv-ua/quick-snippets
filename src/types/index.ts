@@ -62,3 +62,15 @@ export interface Settings {
   sort_mode: string;
   sort_direction: string;
 }
+
+/** Which change of "Start with Windows" Windows refused (commands.rs `AutostartError`). */
+export type AutostartError = 'cannot_turn_on' | 'cannot_turn_off';
+
+/** What a save of the settings could not do (commands.rs `SaveSettingsOutcome`). */
+export interface SaveSettingsOutcome {
+  /**
+   * Set when "Start with Windows" could not be changed: it then keeps its previous value,
+   * and the other settings are saved.
+   */
+  autostart_error: AutostartError | null;
+}

@@ -201,7 +201,7 @@ Open Settings with **Ctrl+,** or via the tray menu. The settings are in three gr
 
 ### Startup and closing
 
-- **Start with Windows**: start QuickSnippets when you sign in to Windows. Takes effect the next time you sign in.
+- **Start with Windows**: start QuickSnippets when you sign in to Windows. Takes effect the next time you sign in. If Windows does not allow the change (for example, a policy or security software blocks it), the settings dialog stays open and says so under the setting: the setting keeps its previous value, and your other changes are saved.
 - **Start minimized to the tray**: at startup only the tray icon appears. Takes effect at the next start; open the window with **Ctrl+Alt+Space**.
 - **Ask before closing the app**: Alt+F4 and the window's close button ask for confirmation first. **Esc** only hides the window, and **Quit** in the tray menu closes the app without asking.
 

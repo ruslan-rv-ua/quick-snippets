@@ -290,6 +290,66 @@ pub fn touch_last_used_inner(conn: &Connection, id: i64) -> Result<(), String> {
     db::touch_last_used(conn, id).map_err(|e| e.to_string())
 }
 
+/// Which change of "Start with Windows" Windows refused.
+#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutostartError {
+    /// Turning it on failed: Windows does not start the app.
+    CannotTurnOn,
+    /// Turning it off failed: Windows still starts the app.
+    CannotTurnOff,
+}
+
+/// What a save of the settings could not do. The settings dialog tells the user.
+#[derive(serde::Serialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SaveSettingsOutcome {
+    /// Set when "Start with Windows" could not be changed. The setting then keeps its previous
+    /// value; the other settings are saved.
+    pub autostart_error: Option<AutostartError>,
+}
+
+/// Saves `new_settings` to `path` and in `current`, then applies a change of "Start with
+/// Windows" through `registry`, for the values called `name`: only after the file is written,
+/// and only if that setting itself changed (other copies of the app write values of the same
+/// name, see `crate::autostart`).
+///
+/// When Windows refuses the change, the setting keeps its previous value, in the file and in
+/// memory, so that it shows what Windows does; the other settings stay saved, and the result
+/// says which change failed. An error means that the settings file could not be written.
+pub fn save_settings_inner(
+    new_settings: crate::settings::Settings,
+    current: &Mutex<crate::settings::Settings>,
+    path: &std::path::Path,
+    registry: &impl crate::autostart::AutostartRegistry,
+    name: &str,
+) -> Result<SaveSettingsOutcome, String> {
+    use crate::settings::save_settings_to_path;
+
+    save_settings_to_path(&new_settings, path).map_err(|e| e.to_string())?;
+    let was_on = {
+        let mut s = current.lock().map_err(|e| e.to_string())?;
+        std::mem::replace(&mut *s, new_settings.clone()).autostart
+    };
+    let now_on = new_settings.autostart;
+    if crate::autostart::apply_change(registry, name, was_on, now_on).is_ok() {
+        return Ok(SaveSettingsOutcome::default());
+    }
+
+    let kept = crate::settings::Settings {
+        autostart: was_on,
+        ..new_settings
+    };
+    save_settings_to_path(&kept, path).map_err(|e| e.to_string())?;
+    current.lock().map_err(|e| e.to_string())?.autostart = was_on;
+    Ok(SaveSettingsOutcome {
+        autostart_error: Some(if now_on {
+            AutostartError::CannotTurnOn
+        } else {
+            AutostartError::CannotTurnOff
+        }),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tauri AppState + commands — compiled only outside test mode
 // ---------------------------------------------------------------------------
@@ -420,14 +480,10 @@ pub mod tauri_commands {
         fn remove_value(&self, key: &str, name: &str) -> Result<(), String> {
             crate::autostart::remove_current_user_value(key, name)
         }
-    }
 
-    /// Applies a change of "Start with Windows"; nothing happens when it did not change.
-    /// As before, a failure here does not undo the saved setting.
-    fn apply_autostart(was_on: bool, now_on: bool, app: &AppHandle) {
-        // The value name the plugin writes: the product name, "QuickSnippets".
-        let name = &app.package_info().name;
-        let _ = crate::autostart::apply_change(&AppAutostart(app), name, was_on, now_on);
+        fn value_exists(&self, key: &str, name: &str) -> bool {
+            crate::autostart::current_user_value_exists(key, name)
+        }
     }
 
     /// Rebuild the tray context menu with labels matching `lang`.
@@ -455,12 +511,14 @@ pub mod tauri_commands {
         Ok(())
     }
 
+    /// Saves the settings and applies a change of "Start with Windows"; the result says when
+    /// Windows refused that change (see `save_settings_inner`).
     #[tauri::command]
     pub fn save_settings(
         settings: Settings,
         state: State<AppState>,
         window: Window,
-    ) -> Result<(), String> {
+    ) -> Result<SaveSettingsOutcome, String> {
         let mut new_settings = settings;
         if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
             new_settings.window_state = crate::settings::WindowState {
@@ -472,27 +530,25 @@ pub mod tauri_commands {
         }
 
         let app = window.app_handle();
-
-        let path = crate::settings::get_settings_path();
-        crate::settings::save_settings_to_path(&new_settings, &path)
-            .map_err(|e| e.to_string())?;
-        let mut s = state.settings.lock().map_err(|e| e.to_string())?;
-        let autostart_was_on = s.autostart;
-        *s = new_settings.clone();
-        drop(s);
-
-        // Once the settings are saved, and only if "Start with Windows" itself changed: other
-        // copies of the app write values of the same name (see `crate::autostart`).
-        apply_autostart(autostart_was_on, new_settings.autostart, app);
-
         let effective_lang = if new_settings.language.is_empty() {
             crate::settings::detect_language()
         } else {
             new_settings.language.clone()
         };
+
+        let path = crate::settings::get_settings_path();
+        // The value name the plugin writes: the product name, "QuickSnippets".
+        let name = &app.package_info().name;
+        let outcome = if crate::autostart::test_refusal_requested() {
+            let registry = crate::autostart::RefusingRegistry;
+            save_settings_inner(new_settings, &state.settings, &path, &registry, name)?
+        } else {
+            save_settings_inner(new_settings, &state.settings, &path, &AppAutostart(app), name)?
+        };
+
         rebuild_tray_menu(app, &effective_lang)?;
 
-        Ok(())
+        Ok(outcome)
     }
 
     #[tauri::command]
@@ -1302,6 +1358,176 @@ mod tests {
         touch_last_used_inner(&conn, id).unwrap();
         let after = db::get_snippet_by_id(&conn, id).unwrap();
         assert!(after.last_used_at.is_some());
+    }
+
+    // === save_settings: a change of "Start with Windows" that Windows refuses ===
+    // Only the registry in memory of crate::autostart: the real autostart values are shared by
+    // every copy of the app, so no test touches them.
+
+    use crate::autostart::memory::{MemoryRegistry, NAME};
+    use crate::autostart::{RUN_KEY, TASK_MANAGER_MARK_KEY};
+    use crate::settings::{load_settings_from_path, Settings};
+
+    /// The saved settings, with "Start with Windows" `was_on`, and what the settings dialog
+    /// saves over them: another theme, language and delay, and "Start with Windows" `now_on`.
+    fn saved_and_changed(was_on: bool, now_on: bool) -> (Settings, Settings) {
+        let saved = Settings {
+            autostart: was_on,
+            ..Settings::default()
+        };
+        let changed = Settings {
+            theme: "light".into(),
+            language: "de".into(),
+            autotype_delay_ms: 30,
+            autostart: now_on,
+            ..saved.clone()
+        };
+        (saved, changed)
+    }
+
+    #[test]
+    fn test_save_settings_refused_turn_on_keeps_it_off_and_saves_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let (saved, changed) = saved_and_changed(false, true);
+        let current = Mutex::new(saved);
+        let registry = MemoryRegistry {
+            failing_enable: true,
+            ..MemoryRegistry::default()
+        };
+
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+
+        let kept = Settings {
+            autostart: false,
+            ..changed
+        };
+        assert_eq!(
+            outcome,
+            Ok(SaveSettingsOutcome {
+                autostart_error: Some(AutostartError::CannotTurnOn)
+            })
+        );
+        assert_eq!(load_settings_from_path(&path).unwrap(), kept);
+        assert_eq!(*current.lock().unwrap(), kept);
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_save_settings_refused_turn_off_keeps_it_on_and_saves_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let (saved, changed) = saved_and_changed(true, false);
+        let current = Mutex::new(saved);
+        let registry = MemoryRegistry {
+            failing_key: Some(RUN_KEY),
+            ..MemoryRegistry::with(&[(RUN_KEY, NAME), (TASK_MANAGER_MARK_KEY, NAME)])
+        };
+
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+
+        let kept = Settings {
+            autostart: true,
+            ..changed
+        };
+        assert_eq!(
+            outcome,
+            Ok(SaveSettingsOutcome {
+                autostart_error: Some(AutostartError::CannotTurnOff)
+            })
+        );
+        assert_eq!(load_settings_from_path(&path).unwrap(), kept);
+        assert_eq!(*current.lock().unwrap(), kept);
+        // Windows still starts the app, as the setting says.
+        assert!(registry.has(RUN_KEY, NAME));
+    }
+
+    #[test]
+    fn test_save_settings_test_registry_refuses_without_touching_anything() {
+        // What QUICK_SNIPPETS_TEST_AUTOSTART_ERROR makes the app use.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let (saved, changed) = saved_and_changed(false, true);
+        let current = Mutex::new(saved);
+        let registry = crate::autostart::RefusingRegistry;
+
+        let outcome = save_settings_inner(changed, &current, &path, &registry, NAME).unwrap();
+
+        assert_eq!(outcome.autostart_error, Some(AutostartError::CannotTurnOn));
+        assert!(!load_settings_from_path(&path).unwrap().autostart);
+    }
+
+    #[test]
+    fn test_save_settings_turning_on_and_off_reports_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let (saved, changed) = saved_and_changed(false, true);
+        let current = Mutex::new(saved);
+        let registry = MemoryRegistry::default();
+
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+        assert_eq!(outcome, Ok(SaveSettingsOutcome::default()));
+        assert_eq!(load_settings_from_path(&path).unwrap(), changed);
+        assert!(registry.has(RUN_KEY, NAME));
+
+        let off = Settings {
+            autostart: false,
+            ..changed
+        };
+        let outcome = save_settings_inner(off.clone(), &current, &path, &registry, NAME);
+        assert_eq!(outcome, Ok(SaveSettingsOutcome::default()));
+        assert_eq!(*current.lock().unwrap(), off);
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn test_save_settings_without_a_change_of_autostart_does_not_ask_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let (saved, changed) = saved_and_changed(true, true);
+        let current = Mutex::new(saved);
+        let registry = MemoryRegistry {
+            failing_enable: true,
+            failing_key: Some(RUN_KEY),
+            ..MemoryRegistry::default()
+        };
+
+        let outcome = save_settings_inner(changed.clone(), &current, &path, &registry, NAME);
+
+        assert_eq!(outcome, Ok(SaveSettingsOutcome::default()));
+        assert_eq!(load_settings_from_path(&path).unwrap(), changed);
+        assert!(registry.calls().is_empty());
+    }
+
+    #[test]
+    fn test_save_settings_unwritable_file_changes_neither_memory_nor_registry() {
+        // A directory where the file should be: it cannot be written.
+        let dir = tempfile::tempdir().unwrap();
+        let (saved, changed) = saved_and_changed(false, true);
+        let current = Mutex::new(saved.clone());
+        let registry = MemoryRegistry::default();
+
+        let outcome = save_settings_inner(changed, &current, dir.path(), &registry, NAME);
+
+        assert!(outcome.is_err());
+        assert_eq!(*current.lock().unwrap(), saved);
+        assert!(registry.calls().is_empty());
+    }
+
+    #[test]
+    fn test_save_settings_outcome_reaches_the_page_in_snake_case() {
+        // src/types/index.ts reads these names: change the two together.
+        let refused = SaveSettingsOutcome {
+            autostart_error: Some(AutostartError::CannotTurnOff),
+        };
+        assert_eq!(
+            serde_json::to_value(refused).unwrap(),
+            serde_json::json!({ "autostart_error": "cannot_turn_off" })
+        );
+        assert_eq!(
+            serde_json::to_value(SaveSettingsOutcome::default()).unwrap(),
+            serde_json::json!({ "autostart_error": null })
+        );
     }
 
     // === end-to-end command integration ===

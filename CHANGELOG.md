@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- When Windows does not let QuickSnippets turn "Start with Windows" on or off, for example because a policy or security software blocks the change, the settings dialog now says so and stays open. The message appears under the setting and screen readers read it; the setting goes back to its previous value, so it always shows whether Windows starts QuickSnippets. Your other changes in the dialog are saved. Before, the failure went unnoticed: the dialog closed and the setting looked changed, although Windows did not do it.
+
 ## v0.3.4 - 2026-11-20
 
 ### Before you upgrade

@@ -6,6 +6,7 @@ import { act } from 'react';
 import { SettingsModal } from '../SettingsModal';
 import { LanguageProvider } from '../../contexts/LanguageContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
+import { translations } from '../../i18n/translations';
 import type { Settings } from '../../types';
 
 const mockInvoke = vi.mocked(invoke);
@@ -24,18 +25,32 @@ const defaultSettings: Settings = {
 
 /**
  * A backend in memory: get_settings returns the stored settings and
- * save_settings replaces them. Returns every saved settings object.
+ * save_settings replaces them. Returns every settings object sent to save_settings.
+ *
+ * With `refuseAutostart`, Windows refuses every change of "Start with Windows", and the
+ * backend answers as save_settings_inner in commands.rs does: that setting keeps its stored
+ * value, the rest is saved, and the result names the failed change.
  */
-function mockBackend(initial: Partial<Settings> = {}, systemLanguage = 'en'): Settings[] {
+function mockBackend(
+  initial: Partial<Settings> = {},
+  systemLanguage = 'en',
+  refuseAutostart = false,
+): Settings[] {
   let stored: Settings = { ...defaultSettings, ...initial };
   const saved: Settings[] = [];
   mockInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
     if (cmd === 'get_settings') return { ...stored };
     if (cmd === 'get_system_language') return systemLanguage;
     if (cmd === 'save_settings') {
-      stored = (args as { settings: Settings }).settings;
-      saved.push(stored);
-      return undefined;
+      const sent = (args as { settings: Settings }).settings;
+      saved.push(sent);
+      if (refuseAutostart && sent.autostart !== stored.autostart) {
+        const failed = sent.autostart ? 'cannot_turn_on' : 'cannot_turn_off';
+        stored = { ...sent, autostart: stored.autostart };
+        return { autostart_error: failed };
+      }
+      stored = sent;
+      return { autostart_error: null };
     }
     return undefined;
   });
@@ -64,8 +79,12 @@ function Harness({
  * Renders the app's providers, lets them load the saved theme and language
  * (as at app start), then opens the dialog, like Ctrl+, does.
  */
-async function openSettings(initial: Partial<Settings> = {}, systemLanguage = 'en') {
-  const saved = mockBackend(initial, systemLanguage);
+async function openSettings(
+  initial: Partial<Settings> = {},
+  systemLanguage = 'en',
+  refuseAutostart = false,
+) {
+  const saved = mockBackend(initial, systemLanguage, refuseAutostart);
   const onClose = vi.fn();
   const onError = vi.fn();
   const utils = render(<Harness open={false} onClose={onClose} onError={onError} />);
@@ -428,5 +447,148 @@ describe('SettingsModal', () => {
     expect(delay).toHaveValue(0);
     fireEvent.change(delay, { target: { value: '12.7' } });
     expect(delay).toHaveValue(12);
+  });
+
+  // ── "Start with Windows" refused by Windows ───────────────────────────────
+  // The backend keeps the previous value and saves the rest (save_settings_inner in
+  // commands.rs); the dialog stays open and says so under the check box.
+
+  const autostartMessage = () => document.getElementById('settings-autostart-error')!;
+  const autostartBox = (name = 'Start with Windows') => screen.getByRole('checkbox', { name });
+
+  it('has an empty live region under "Start with Windows" before any save', async () => {
+    await openSettings();
+    const region = autostartMessage();
+    expect(region).toHaveAttribute('aria-live', 'assertive');
+    expect(region).toHaveAttribute('aria-atomic', 'true');
+    expect(region).toBeEmptyDOMElement();
+    // Within the row of the setting, and not its description: NVDA said a described message twice.
+    expect(region.closest('.settings-row')).toContainElement(autostartBox());
+    expect(autostartBox()).toHaveAttribute('aria-describedby', 'settings-autostart-hint');
+  });
+
+  it('a refused turn-on: the dialog stays open, the box is clear and has the focus, the message says so', async () => {
+    const { saved, onClose } = await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(autostartMessage()).toHaveTextContent(translations.en.autostartTurnOnFailed));
+    expect(autostartBox()).not.toBeChecked();
+    expect(document.activeElement).toBe(autostartBox());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(saved.map((s) => s.autostart)).toEqual([true]);
+    expect(screen.getByRole('button', { name: 'Save' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('a refused turn-off: the box stays ticked and the message says QuickSnippets still starts with Windows', async () => {
+    const { onClose } = await openSettings({ autostart: true }, 'en', true);
+    fireEvent.click(autostartBox());
+    expect(autostartBox()).not.toBeChecked();
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+
+    await waitFor(() => expect(autostartMessage()).toHaveTextContent(translations.en.autostartTurnOffFailed));
+    expect(autostartMessage()).toHaveTextContent('QuickSnippets will still start with Windows');
+    expect(autostartBox()).toBeChecked();
+    expect(document.activeElement).toBe(autostartBox());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('the box shows the saved value when it gets the focus, and the message comes after it', async () => {
+    // The screen reader then reads the new state once, and the message after the focus.
+    await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    const box = autostartBox() as HTMLInputElement;
+    const atFocus: Array<{ checked: boolean; message: string }> = [];
+    box.addEventListener('focus', () => {
+      atFocus.push({ checked: box.checked, message: autostartMessage().textContent ?? '' });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+    expect(atFocus).toEqual([{ checked: false, message: '' }]);
+  });
+
+  it('the other settings are saved, and Cancel no longer brings back the theme and language', async () => {
+    const { onClose } = await openSettings({}, 'en', true);
+    await changeEverything();
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+
+    // In the language now shown and saved.
+    await waitFor(() => expect(autostartMessage()).toHaveTextContent(translations.de.autostartTurnOnFailed));
+    expect(await invoke<Settings>('get_settings')).toEqual({
+      ...defaultSettings,
+      theme: 'light',
+      language: 'de',
+      autotype_delay_ms: 40,
+      autostart: false,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(isLight()).toBe(true);
+    expect(document.documentElement.lang).toBe('de');
+  });
+
+  it('Save after the message closes the dialog and sends the value Windows kept', async () => {
+    const { saved, onClose } = await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(saved.map((s) => s.autostart)).toEqual([true, false]);
+  });
+
+  it('a second refusal empties the message first, so that it is announced again', async () => {
+    await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+
+    const region = autostartMessage();
+    const texts: string[] = [];
+    const observer = new MutationObserver(() => texts.push(region.textContent ?? ''));
+    observer.observe(region, { childList: true, characterData: true, subtree: true });
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(texts[texts.length - 1]).toBe(translations.en.autostartTurnOnFailed));
+    observer.disconnect();
+
+    expect(texts).toContain('');
+    expect(texts.indexOf('')).toBeLessThan(texts.length - 1);
+    expect(autostartBox()).not.toBeChecked();
+  });
+
+  it('says it in Ukrainian in a Ukrainian interface', async () => {
+    await openSettings({ language: 'uk', autostart: true }, 'en', true);
+    const box = autostartBox('Запускати разом з Windows');
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+    await waitFor(() => expect(autostartMessage()).toHaveTextContent(translations.uk.autostartTurnOffFailed));
+    expect(box).toBeChecked();
+  });
+
+  it('opening the dialog again shows no old message', async () => {
+    const { rerender, onClose } = await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    rerender(<Harness open={false} onClose={onClose} />);
+    rerender(<Harness open={true} onClose={onClose} />);
+    await screen.findByRole('dialog');
+    expect(autostartMessage()).toBeEmptyDOMElement();
+    expect(autostartBox()).not.toBeChecked();
+  });
+
+  it('a save Windows accepts closes the dialog without a message', async () => {
+    const { onClose } = await openSettings();
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(autostartMessage()).toBeEmptyDOMElement();
   });
 });
