@@ -1,5 +1,6 @@
 // Settings load/save
 use anyhow::Result;
+use std::io::Write;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -95,11 +96,84 @@ pub fn load_settings_from_path(path: &Path) -> Result<Settings> {
     Ok(settings)
 }
 
-/// Serialize `settings` as pretty JSON and write to `path` (overwrites).
+/// Serialize `settings` as pretty JSON and write to `path`.
+///
+/// Every save of the settings goes through here (the settings dialog, the window position, the
+/// sort order), and `path` ends up holding either the old file or the complete new one, never
+/// a mix: see [`replace_file`].
 pub fn save_settings_to_path(settings: &Settings, path: &Path) -> Result<()> {
     let json = serde_json::to_string_pretty(settings)?;
-    std::fs::write(path, json)?;
+    replace_file(path, json.as_bytes(), |file, bytes| file.write_all(bytes))?;
     Ok(())
+}
+
+/// The temporary file a save writes before it replaces `path`: `settings.json.tmp` next to
+/// `settings.json`, in the same folder (under Scoop the data folder is a junction, and a
+/// rename only replaces a file within one volume). Nothing ever reads it as the settings.
+pub fn temp_path_for(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".tmp");
+    path.with_file_name(name)
+}
+
+/// Saves run one at a time: the settings dialog and the window position may save at once,
+/// and both use the same temporary file.
+static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Replaces `path` with `bytes`, written by `write` (the real save passes `write_all`; tests
+/// pass one that fails half-way).
+///
+/// 1. The old file is opened for writing without changing it: a read-only file, or one another
+///    program holds, fails here with the reason Windows gives, before anything is written.
+/// 2. The bytes go to [`temp_path_for`], which is created anew (a file left there by an
+///    interrupted save is written over) and flushed to disk.
+/// 3. The temporary file is renamed over `path` in one step.
+///
+/// If a step fails, `path` is left as it was, byte for byte, and the temporary file is removed.
+fn replace_file(
+    path: &Path,
+    bytes: &[u8],
+    write: impl FnOnce(&mut std::fs::File, &[u8]) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let _one_at_a_time = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    match std::fs::OpenOptions::new().write(true).open(path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+
+    let tmp = temp_path_for(path);
+    remove_leftover(&tmp);
+    let result = (|| {
+        let mut file = std::fs::File::create(&tmp)?;
+        write(&mut file, bytes)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        remove_leftover(&tmp);
+    }
+    result
+}
+
+/// Removes a temporary file, also a read-only one; a missing file or a failure is ignored (the
+/// next step then reports what is wrong).
+fn remove_leftover(tmp: &Path) {
+    if std::fs::remove_file(tmp).is_ok() {
+        return;
+    }
+    if let Ok(meta) = std::fs::symlink_metadata(tmp) {
+        if meta.is_file() && meta.permissions().readonly() {
+            let mut perms = meta.permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
+            perms.set_readonly(false);
+            if std::fs::set_permissions(tmp, perms).is_ok() {
+                let _ = std::fs::remove_file(tmp);
+            }
+        }
+    }
 }
 
 // ------------------------------------------------------------------
@@ -412,6 +486,188 @@ mod tests {
         save_settings_to_path(&s, &path).unwrap();
         let loaded = load_settings_from_path(&path).unwrap();
         assert_eq!(loaded.theme, "light");
+    }
+
+    // === A save that fails never damages settings.json ===
+
+    /// Writes `s` to `path` directly, as an older version would have left it.
+    fn write_plain(path: &Path, s: &Settings) -> Vec<u8> {
+        let bytes = serde_json::to_string_pretty(s).unwrap().into_bytes();
+        std::fs::write(path, &bytes).unwrap();
+        bytes
+    }
+
+    fn light() -> Settings {
+        Settings {
+            theme: "light".to_string(),
+            language: "uk".to_string(),
+            ..Settings::default()
+        }
+    }
+
+    fn set_readonly(path: &Path, readonly: bool) {
+        let mut perms = std::fs::metadata(path).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(readonly);
+        std::fs::set_permissions(path, perms).unwrap();
+    }
+
+    #[test]
+    fn test_temp_path_is_next_to_the_settings() {
+        let path = Path::new(r"C:\app\quick-snippets-data\settings.json");
+        assert_eq!(
+            temp_path_for(path),
+            Path::new(r"C:\app\quick-snippets-data\settings.json.tmp")
+        );
+    }
+
+    #[test]
+    fn test_save_leaves_no_temporary_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        write_plain(&path, &Settings::default());
+        save_settings_to_path(&light(), &path).unwrap();
+        assert_eq!(load_settings_from_path(&path).unwrap(), light());
+        assert!(!temp_path_for(&path).exists());
+        let count = std::fs::read_dir(dir.path()).unwrap().count();
+        assert_eq!(count, 1, "only settings.json is left in the folder");
+    }
+
+    #[test]
+    fn test_write_failing_half_way_keeps_the_old_file_byte_for_byte() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let old = write_plain(&path, &Settings::default());
+        let new = serde_json::to_string_pretty(&light()).unwrap();
+
+        let result = replace_file(&path, new.as_bytes(), |file, bytes| {
+            file.write_all(&bytes[..bytes.len() / 2])?;
+            Err(std::io::Error::other("disk full"))
+        });
+
+        assert_eq!(result.unwrap_err().to_string(), "disk full");
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        assert!(!temp_path_for(&path).exists(), "the temporary file is removed");
+        assert_eq!(load_settings_from_path(&path).unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn test_write_failing_before_any_byte_keeps_the_old_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let old = write_plain(&path, &Settings::default());
+
+        let result = replace_file(&path, b"{}", |_, _| Err(std::io::Error::other("I/O error")));
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        assert!(!temp_path_for(&path).exists());
+    }
+
+    #[test]
+    fn test_write_failing_when_there_is_no_settings_file_creates_none() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+
+        let result = replace_file(&path, b"{}", |_, _| Err(std::io::Error::other("I/O error")));
+
+        assert!(result.is_err());
+        assert!(!path.exists());
+        assert!(!temp_path_for(&path).exists());
+    }
+
+    #[test]
+    fn test_read_only_settings_fail_with_the_windows_reason_and_change_nothing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let old = write_plain(&path, &Settings::default());
+        set_readonly(&path, true);
+
+        let result = save_settings_to_path(&light(), &path);
+
+        set_readonly(&path, false);
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("os error 5"), "the reason from Windows: {message}");
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        assert!(!temp_path_for(&path).exists(), "no temporary file is created");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_settings_held_by_another_program_fail_and_change_nothing() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        let old = write_plain(&path, &Settings::default());
+        // Another program that opened the file and shares it with nobody.
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+
+        let result = save_settings_to_path(&light(), &path);
+
+        drop(held);
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("os error 32"), "the reason from Windows: {message}");
+        assert_eq!(std::fs::read(&path).unwrap(), old);
+        assert!(!temp_path_for(&path).exists());
+    }
+
+    #[test]
+    fn test_leftover_temporary_file_is_not_read_and_does_not_stop_a_save() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        write_plain(&path, &Settings::default());
+        // What an interrupted save may leave: a cut-short copy of the new settings.
+        let tmp = temp_path_for(&path);
+        std::fs::write(&tmp, "{\n  \"theme\": \"li").unwrap();
+
+        assert_eq!(load_settings_from_path(&path).unwrap(), Settings::default());
+
+        save_settings_to_path(&light(), &path).unwrap();
+        assert_eq!(load_settings_from_path(&path).unwrap(), light());
+        assert!(!tmp.exists());
+    }
+
+    #[test]
+    fn test_read_only_leftover_temporary_file_does_not_stop_a_save() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        write_plain(&path, &Settings::default());
+        let tmp = temp_path_for(&path);
+        std::fs::write(&tmp, "garbage").unwrap();
+        set_readonly(&tmp, true);
+
+        save_settings_to_path(&light(), &path).unwrap();
+
+        assert_eq!(load_settings_from_path(&path).unwrap(), light());
+        assert!(!tmp.exists());
+    }
+
+    #[test]
+    fn test_saves_at_the_same_time_always_leave_a_complete_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("settings.json");
+        write_plain(&path, &Settings::default());
+        let threads: Vec<_> = (0..4)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for n in 0..20 {
+                        let mut s = light();
+                        s.window_state.x = i * 100 + n;
+                        save_settings_to_path(&s, &path).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(load_settings_from_path(&path).unwrap().theme, "light");
+        assert!(!temp_path_for(&path).exists());
     }
 
     // === validate_window_state (pure function) ===
