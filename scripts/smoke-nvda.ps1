@@ -2130,6 +2130,8 @@ try {
     $assertSettingsAsBefore = {
         $now = & $settingsBytes
         if ([Convert]::ToBase64String($now) -ne [Convert]::ToBase64String($script:SettingsBeforeFailure)) { throw 'settings.json змінився' }
+        # A refused save creates no temporary file (settings.rs checks the old file first).
+        if (Test-Path -LiteralPath "$settingsFile.tmp") { throw 'лишився settings.json.tmp' }
     }
 
     Invoke-Step 'settings.json лише для читання: Ctrl+, і стрілка вниз показують світлу тему, Ctrl+Enter лишає діалог і фокус у списку «Тема», NVDA один раз читає повідомлення, файл не змінено' {
