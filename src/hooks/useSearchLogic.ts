@@ -12,6 +12,13 @@ export interface SearchLogicState {
   query: string;
   setQuery: (query: string) => void;
   snippets: SearchResult[];
+  /**
+   * The query the list in `snippets` was loaded for. It catches up with `query` once the results
+   * for it arrive (debounce + IPC). A list loaded again for another reason (each time the window
+   * is shown or gets the keyboard back) keeps the query it was loaded for, so it is not mistaken
+   * for the results of a query typed in the meantime.
+   */
+  listQuery: string;
   activeIndex: number;
   setActiveIndex: (index: number) => void;
   /**
@@ -39,6 +46,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
 
   const [query, setQuery] = useState<string>('');
   const [snippets, setSnippets] = useState<SearchResult[]>([]);
+  const [listQuery, setListQuery] = useState<string>('');
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [listFocused, setListFocused] = useState<boolean>(false);
   const [refreshTick, setRefreshTick] = useState<number>(0);
@@ -60,6 +68,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
       .then((results) => {
         const safeResults = Array.isArray(results) ? results : [];
         setSnippets(safeResults);
+        setListQuery(debouncedQuery);
         setActiveIndex(safeResults.length > 0 ? 0 : -1);
       })
       .catch(() => void 0)
@@ -87,6 +96,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
     query,
     setQuery,
     snippets,
+    listQuery,
     activeIndex,
     setActiveIndex,
     listFocused,
