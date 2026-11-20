@@ -30,7 +30,12 @@ const defaultSettings: Settings = {
  * With `refuseAutostart`, Windows refuses every change of "Start with Windows", and the
  * backend answers as save_settings_inner in commands.rs does: that setting keeps its stored
  * value, the rest is saved, and the result names the failed change.
+ *
+ * While `writeError` is set, the settings file cannot be written: save_settings fails with
+ * that error and stores nothing, as save_settings_inner does when the write fails.
  */
+let writeError: string | null = null;
+
 function mockBackend(
   initial: Partial<Settings> = {},
   systemLanguage = 'en',
@@ -44,6 +49,7 @@ function mockBackend(
     if (cmd === 'save_settings') {
       const sent = (args as { settings: Settings }).settings;
       saved.push(sent);
+      if (writeError !== null) throw writeError;
       if (refuseAutostart && sent.autostart !== stored.autostart) {
         const failed = sent.autostart ? 'cannot_turn_on' : 'cannot_turn_off';
         stored = { ...sent, autostart: stored.autostart };
@@ -99,6 +105,7 @@ const isLight = () => document.documentElement.classList.contains('theme-light')
 describe('SettingsModal', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
+    writeError = null;
   });
 
   afterEach(() => {
@@ -425,19 +432,6 @@ describe('SettingsModal', () => {
     expect(isLight()).toBe(true);
   });
 
-  it('reports a save error and stays open', async () => {
-    const { onClose, onError } = await openSettings();
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'get_settings') return { ...defaultSettings };
-      if (cmd === 'save_settings') throw 'disk is full';
-      return undefined;
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(onError).toHaveBeenCalledWith('disk is full'));
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Save' })).not.toHaveAttribute('aria-disabled');
-  });
-
   it('keeps the delay between 0 and 1000', async () => {
     await openSettings();
     const delay = screen.getByRole('spinbutton', { name: 'Delay between characters, ms' });
@@ -589,6 +583,157 @@ describe('SettingsModal', () => {
     fireEvent.click(autostartBox());
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(autostartMessage()).toBeEmptyDOMElement();
+  });
+
+  // ── The settings file cannot be written ───────────────────────────────────
+  // save_settings fails and nothing is saved. The dialog stays open with every change in it,
+  // focus stays where it was, and a live region above the buttons says so.
+
+  const ACCESS_DENIED = 'Access is denied. (os error 5)';
+  const saveMessage = () => document.getElementById('settings-save-error')!;
+  const failedText = (lang: 'en' | 'uk' | 'de') =>
+    translations[lang].settingsSaveFailed(`${ACCESS_DENIED}.`);
+
+  it('has an empty live region above Cancel and Save before any save', async () => {
+    const { dialog } = await openSettings();
+    const region = saveMessage();
+    expect(region).toHaveAttribute('aria-live', 'assertive');
+    expect(region).toHaveAttribute('aria-atomic', 'true');
+    expect(region).toBeEmptyDOMElement();
+    expect(dialog).toContainElement(region);
+    // Above the footer, after the last group, and no control's description: NVDA said a
+    // described message twice.
+    const footer = dialog.querySelector('.settings-footer')!;
+    expect(region.nextElementSibling).toBe(footer);
+    expect(dialog.querySelector('[aria-describedby~="settings-save-error"]')).toBeNull();
+  });
+
+  it('a failed save: the dialog stays open, focus stays, the message says what failed and why', async () => {
+    const { onClose, onError } = await openSettings();
+    writeError = ACCESS_DENIED;
+    const save = screen.getByRole('button', { name: 'Save' });
+    save.focus();
+    fireEvent.click(save);
+
+    await waitFor(() => expect(saveMessage()).toHaveTextContent(failedText('en')));
+    expect(saveMessage()).toHaveTextContent(
+      'Could not save the settings: the file settings.json in the quick-snippets-data folder next to the program cannot be written. Reason: Access is denied. (os error 5). Nothing was changed.',
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    // Inside the dialog, not as a toast outside it.
+    expect(onError).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(save);
+    expect(save).not.toHaveAttribute('aria-disabled');
+    // The other message stays empty.
+    expect(autostartMessage()).toBeEmptyDOMElement();
+  });
+
+  it('Ctrl+Enter from a control: focus stays on that control', async () => {
+    await openSettings();
+    writeError = ACCESS_DENIED;
+    const delay = screen.getByRole('spinbutton', { name: 'Delay between characters, ms' });
+    delay.focus();
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(saveMessage()).not.toBeEmptyDOMElement());
+    expect(document.activeElement).toBe(delay);
+  });
+
+  it('nothing is saved; the changes stay in the dialog, and Cancel brings back the theme and language from before', async () => {
+    const { onClose } = await openSettings();
+    writeError = ACCESS_DENIED;
+    await changeEverything();
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+
+    // In the language now shown.
+    await waitFor(() => expect(saveMessage()).toHaveTextContent(failedText('de')));
+    expect(await invoke<Settings>('get_settings')).toEqual(defaultSettings);
+    expect(screen.getByRole('combobox', { name: 'Design' })).toHaveValue('light');
+    expect(screen.getByRole('combobox', { name: 'Sprache' })).toHaveValue('de');
+    expect(screen.getByRole('checkbox', { name: 'Mit Windows starten' })).toBeChecked();
+    expect(screen.getByRole('spinbutton', { name: 'Verzögerung zwischen Zeichen, ms' })).toHaveValue(40);
+    expect(isLight()).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(isLight()).toBe(false);
+    expect(document.documentElement.lang).toBe('en');
+  });
+
+  it('Save again once the file can be written: the dialog closes and saves the changes', async () => {
+    const { saved, onClose } = await openSettings();
+    writeError = ACCESS_DENIED;
+    fireEvent.change(screen.getByRole('combobox', { name: 'Theme' }), { target: { value: 'light' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMessage()).not.toBeEmptyDOMElement());
+
+    writeError = null;
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(saved.map((s) => s.theme)).toEqual(['light', 'light']);
+    expect(await invoke<Settings>('get_settings')).toEqual({ ...defaultSettings, theme: 'light' });
+    expect(isLight()).toBe(true);
+  });
+
+  it('a second failure empties the message first, so that it is announced again', async () => {
+    await openSettings();
+    writeError = ACCESS_DENIED;
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMessage()).not.toBeEmptyDOMElement());
+
+    const region = saveMessage();
+    const texts: string[] = [];
+    const observer = new MutationObserver(() => texts.push(region.textContent ?? ''));
+    observer.observe(region, { childList: true, characterData: true, subtree: true });
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    await waitFor(() => expect(texts[texts.length - 1]).toBe(failedText('en')));
+    observer.disconnect();
+
+    expect(texts).toContain('');
+    expect(texts.indexOf('')).toBeLessThan(texts.length - 1);
+  });
+
+  it('says it in Ukrainian in a Ukrainian interface', async () => {
+    await openSettings({ language: 'uk' });
+    writeError = ACCESS_DENIED;
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти' }));
+    await waitFor(() => expect(saveMessage()).toHaveTextContent(failedText('uk')));
+    expect(saveMessage()).toHaveTextContent(
+      'Не вдалося зберегти налаштування: файл settings.json у теці quick-snippets-data поруч із програмою не записується. Причина: Access is denied. (os error 5). Нічого не змінено.',
+    );
+  });
+
+  it('opening the dialog again shows no old message', async () => {
+    const { rerender, onClose } = await openSettings();
+    writeError = ACCESS_DENIED;
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMessage()).not.toBeEmptyDOMElement());
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    rerender(<Harness open={false} onClose={onClose} />);
+    rerender(<Harness open={true} onClose={onClose} />);
+    await screen.findByRole('dialog');
+    expect(saveMessage()).toBeEmptyDOMElement();
+  });
+
+  it('a successful save after a refused autostart change leaves the save message empty', async () => {
+    await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+    expect(saveMessage()).toBeEmptyDOMElement();
+  });
+
+  it('a failed save after a refused autostart change empties the autostart message', async () => {
+    await openSettings({}, 'en', true);
+    fireEvent.click(autostartBox());
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+
+    writeError = ACCESS_DENIED;
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saveMessage()).toHaveTextContent(failedText('en')));
     expect(autostartMessage()).toBeEmptyDOMElement();
   });
 });

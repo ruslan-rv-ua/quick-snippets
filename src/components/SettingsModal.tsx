@@ -14,12 +14,14 @@ import { LanguageContext, resolveLanguage } from '../contexts/LanguageContext';
 import { getVersion } from '@tauri-apps/api/app';
 import { getSettings, updateSettings } from '../hooks/useIpc';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
-import { ipcErrorToString } from '../utils/errors';
+import { asSentence, ipcErrorToString } from '../utils/errors';
 import type { AutostartError, LangCode } from '../types';
 
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** The saved settings could not be read when the dialog opened; it then closes. A failed
+   *  Save is shown inside the dialog instead. */
   onError?: (msg: string) => void;
 }
 
@@ -126,11 +128,14 @@ export function SettingsModal({
   // Which change of "Start with Windows" Windows refused at the last Save, if any.
   const [autostartError, setAutostartError] = useState<AutostartError | null>(null);
   const autostartRef = useRef<HTMLInputElement>(null);
+  // Why the last Save could not write the settings (the backend's error), if it failed.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setValues(null);
       setAutostartError(null);
+      setSaveError(null);
       return;
     }
     // Read once, as they are at the moment the dialog opens.
@@ -178,6 +183,7 @@ export function SettingsModal({
     setSaving(true);
     // The message of an earlier Save goes first, so that a new one is announced again.
     setAutostartError(null);
+    setSaveError(null);
     try {
       // Only this dialog's fields; sort order and window size stay as they are.
       const outcome = await updateSettings(values);
@@ -200,11 +206,16 @@ export function SettingsModal({
       autostartRef.current?.focus();
       setAutostartError(refused);
     } catch (err: unknown) {
-      onError?.(ipcErrorToString(err));
+      // The settings file could not be written: nothing is saved, in the file or in memory.
+      // The dialog stays open with every change in it, so that Save can be tried again, and
+      // Cancel still brings back the theme and language from before. Focus stays where it is;
+      // the message above the buttons is a live region (FieldError), read once. A toast would
+      // be outside the dialog and gone after 2 s.
+      setSaveError(ipcErrorToString(err));
     } finally {
       setSaving(false);
     }
-  }, [values, saving, onClose, onError, systemLanguage]);
+  }, [values, saving, onClose, systemLanguage]);
 
   useModalKeyboard(isOpen, { onEscape: handleCancel, onCtrlEnter: handleSave });
 
@@ -338,6 +349,11 @@ export function SettingsModal({
           />
         </SettingsRow>
       </SettingsGroup>
+
+      <FieldError
+        id="settings-save-error"
+        message={saveError === null ? undefined : tf.settingsSaveFailed(asSentence(saveError))}
+      />
 
       <div className="settings-footer">
         {appVersion && (
