@@ -1,11 +1,11 @@
 ---
 id: TASK-35
 title: Find out why the live region test after a search sometimes fails
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:27:00Z'
-updated_date: '2026-11-20T03:41:00Z'
+updated_date: '2026-11-20T03:42:00Z'
 labels:
   - testing frontend accessibility investigation model-opus effort-medium
 milestone: m-6
@@ -95,4 +95,18 @@ The user chose «Виправити програму (рекомендовано
 - Release build of 0bee596 (`npx tauri build --no-bundle`, 20.11.2026 05:13) copied to `C:\5-quicksnippets\real_db\quick-snippets-TASK-35-0bee596.exe`, SHA-256 6822989CB55CC9D6A1E9008C8F02C6F56E9A2310ECC2B6003E5BC0E5985AFBAC, the same as the build.
 - `just smoke` on that build with the user's permission: 82 of 82 steps, 301 of 301 NVDA checks, 172 s. The search steps pass (46, 48, 55, 60, 62), among them step 60, where the live region says the first found snippet after Backspace. The autostart values were restored as before the test (no Run entry; the old Task Manager mark 02 00 00 00 00 00 00 00 00 00 00 00). `just smoke-tray` not run: the change does not touch how the window is created, started in the tray or shown.
 - Definition of Done #4: the task adds no strings to the interface (src/i18n/translations.ts unchanged).
+
+## After the merge into develop (merge commit cc1104c)
+
+- The tree of cc1104c is the same as the tested branch tip 97a774f. On develop: `npm run test` 502 passed, `npm run test:rust` 299 passed and 1 ignored, `npm run lint` passes. Nothing pushed, no tag.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Found why the App test "when a search keeps the same snippet selected, the live region says it" failed now and then, and fixed the app by the user's choice («Виправити програму (рекомендовано)»). SnippetList took any list that arrived after a query change for the search results, and every new list cancelled the 200 ms wait of the announcement. The test types while the lists of the start-up are still arriving; in the app the same happened when the list was loaded again because the window was shown or got the keyboard back during or right after a search, so NVDA users could miss the name of the found snippet.
+
+useSearchLogic now records the query each list was loaded for (listQuery). SnippetList waits for the list of the current query; only a new query, another selected snippet or unmount cancels the announcement, and it stays silent when another snippet was selected during the wait (before, that snippet was read twice). Six new tests fail on the previous code; the test of this task is unchanged. CHANGELOG [Unreleased] Fixed has one entry.
+
+Verified: the test file passed 60 of 60 runs idle and 60 of 60 with the processor busy (before: 1 of 30 and 4 of 30 failed), the whole frontend suite 20 of 20 each way; with the announcement removed the test fails every time. npm run test:all and npm run lint pass, also on develop after the merge (cc1104c). just smoke on the release build 0bee596 with the user's permission: 82 of 82 steps, 301 of 301 NVDA checks; the build is copied to real_db as quick-snippets-TASK-35-0bee596.exe.
+<!-- SECTION:FINAL_SUMMARY:END -->
