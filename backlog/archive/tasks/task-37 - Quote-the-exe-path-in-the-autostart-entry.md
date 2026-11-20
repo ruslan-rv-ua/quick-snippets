@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:27:00Z'
-updated_date: '2026-11-20T16:31:00Z'
+updated_date: '2026-11-20T16:46:00Z'
 labels:
   - bug backend security model-sonnet effort-medium
 milestone: m-2
@@ -111,6 +111,10 @@ Definition of Done #4: the task adds no strings (src/i18n/translations.ts unchan
 - The tree of 245b6f9 is the same as that of the tested branch tip f5e20c9 (the build 3c8ab57 differs from it only in the Backlog notes).
 - `npm run test:all` (513 frontend tests, 321 Rust tests, 1 ignored) and `npm run lint` pass on develop.
 - The merge commit has git flow's default message, as the earlier feature merges (07280ec). Nothing pushed; develop is 5 commits ahead of origin/develop.
+
+## After the verification (2026-11-20)
+
+- The stop of the first smoke run at step 17 was not a flaky step. The user said in the question dialog: «ні, це була моя хиба. я по необережності торкався клавіатури». No task for it.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
