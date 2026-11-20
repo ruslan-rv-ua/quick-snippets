@@ -11,6 +11,9 @@
     - Your data: the test runs a copy of the exe from a temp folder with its own
       empty quick-snippets-data folder. Your snippets and settings are not touched.
       The copy keeps its browser data in quick-snippets-webview in that temp folder.
+      That folder is called "test copy": its path has a space. One folder up lies a
+      second copy of the exe, test.exe, which Windows would start for an autostart entry
+      without quotes; it is never run (see Autostart below).
       The last step checks that it left %LOCALAPPDATA%\com.quicksnippets.app, where
       0.3.3 and older keep theirs, as it was; there it reads only the number of files
       and folders and the time of the newest change.
@@ -26,6 +29,9 @@
     - Autostart: every copy of QuickSnippets uses the same name, QuickSnippets, for its
       autostart entry and for the on/off mark Task Manager keeps for it. Both values are
       recorded before the run and put back exactly afterwards, and the report shows them.
+      Turning autostart on must write the path of the test copy in quotes; the step then
+      creates a process from that entry the way Windows reads a command line, suspended,
+      checks that it is the test copy and not test.exe, and ends it before it runs.
       The autostart steps are skipped if your own autostart entry exists; the test copy
       must then leave both values as they are. After the restart near the end the test copy
       runs with the variable QUICK_SNIPPETS_TEST_AUTOSTART_ERROR: it then pretends that
@@ -383,6 +389,49 @@ public static class QsSmokeNative {
         for (int i = vks.Length - 1; i >= 0; i--) {
             keybd_event(vks[i], (byte)MapVirtualKey(vks[i], 0), (extended[i] ? 1u : 0u) | 2u, UIntPtr.Zero);
             Thread.Sleep(30);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct STARTUPINFO {
+        public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
+        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
+        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct PROCESS_INFORMATION {
+        public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId;
+    }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool CreateProcess(string application, System.Text.StringBuilder commandLine, IntPtr processAttributes,
+        IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr environment, string directory,
+        ref STARTUPINFO startup, out PROCESS_INFORMATION info);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool QueryFullProcessImageName(IntPtr process, uint flags, System.Text.StringBuilder name, ref uint size);
+    [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr process, uint exitCode);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+
+    // The exe Windows takes from a command line read the way CreateProcess reads one when it
+    // is given no program name apart from it: for a path with spaces and no quotes it tries the
+    // shorter names first. The process is created suspended and ended before it runs, so
+    // nothing of the program starts.
+    public static string ExeOfCommandLine(string commandLine) {
+        STARTUPINFO startup = new STARTUPINFO();
+        startup.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+        PROCESS_INFORMATION info;
+        const uint CREATE_SUSPENDED = 0x4;
+        if (!CreateProcess(null, new System.Text.StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false,
+                CREATE_SUSPENDED, IntPtr.Zero, null, ref startup, out info)) {
+            throw new System.ComponentModel.Win32Exception();
+        }
+        try {
+            System.Text.StringBuilder name = new System.Text.StringBuilder(1024);
+            uint size = (uint)name.Capacity;
+            if (!QueryFullProcessImageName(info.hProcess, 0, name, ref size)) throw new System.ComponentModel.Win32Exception();
+            return name.ToString();
+        } finally {
+            TerminateProcess(info.hProcess, 1);
+            CloseHandle(info.hThread);
+            CloseHandle(info.hProcess);
         }
     }
 }
@@ -998,8 +1047,14 @@ $ClipHadText = $true
 if ($IsSta) { $ClipHadText = [System.Windows.Forms.Clipboard]::ContainsText() }
 if ($ClipHadText) { $ClipBackup = Get-ClipText }
 
-$Work = Join-Path $env:TEMP ('quick-snippets-smoke-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+# The test copy lies in a folder whose name has a space, next to a copy of the exe named test.exe:
+# for an autostart entry without quotes (...\test copy\quick-snippets.exe) Windows would first try
+# ...\test and start test.exe. The autostart steps check that the entry has quotes and that
+# Windows takes the test copy from it.
+$Root = Join-Path $env:TEMP ('quick-snippets-smoke-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$Work = Join-Path $Root 'test copy'
 $TestExe = Join-Path $Work 'quick-snippets.exe'
+$Decoy = Join-Path $Root 'test.exe'
 $script:AppProc = $null
 $script:TargetPs = $null
 $script:TargetSync = $null
@@ -1017,6 +1072,7 @@ try {
     $dataDir = Join-Path $Work 'quick-snippets-data'
     $null = New-Item -ItemType Directory -Force -Path $dataDir
     Copy-Item $Exe $TestExe
+    Copy-Item $Exe $Decoy
     if ($BrowserProfileFrom) {
         Copy-Item -LiteralPath $BrowserProfileFrom -Destination (Join-Path $Work 'quick-snippets-webview') -Recurse
         $Notes.Add("тестова копія стартує з готовим профілем браузера з $BrowserProfileFrom")
@@ -1465,7 +1521,7 @@ try {
         return "$state, клавіатура в процесі $(Get-ForegroundProcessName)"
     }
 
-    Invoke-Step 'Автозапуск вмикається в налаштуваннях: запис і позначка «увімкнено» для Диспетчера завдань' {
+    Invoke-Step 'Автозапуск вмикається в налаштуваннях: запис у лапках, з нього Windows запускає тестову копію; позначка «увімкнено» для Диспетчера завдань' {
         Show-App
         Send-Keys 'Ctrl+Comma'
         $box = Wait-Until 'налаштування відкрито' { Find-Element (Get-AppWindow) -Id 'settings-autostart' }
@@ -1479,6 +1535,16 @@ try {
         } catch {
             throw "$($_.Exception.Message) ($(& $whereThingsAre))"
         }
+        # The path in quotes and nothing else, as a string value: the path of the test copy has a
+        # space, and without quotes the entry would be ambiguous (up to 0.3.4: the path and a space).
+        $entry = Get-AutostartValue $RunKey
+        if ("$($entry.Kind)" -ne 'String' -or $entry.Data -ne ('"' + $TestExe + '"')) {
+            throw "запис автозапуску не є шляхом до тестової копії в лапках: $($entry.Text)"
+        }
+        # What Windows starts from it: the test copy, not $Decoy one folder up.
+        $started = [QsSmokeNative]::ExeOfCommandLine($entry.Data)
+        if ($started -ne $TestExe) { throw "з запису автозапуску Windows запускає $started, а не тестову копію" }
+        $script:StepInfo = "запис автозапуску: $($entry.Data); Windows за ним бере $started"
         # Task Manager lists the entry as enabled.
         $null = Wait-Until 'позначка «увімкнено» для Диспетчера завдань' { (Format-Bytes (Get-AutostartMark)) -eq $MarkEnabled } 3
         # What the next start reads: the new value, and the other settings unchanged.
@@ -2075,8 +2141,8 @@ finally {
     $AutostartAfter = Get-AutostartState
     if ($null -ne $ClipBackup) { Set-ClipText $ClipBackup }
     elseif ($IsSta) { [System.Windows.Forms.Clipboard]::Clear() }
-    for ($i = 0; $i -lt 10 -and (Test-Path $Work); $i++) {
-        try { Remove-Item $Work -Recurse -Force } catch { Start-Sleep -Milliseconds 500 }
+    for ($i = 0; $i -lt 10 -and (Test-Path -LiteralPath $Root); $i++) {
+        try { Remove-Item -LiteralPath $Root -Recurse -Force } catch { Start-Sleep -Milliseconds 500 }
     }
 }
 
