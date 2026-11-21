@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T10:13:00Z'
-updated_date: '2026-11-21T11:39:00Z'
+updated_date: '2026-11-21T11:46:00Z'
 labels:
   - bug
   - backend
@@ -129,6 +129,16 @@ Definition of Done #4 and #5 are checked as not applicable: there is no new user
 ## Merge (2026-11-21)
 
 Merged into develop with git flow feature finish --no-ff --no-push: feature/rescue-damaged-dates (merge 8266059; code e0eddc8, Backlog d90ffa1). The tree of develop after the merge is the tree that was tested (git diff d90ffa1 8266059 is empty). Nothing pushed, no tag, version unchanged; not archived: left to the managing session.
+
+## Check by the managing session (2026-11-21)
+
+- git: develop b0858c0 = merge 8266059 of feature/rescue-damaged-dates (code e0eddc8, Backlog d90ffa1) plus the Backlog commit; the feature branch is gone; the app code at e0eddc8 is the same as on develop (only backlog/ differs).
+- `npm run test` 612 passed, `npm run test:rust` 384 passed (1 ignored, as before), `npm run lint` passes.
+- Code review: `is_app_date` accepts only the app's one date format; every tag from 0.1.0 to v0.3.5 writes dates only with strftime('%Y-%m-%dT%H:%M:%f', 'now') (checked in the git history of db.rs), so no intact date of an older version is taken for damage; `fill_damaged_dates` runs inside the copy's transaction; intact dates are copied as they are.
+- My own probe (the app's db.rs compiled into a small program, SQLite 3.46.0, opt-level "z"), test databases only: 520 damaged copies of a 90-snippet database (every page but the first, every sector, fills 00, 7F, A5, FF and random bytes): every rescue ended within 163 ms; no rescued copy holds a value that is not a date; 310 dates filled with the oldest date, in 155 snippets (always the date of creation and of change together); no date came out changed into another date; no filled snippet first by date of change; counts and the new counter as in TASK-43.
+- real_db\quick-snippets-TASK-45-e0eddc8.exe: SHA-256 FFF5C6297CF0CB5C18CE585692E173385CE997335EC7494BCBE8D601C2BB7F66, 3,900,416 bytes, the same as src-tauri\target\release\quick-snippets.exe.
+- The user's autostart values unchanged (entry absent, mark 02 00 00 00 00 00 00 00 00 00 00 00); no copy of the app running; no test folder left in %TEMP%; the handover note task-45-rescued-dates-handover.md is in the shared notes folder.
+- The user's answers (question dialog, verbatim): archive the task and its session "Так, обидві (Рекомендовано)"; push develop "Так, надіслати (Рекомендовано)"; a task for the settings dialog test that failed under load in TASK-33 and here "Так, задача на потім (Рекомендовано)", now TASK-46 (low, Later); next "Випуск 0.3.6 (Рекомендовано)", now TASK-47.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
