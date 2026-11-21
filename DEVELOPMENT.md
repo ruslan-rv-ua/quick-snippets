@@ -31,7 +31,7 @@ just test-watch        # Vitest у watch-режимі
 just test-cov          # Vitest з coverage
 
 just check             # швидко: tsc --noEmit + cargo check
-just lint              # tsc --noEmit + cargo clippy -D warnings
+just lint              # tsc --noEmit + cargo clippy -D warnings, разом із кодом тестів
 just format            # cargo fmt
 
 just build             # debug-збірка (npm run build + cargo build)
@@ -53,11 +53,17 @@ npx vitest run                  # тести фронтенду (однораз�
 npx vitest run src/hooks/__tests__/useSearchLogic.test.ts   # один файл
 npm run test:rust               # тести Rust (--test-threads=1, через SQLite)
 npm run test:all                # усі тести
-npm run lint                    # tsc + clippy
+npm run lint                    # tsc + clippy, разом із кодом тестів
 npx tauri build --no-bundle     # портативний exe, як у релізі
 ```
 
 Готовий exe: `src-tauri/target/release/quick-snippets.exe`.
+
+Clippy у `npm run lint`, `just lint` і `just final-checks` запускається з `--all-targets`
+(`cargo clippy --all-targets -- -D warnings`): він перевіряє й код тестів Rust, а не лише код
+програми (з TASK-34). `npm run lint` запускають також CI і Release workflow, тож зауваження clippy
+в тесті зупиняє і їх. Зауваження виправляйте, не послаблюючи перевірок тесту; `#[allow(...)]`
+лише тоді, коли інакше ніяк, з коментарем чому.
 
 ## Перевірка з NVDA (smoke)
 
