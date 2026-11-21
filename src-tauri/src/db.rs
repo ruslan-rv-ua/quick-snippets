@@ -846,6 +846,12 @@ pub(crate) mod test_damage {
 
     /// `snippets.db` in `dir` with `count` plain snippets of about 300 bytes (eight to a page of
     /// 4096 bytes), saved the way the app saves them, in one transaction.
+    ///
+    /// Saved within a few milliseconds, many of them would share one time, and the list by date
+    /// (idx_snippets_updated_at, ties by id) would start at the lowest id of the newest group:
+    /// sometimes on the damaged page. So each snippet then gets its own dates, a minute apart,
+    /// later for a higher id, as snippets saved over time have them. The dates keep their length,
+    /// so every snippet stays on its page.
     pub fn build_db(dir: &Path, count: i64) -> PathBuf {
         let path = dir.join("snippets.db");
         let conn = open_and_init_db(&path).unwrap();
@@ -853,6 +859,12 @@ pub(crate) mod test_damage {
         for i in 1..=count {
             create_snippet(&conn, &title_of(i), content_of(i).into_bytes(), false).unwrap();
         }
+        conn.execute_batch(
+            "UPDATE snippets SET
+                 created_at = strftime('%Y-%m-%dT%H:%M:%f', 'now', '-' || (20000 - id) || ' minutes'),
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now', '-' || (10000 - id) || ' minutes')",
+        )
+        .unwrap();
         conn.execute_batch("COMMIT").unwrap();
         path
     }
@@ -1978,6 +1990,9 @@ mod tests {
             assert!(!listing.damaged, "{mode}");
         }
         assert!(!list_snippets_for_search(&conn).damaged);
+        // The test database lists the newest first, by id: the damage tests rely on it.
+        let ids: Vec<i64> = list_snippets_sorted(&conn, "modified", "desc").rows.iter().map(|r| r.0).collect();
+        assert_eq!(ids, (1..=COUNT).rev().collect::<Vec<_>>());
     }
 
     /// Up to 0.3.5 the list ended silently at a damaged page, and the orders that sort every row
