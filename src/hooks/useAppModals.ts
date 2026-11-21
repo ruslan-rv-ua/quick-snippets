@@ -3,7 +3,7 @@ import type { SearchResult } from '../types';
 import { getSnippetById } from './useIpc';
 import { useLanguage } from './useLanguage';
 import { useModalState, type ModalState } from './useModalState';
-import { DAMAGE_TOAST_MS, failureMessage, ipcErrorToString, isDamage } from '../utils/errors';
+import { failureToast, ipcErrorToString } from '../utils/errors';
 
 /**
  * Options for useAppModals hook.
@@ -31,8 +31,8 @@ export function useAppModals(options: UseAppModalsOptions): ModalState & {
 
   /**
    * Open the edit modal for the active (focused) snippet.
-   * Fetches full snippet data before opening. Damage is said in the language of the app; any
-   * other error is still shown as the backend gives it (TASK-42).
+   * Fetches full snippet data before opening. A failure is a toast that says so in the language
+   * of the app, with the reason the database gives, as it is (damage in words of the app).
    */
   const openEdit = useCallback(async () => {
     const active = options.snippets[options.activeIndex];
@@ -42,12 +42,8 @@ export function useAppModals(options: UseAppModalsOptions): ModalState & {
       modals.setEditSnippet(sv);
       modals.setShowEdit(true);
     } catch (err) {
-      const msg = ipcErrorToString(err);
-      if (isDamage(msg)) {
-        options.addToast(failureMessage(tf.snippetOpenFailed, msg, tf), 'error', DAMAGE_TOAST_MS);
-      } else {
-        options.addToast(msg, 'error');
-      }
+      const { message, duration } = failureToast(tf.snippetOpenFailed, ipcErrorToString(err), tf);
+      options.addToast(message, 'error', duration);
     }
   }, [options.snippets, options.activeIndex, modals, options, tf]);
 

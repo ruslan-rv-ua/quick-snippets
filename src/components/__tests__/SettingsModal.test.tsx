@@ -7,6 +7,7 @@ import { SettingsModal } from '../SettingsModal';
 import { LanguageProvider } from '../../contexts/LanguageContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import { translations } from '../../i18n/translations';
+import { settle } from '../../test/settle';
 import type { Settings } from '../../types';
 
 const mockInvoke = vi.mocked(invoke);
@@ -83,7 +84,9 @@ function Harness({
 
 /**
  * Renders the app's providers, lets them load the saved theme and language
- * (as at app start), then opens the dialog, like Ctrl+, does.
+ * (as at app start), then opens the dialog, like Ctrl+, does. Returns once the
+ * dialog has read the settings and set its first focus and its Escape and
+ * Ctrl+Enter handlers (see settle).
  */
 async function openSettings(
   initial: Partial<Settings> = {},
@@ -94,9 +97,10 @@ async function openSettings(
   const onClose = vi.fn();
   const onError = vi.fn();
   const utils = render(<Harness open={false} onClose={onClose} onError={onError} />);
-  await act(async () => {});
+  await settle();
   utils.rerender(<Harness open={true} onClose={onClose} onError={onError} />);
-  const dialog = await screen.findByRole('dialog');
+  await settle();
+  const dialog = screen.getByRole('dialog');
   return { ...utils, dialog, saved, onClose, onError };
 }
 
@@ -567,7 +571,8 @@ describe('SettingsModal', () => {
     const { rerender, onClose } = await openSettings({}, 'en', true);
     fireEvent.click(autostartBox());
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(autostartMessage()).not.toBeEmptyDOMElement());
+    await settle(); // Escape needs the dialog's handlers from after the answer.
+    expect(autostartMessage()).not.toBeEmptyDOMElement();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 
@@ -679,7 +684,8 @@ describe('SettingsModal', () => {
     await openSettings();
     writeError = ACCESS_DENIED;
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(saveMessage()).not.toBeEmptyDOMElement());
+    await settle(); // Ctrl+Enter needs the dialog's handlers from after the answer.
+    expect(saveMessage()).not.toBeEmptyDOMElement();
 
     const region = saveMessage();
     const texts: string[] = [];
@@ -707,7 +713,8 @@ describe('SettingsModal', () => {
     const { rerender, onClose } = await openSettings();
     writeError = ACCESS_DENIED;
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(saveMessage()).not.toBeEmptyDOMElement());
+    await settle(); // Escape needs the dialog's handlers from after the answer.
+    expect(saveMessage()).not.toBeEmptyDOMElement();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 

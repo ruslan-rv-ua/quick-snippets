@@ -213,12 +213,15 @@ fn seal(
     derive_key(password, &salt, iterations, &mut key);
 
     // Encrypt
-    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-        .map_err(|_| CryptoError::EncryptionFailed)?;
+    let cipher =
+        Aes256Gcm::new_from_slice(key.as_slice()).map_err(|_| CryptoError::EncryptionFailed)?;
     let ciphertext = cipher
         .encrypt(
             Nonce::from_slice(&nonce_bytes),
-            Payload { msg: plaintext, aad: associated_data },
+            Payload {
+                msg: plaintext,
+                aad: associated_data,
+            },
         )
         .map_err(|_| CryptoError::EncryptionFailed)?;
 
@@ -257,13 +260,15 @@ fn open(
     derive_key(password, salt, iterations, &mut key);
 
     // Decrypt
-    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-        .map_err(|_| CryptoError::InvalidData)?;
+    let cipher = Aes256Gcm::new_from_slice(key.as_slice()).map_err(|_| CryptoError::InvalidData)?;
     // Return plaintext directly — caller is responsible for zeroizing after use.
     cipher
         .decrypt(
             Nonce::from_slice(nonce_bytes),
-            Payload { msg: ciphertext, aad: associated_data },
+            Payload {
+                msg: ciphertext,
+                aad: associated_data,
+            },
         )
         .map_err(|_| CryptoError::WrongPassword)
 }
@@ -457,7 +462,10 @@ mod tests {
         derive_key("password", salt, TEST_ITERATIONS, &mut key1);
         derive_key("password", salt, TEST_ITERATIONS + 1, &mut key2);
 
-        assert_ne!(key1, key2, "Different iteration counts should produce different keys");
+        assert_ne!(
+            key1, key2,
+            "Different iteration counts should produce different keys"
+        );
     }
 
     #[test]
@@ -465,9 +473,9 @@ mod tests {
         let password = "test_password";
         let salt = b"1234567890123456"; // 16 bytes
         let mut key = [0u8; KEY_LEN];
-        
+
         derive_key(password, salt, TEST_ITERATIONS, &mut key);
-        
+
         // Key should be filled with non-zero bytes (extremely unlikely all zeros)
         assert!(!key.iter().all(|&b| b == 0), "Key should not be all zeros");
     }
@@ -478,10 +486,10 @@ mod tests {
         let salt = b"same_salt_value!";
         let mut key1 = [0u8; KEY_LEN];
         let mut key2 = [0u8; KEY_LEN];
-        
+
         derive_key(password, salt, TEST_ITERATIONS, &mut key1);
         derive_key(password, salt, TEST_ITERATIONS, &mut key2);
-        
+
         assert_eq!(key1, key2, "Same password + salt should produce same key");
     }
 
@@ -490,11 +498,14 @@ mod tests {
         let salt = b"same_salt_value!";
         let mut key1 = [0u8; KEY_LEN];
         let mut key2 = [0u8; KEY_LEN];
-        
+
         derive_key("password1", salt, TEST_ITERATIONS, &mut key1);
         derive_key("password2", salt, TEST_ITERATIONS, &mut key2);
-        
-        assert_ne!(key1, key2, "Different passwords should produce different keys");
+
+        assert_ne!(
+            key1, key2,
+            "Different passwords should produce different keys"
+        );
     }
 
     #[test]
@@ -504,14 +515,12 @@ mod tests {
         let salt2 = b"salt_value_two!!";
         let mut key1 = [0u8; KEY_LEN];
         let mut key2 = [0u8; KEY_LEN];
-        
+
         derive_key(password, salt1, TEST_ITERATIONS, &mut key1);
         derive_key(password, salt2, TEST_ITERATIONS, &mut key2);
-        
+
         assert_ne!(key1, key2, "Different salts should produce different keys");
     }
-
-
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
@@ -558,7 +567,10 @@ mod tests {
         let password = "pass";
         let enc1 = encrypt(plaintext, password).expect("encrypt 1 failed");
         let enc2 = encrypt(plaintext, password).expect("encrypt 2 failed");
-        assert_ne!(enc1, enc2, "Two encryptions of same data must differ (different salt/nonce)");
+        assert_ne!(
+            enc1, enc2,
+            "Two encryptions of same data must differ (different salt/nonce)"
+        );
     }
 
     // --- Wrong password ---
@@ -577,9 +589,7 @@ mod tests {
         let plaintext = b"text";
         let encrypted = encrypt(plaintext, "correct").expect("encrypt failed");
         // Should return Err, never panic
-        let result = std::panic::catch_unwind(|| {
-            decrypt(&encrypted, "wrong")
-        });
+        let result = std::panic::catch_unwind(|| decrypt(&encrypted, "wrong"));
         assert!(result.is_ok(), "decrypt with wrong password must not panic");
         assert!(result.unwrap().is_err());
     }
@@ -596,7 +606,7 @@ mod tests {
     #[test]
     fn test_decrypt_truncated_ciphertext() {
         // Valid base64 but too short after decoding
-        let short_data = BASE64.encode(&[1u8; 10]);
+        let short_data = BASE64.encode([1u8; 10]);
         let result = decrypt(short_data.as_bytes(), "pass");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), CryptoError::InvalidData);
@@ -618,13 +628,18 @@ mod tests {
             .strip_prefix(b"v2:".as_slice())
             .expect("Encrypted output must start with the v2: marker");
         let decoded = BASE64.decode(payload);
-        assert!(decoded.is_ok(), "The part after the marker must be valid base64");
+        assert!(
+            decoded.is_ok(),
+            "The part after the marker must be valid base64"
+        );
     }
 
     #[test]
     fn test_encrypted_format_salt_nonce_ciphertext_tag() {
         let encrypted = encrypt(b"x", "pass").expect("encrypt failed");
-        let payload = encrypted.strip_prefix(V2_PREFIX).expect("v2: marker missing");
+        let payload = encrypted
+            .strip_prefix(V2_PREFIX)
+            .expect("v2: marker missing");
         let decoded = BASE64.decode(payload).expect("base64 decode failed");
         // salt(16) + nonce(12) + ciphertext(1) + tag(16) = 45 for 1-byte plaintext
         assert_eq!(decoded.len(), MIN_DECODED_LEN + 1);
@@ -654,8 +669,14 @@ mod tests {
         // This is what keeps the two formats apart: a legacy blob is pure base64, and the
         // marker ends with a character that base64 never produces.
         assert_eq!(V2_PREFIX.last(), Some(&b':'));
-        assert!(BASE64.decode(b"v2AA").is_ok(), "four base64 characters decode");
-        assert!(BASE64.decode(b"v2:A").is_err(), "':' is not a base64 character");
+        assert!(
+            BASE64.decode(b"v2AA").is_ok(),
+            "four base64 characters decode"
+        );
+        assert!(
+            BASE64.decode(b"v2:A").is_err(),
+            "':' is not a base64 character"
+        );
         // No byte that the base64 encoder can emit is ':'.
         let all_bytes: Vec<u8> = (0..=255).collect();
         assert!(!BASE64.encode(&all_bytes).contains(':'));
@@ -677,8 +698,14 @@ mod tests {
 
     #[test]
     fn test_known_answer_blobs_reject_wrong_password() {
-        assert_eq!(decrypt(LEGACY_BLOB, V2_PASSWORD).unwrap_err(), CryptoError::WrongPassword);
-        assert_eq!(decrypt(V2_BLOB, LEGACY_PASSWORD).unwrap_err(), CryptoError::WrongPassword);
+        assert_eq!(
+            decrypt(LEGACY_BLOB, V2_PASSWORD).unwrap_err(),
+            CryptoError::WrongPassword
+        );
+        assert_eq!(
+            decrypt(V2_BLOB, LEGACY_PASSWORD).unwrap_err(),
+            CryptoError::WrongPassword
+        );
     }
 
     // --- Legacy format (QuickSnippets 0.1.0 to 0.2.1) ---
@@ -687,7 +714,9 @@ mod tests {
     fn test_legacy_blob_has_no_marker_and_is_plain_base64() {
         let legacy = encrypt_legacy(b"x", "pass");
         assert!(!legacy.starts_with(V2_PREFIX));
-        let decoded = BASE64.decode(&legacy).expect("legacy blob must be plain base64");
+        let decoded = BASE64
+            .decode(&legacy)
+            .expect("legacy blob must be plain base64");
         assert_eq!(decoded.len(), MIN_DECODED_LEN + 1);
         // The test helper writes the same shape as the real v0.2.1 blob.
         assert!(BASE64.decode(LEGACY_BLOB).is_ok());
@@ -719,7 +748,10 @@ mod tests {
     #[test]
     fn test_legacy_decrypt_wrong_password() {
         let legacy = encrypt_legacy(b"text", "correct");
-        assert_eq!(decrypt(&legacy, "wrong").unwrap_err(), CryptoError::WrongPassword);
+        assert_eq!(
+            decrypt(&legacy, "wrong").unwrap_err(),
+            CryptoError::WrongPassword
+        );
     }
 
     #[test]
@@ -751,14 +783,20 @@ mod tests {
     #[test]
     fn test_v2_blob_without_marker_does_not_decrypt_as_legacy() {
         let payload = V2_BLOB.strip_prefix(V2_PREFIX).unwrap();
-        assert_eq!(decrypt(payload, V2_PASSWORD).unwrap_err(), CryptoError::WrongPassword);
+        assert_eq!(
+            decrypt(payload, V2_PASSWORD).unwrap_err(),
+            CryptoError::WrongPassword
+        );
     }
 
     #[test]
     fn test_legacy_blob_with_marker_does_not_decrypt_as_v2() {
         let mut marked = V2_PREFIX.to_vec();
         marked.extend_from_slice(LEGACY_BLOB);
-        assert_eq!(decrypt(&marked, LEGACY_PASSWORD).unwrap_err(), CryptoError::WrongPassword);
+        assert_eq!(
+            decrypt(&marked, LEGACY_PASSWORD).unwrap_err(),
+            CryptoError::WrongPassword
+        );
     }
 
     #[test]
@@ -768,7 +806,10 @@ mod tests {
         let payload = seal(b"data", "pass", V2_PBKDF2_ITERATIONS, &[]).unwrap();
         let mut blob = V2_PREFIX.to_vec();
         blob.extend_from_slice(payload.as_bytes());
-        assert_eq!(decrypt(&blob, "pass").unwrap_err(), CryptoError::WrongPassword);
+        assert_eq!(
+            decrypt(&blob, "pass").unwrap_err(),
+            CryptoError::WrongPassword
+        );
     }
 
     #[test]
@@ -783,38 +824,55 @@ mod tests {
     fn test_unknown_marker_is_invalid_data() {
         let mut future = b"v3:".to_vec();
         future.extend_from_slice(V2_BLOB.strip_prefix(V2_PREFIX).unwrap());
-        assert_eq!(decrypt(&future, V2_PASSWORD).unwrap_err(), CryptoError::InvalidData);
+        assert_eq!(
+            decrypt(&future, V2_PASSWORD).unwrap_err(),
+            CryptoError::InvalidData
+        );
     }
 
     // --- Invalid v2 data ---
 
     #[test]
     fn test_decrypt_v2_marker_only() {
-        assert_eq!(decrypt(b"v2:", "pass").unwrap_err(), CryptoError::InvalidData);
+        assert_eq!(
+            decrypt(b"v2:", "pass").unwrap_err(),
+            CryptoError::InvalidData
+        );
     }
 
     #[test]
     fn test_decrypt_v2_invalid_base64() {
-        assert_eq!(decrypt(b"v2:not-valid-base64!!!", "pass").unwrap_err(), CryptoError::InvalidData);
+        assert_eq!(
+            decrypt(b"v2:not-valid-base64!!!", "pass").unwrap_err(),
+            CryptoError::InvalidData
+        );
     }
 
     #[test]
     fn test_decrypt_v2_truncated_ciphertext() {
         let mut short = V2_PREFIX.to_vec();
         short.extend_from_slice(BASE64.encode([1u8; MIN_DECODED_LEN - 1]).as_bytes());
-        assert_eq!(decrypt(&short, "pass").unwrap_err(), CryptoError::InvalidData);
+        assert_eq!(
+            decrypt(&short, "pass").unwrap_err(),
+            CryptoError::InvalidData
+        );
     }
 
     #[test]
     fn test_decrypt_v2_corrupted_ciphertext_or_tag() {
-        let original = BASE64.decode(V2_BLOB.strip_prefix(V2_PREFIX).unwrap()).unwrap();
+        let original = BASE64
+            .decode(V2_BLOB.strip_prefix(V2_PREFIX).unwrap())
+            .unwrap();
         // First ciphertext byte, then the last byte of the authentication tag.
         for index in [SALT_LEN + NONCE_LEN, original.len() - 1] {
             let mut blob = original.clone();
             blob[index] ^= 0x01;
             let mut corrupted = V2_PREFIX.to_vec();
             corrupted.extend_from_slice(BASE64.encode(&blob).as_bytes());
-            assert_eq!(decrypt(&corrupted, V2_PASSWORD).unwrap_err(), CryptoError::WrongPassword);
+            assert_eq!(
+                decrypt(&corrupted, V2_PASSWORD).unwrap_err(),
+                CryptoError::WrongPassword
+            );
         }
     }
 

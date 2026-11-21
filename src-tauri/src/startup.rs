@@ -127,9 +127,8 @@ pub fn screen_reader_running() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETSCREENREADER};
 
     let mut on: i32 = 0;
-    let ok = unsafe {
-        SystemParametersInfoW(SPI_GETSCREENREADER, 0, &mut on as *mut i32 as *mut _, 0)
-    };
+    let ok =
+        unsafe { SystemParametersInfoW(SPI_GETSCREENREADER, 0, &mut on as *mut i32 as *mut _, 0) };
     ok != 0 && on != 0
 }
 
@@ -153,8 +152,14 @@ mod tests {
 
     #[test]
     fn test_with_screen_reader_a_fast_start_waits_the_least_pause() {
-        assert_eq!(pause_before_first_show_ms(true, 0), MIN_SCREEN_READER_PAUSE_MS);
-        assert_eq!(pause_before_first_show_ms(true, 200), MIN_SCREEN_READER_PAUSE_MS);
+        assert_eq!(
+            pause_before_first_show_ms(true, 0),
+            MIN_SCREEN_READER_PAUSE_MS
+        );
+        assert_eq!(
+            pause_before_first_show_ms(true, 200),
+            MIN_SCREEN_READER_PAUSE_MS
+        );
     }
 
     #[test]
@@ -166,14 +171,21 @@ mod tests {
 
     #[test]
     fn test_with_screen_reader_the_pause_has_an_upper_limit() {
-        assert_eq!(pause_before_first_show_ms(true, 2000), MAX_SCREEN_READER_PAUSE_MS);
-        assert_eq!(pause_before_first_show_ms(true, u64::MAX), MAX_SCREEN_READER_PAUSE_MS);
+        assert_eq!(
+            pause_before_first_show_ms(true, 2000),
+            MAX_SCREEN_READER_PAUSE_MS
+        );
+        assert_eq!(
+            pause_before_first_show_ms(true, u64::MAX),
+            MAX_SCREEN_READER_PAUSE_MS
+        );
     }
 
     #[test]
     fn test_least_pause_is_past_what_was_measured_as_too_short() {
-        // 0.4 s after the page was ready was too early, 0.6 s was enough.
-        assert!(MIN_SCREEN_READER_PAUSE_MS >= 600);
+        // 0.4 s after the page was ready was too early, 0.6 s was enough. The fastest start
+        // gets the least pause.
+        assert!(pause_before_first_show_ms(true, 0) >= 600);
     }
 
     // === Gate ===

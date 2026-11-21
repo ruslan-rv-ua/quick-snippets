@@ -1,0 +1,8 @@
+# Commits that only reformat code. git blame skips them with
+#   git config blame.ignoreRevsFile ":(optional).git-blame-ignore-revs"
+# (:(optional) keeps blame working where this file does not exist yet; GitHub's
+# blame view reads this file by itself). Add the full hash of each
+# formatting-only commit, with a comment line saying what it was.
+
+# TASK-48: cargo fmt of the Rust code (rustfmt default style)
+d7fee2fe0ee49c94e995d610ef7438f441a59e26

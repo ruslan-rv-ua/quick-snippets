@@ -9,7 +9,8 @@
 # виконуються локально в кожній задачі і в release.yml перед збіркою релізу.
 #
 # Запускає те саме, що й локально:
-#   npm run lint      — TypeScript (tsc --noEmit) + cargo clippy -D warnings
+#   npm run lint      — TypeScript (tsc --noEmit) + cargo clippy --all-targets
+#                       -D warnings (разом із кодом тестів Rust)
 #   npm run test      — Vitest
 #   npm run test:rust — cargo test --lib (однопотоково, через SQLite)
 #

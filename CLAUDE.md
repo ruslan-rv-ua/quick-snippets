@@ -43,7 +43,14 @@ just smoke-tray          # the same with the test copy started in the tray: the 
                          # at startup, and NVDA must read the first Ctrl+Alt+Space show
 
 # Lint
-npm run lint             # TypeScript strict noEmit + cargo clippy -D warnings
+npm run lint             # TypeScript strict noEmit + cargo clippy --all-targets -D warnings
+                         # (Rust test code too; CI and the release run it, so a finding in a
+                         # test stops them: fix it without weakening the test)
+
+# Format (rustfmt's default style, no rustfmt.toml; TASK-48). Only `just final-checks` runs
+# `cargo fmt --check`: npm run lint, CI and the release do not (their Rust has no rustfmt).
+# Formatting-only commits go into .git-blame-ignore-revs (full hash, in a commit of its own).
+just format              # cd src-tauri; cargo fmt
 ```
 
 ## Architecture
@@ -90,6 +97,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - Control characters (`\n`, `\r`, `\t`) are sent as virtual key presses (VK_RETURN, VK_TAB).
 - Configurable `char_delay_ms` with enforced minimum 50ms in SendInput fallback for screen reader safety.
 - Handles UTF-16 surrogate pairs for emoji/non-BMP characters.
+- `autotype_snippet` hides the window before it types, so a failure of the typing itself (PostMessage refused by a target run as administrator, a target closed while typing, a full message queue) lands in a hidden window that no screen reader reads: it plays the Windows error sound (`error_sound`, MessageBeep MB_ICONERROR) instead, the user's choice in TASK-42. Failures before the hide (the database, the password, damage) are shown in the window. The flow is `autotype_snippet_inner` in commands.rs, tested with stand-ins for hiding, typing and the sound.
 
 ### Frontend Testing
 
@@ -97,6 +105,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - Tauri APIs (`invoke`, `listen`, `emit`, `getCurrentWindow`) are mocked globally in setup.
 - TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` enforced.
 - Test files follow pattern: `src/**/__tests__/*.test.{ts,tsx}`.
+- A key press or a focus check after something the mocked backend answers (rendering the app, opening a dialog, Save) comes after `await settle()` ([src/test/settle.ts](src/test/settle.ts)), called right after that action, not after `waitFor`/`findBy…`: key handlers (`useModalKeyboard`, `useKeyboard`) and a dialog's first focus are set in effects, React 19 runs effects in a later step than the screen update, and on a busy computer the key reached the handler from before the answer (TASK-46). Do not put the action itself inside an async `act`: a click there no longer renders at once, and its update can merge with the answer's.
 
 ### Release & CI
 

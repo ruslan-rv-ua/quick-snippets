@@ -20,8 +20,9 @@ import type { AutostartError, LangCode } from '../types';
 export interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** The saved settings could not be read when the dialog opened; it then closes. A failed
-   *  Save is shown inside the dialog instead. */
+  /** The saved settings could not be read when the dialog opened; it then closes. Gets the
+   *  backend's error as it is: the app says it as a toast in its language. A failed Save is
+   *  shown inside the dialog instead. */
   onError?: (msg: string) => void;
 }
 

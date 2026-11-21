@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   asSentence,
+  DAMAGE_TOAST_MS,
   DATABASE_DAMAGED,
   failureMessage,
+  failureToast,
   ipcErrorToString,
   isDamage,
   isDatabaseDamaged,
@@ -153,5 +155,55 @@ describe('damage', () => {
     }
     expect(translations.uk.listDamaged).not.toBe(translations.en.listDamaged);
     expect(translations.de.listDamaged).not.toBe(translations.en.listDamaged);
+  });
+});
+
+// TASK-42: the toast of a failed action in the main window.
+describe('failureToast', () => {
+  const tf = translations.en;
+
+  it.each([
+    ['a locked database', 'database is locked', 'Could not copy the snippet. Reason: database is locked.'],
+    ['a snippet no longer in the database', 'Query returned no rows', 'Could not copy the snippet. Reason: Query returned no rows.'],
+    [
+      'a clipboard held by another program',
+      'The native clipboard is not accessible due to being held by another party.',
+      'Could not copy the snippet. Reason: The native clipboard is not accessible due to being held by another party.',
+    ],
+  ])('%s: what failed, with the reason as it is, as long as any toast', (_, failure, message) => {
+    expect(failureToast(tf.snippetCopyFailed, failure, tf)).toEqual({ message, duration: undefined });
+  });
+
+  it('damage: in words of the app, and longer, for the advice', () => {
+    expect(failureToast(tf.snippetOpenFailed, DATABASE_DAMAGED, tf)).toEqual({
+      message: failureMessage(tf.snippetOpenFailed, DATABASE_DAMAGED, tf),
+      duration: DAMAGE_TOAST_MS,
+    });
+    expect(failureToast(tf.snippetAutotypeFailed, SNIPPET_DAMAGED, tf)).toEqual({
+      message: 'Could not type the snippet. Reason: this snippet is damaged and cannot be read.',
+      duration: DAMAGE_TOAST_MS,
+    });
+  });
+
+  it('every frame of the main window, in every language, starts with what failed and takes the reason', () => {
+    const starts = {
+      en: ['Could not copy', 'Could not type', 'Could not open the snippet', 'Could not open the settings'],
+      uk: ['Не вдалося скопіювати', 'Не вдалося надрукувати', 'Не вдалося відкрити сніпет', 'Не вдалося відкрити налаштування'],
+      de: [
+        'Das Snippet ließ sich nicht kopieren',
+        'Das Snippet ließ sich nicht automatisch tippen',
+        'Das Snippet ließ sich nicht öffnen',
+        'Die Einstellungen ließen sich nicht öffnen',
+      ],
+    };
+    for (const lang of ['en', 'uk', 'de'] as const) {
+      const t = translations[lang];
+      const frames = [t.snippetCopyFailed, t.snippetAutotypeFailed, t.snippetOpenFailed, t.settingsOpenFailed];
+      frames.forEach((frame, i) => {
+        const message = frame('REASON.');
+        expect(message.startsWith(starts[lang][i])).toBe(true);
+        expect(message.endsWith('REASON.')).toBe(true);
+      });
+    }
   });
 });

@@ -142,7 +142,18 @@ describe('DeleteConfirmModal', () => {
 
     it('focus stays on Delete when the button was clicked', async () => {
       backend('en');
-      renderModal();
+      // The dialog puts focus on Cancel again 10 ms after it opens, and a user clicks Delete only
+      // later. Run that timer before the click: on a busy computer it fired during the test and
+      // moved focus to Cancel (TASK-46).
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        renderModal();
+        act(() => {
+          vi.runOnlyPendingTimers();
+        });
+      } finally {
+        vi.useRealTimers();
+      }
       const del = screen.getByRole('button', { name: 'Delete' });
       del.focus();
       fireEvent.click(del);

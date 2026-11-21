@@ -1,7 +1,7 @@
 // Settings load/save
 use anyhow::Result;
-use std::io::Write;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 // ------------------------------------------------------------------
@@ -271,7 +271,11 @@ fn detect_language_windows() -> Option<String> {
     if first_end == 0 {
         return None;
     }
-    Some(OsString::from_wide(&buf[..first_end]).to_string_lossy().to_string())
+    Some(
+        OsString::from_wide(&buf[..first_end])
+            .to_string_lossy()
+            .to_string(),
+    )
 }
 
 // ------------------------------------------------------------------
@@ -289,9 +293,8 @@ pub fn load_settings() -> Settings {
         Err(e) => {
             eprintln!("Failed to load settings: {e}");
             let lang = detect_language();
-            let reset = crate::error_dialogs::ask_yes_no(
-                &crate::error_dialogs::settings_unreadable(&lang),
-            );
+            let reset =
+                crate::error_dialogs::ask_yes_no(&crate::error_dialogs::settings_unreadable(&lang));
 
             if reset {
                 let defaults = Settings::default();
@@ -348,9 +351,9 @@ mod tests {
     fn test_default_settings() {
         let s = Settings::default();
         assert_eq!(s.theme, "dark");
-        assert_eq!(s.start_in_tray, false);
-        assert_eq!(s.autostart, false);
-        assert_eq!(s.confirm_on_close, true);
+        assert!(!s.start_in_tray);
+        assert!(!s.autostart);
+        assert!(s.confirm_on_close);
         assert_eq!(s.language, "");
         assert_eq!(s.window_state.x, 100);
         assert_eq!(s.window_state.y, 100);
@@ -386,7 +389,7 @@ mod tests {
         assert!(result.is_ok());
         let s = result.unwrap();
         assert_eq!(s.theme, "light");
-        assert_eq!(s.start_in_tray, false);
+        assert!(!s.start_in_tray);
     }
 
     // === File operations (via tempfile) ===
@@ -443,8 +446,10 @@ mod tests {
     fn test_load_settings_valid_json() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
-        let mut s = Settings::default();
-        s.theme = "light".to_string();
+        let s = Settings {
+            theme: "light".to_string(),
+            ..Default::default()
+        };
         std::fs::write(&path, serde_json::to_string_pretty(&s).unwrap()).unwrap();
         let loaded = load_settings_from_path(&path).unwrap();
         assert_eq!(loaded.theme, "light");
@@ -481,8 +486,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
         save_settings_to_path(&Settings::default(), &path).unwrap();
-        let mut s = Settings::default();
-        s.theme = "light".to_string();
+        let s = Settings {
+            theme: "light".to_string(),
+            ..Default::default()
+        };
         save_settings_to_path(&s, &path).unwrap();
         let loaded = load_settings_from_path(&path).unwrap();
         assert_eq!(loaded.theme, "light");
@@ -547,7 +554,10 @@ mod tests {
 
         assert_eq!(result.unwrap_err().to_string(), "disk full");
         assert_eq!(std::fs::read(&path).unwrap(), old);
-        assert!(!temp_path_for(&path).exists(), "the temporary file is removed");
+        assert!(
+            !temp_path_for(&path).exists(),
+            "the temporary file is removed"
+        );
         assert_eq!(load_settings_from_path(&path).unwrap(), Settings::default());
     }
 
@@ -587,9 +597,15 @@ mod tests {
 
         set_readonly(&path, false);
         let message = result.unwrap_err().to_string();
-        assert!(message.contains("os error 5"), "the reason from Windows: {message}");
+        assert!(
+            message.contains("os error 5"),
+            "the reason from Windows: {message}"
+        );
         assert_eq!(std::fs::read(&path).unwrap(), old);
-        assert!(!temp_path_for(&path).exists(), "no temporary file is created");
+        assert!(
+            !temp_path_for(&path).exists(),
+            "no temporary file is created"
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -610,7 +626,10 @@ mod tests {
 
         drop(held);
         let message = result.unwrap_err().to_string();
-        assert!(message.contains("os error 32"), "the reason from Windows: {message}");
+        assert!(
+            message.contains("os error 32"),
+            "the reason from Windows: {message}"
+        );
         assert_eq!(std::fs::read(&path).unwrap(), old);
         assert!(!temp_path_for(&path).exists());
     }
@@ -674,7 +693,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_normal() {
-        let state = WindowState { x: 200, y: 150, width: 700, height: 550 };
+        let state = WindowState {
+            x: 200,
+            y: 150,
+            width: 700,
+            height: 550,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, 200);
         assert_eq!(result.y, 150);
@@ -684,7 +708,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_x_too_low() {
-        let state = WindowState { x: -1001, y: 100, width: 680, height: 520 };
+        let state = WindowState {
+            x: -1001,
+            y: 100,
+            width: 680,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, 100);
         assert_eq!(result.y, 100);
@@ -692,7 +721,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_y_too_low() {
-        let state = WindowState { x: 100, y: -1001, width: 680, height: 520 };
+        let state = WindowState {
+            x: 100,
+            y: -1001,
+            width: 680,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, 100);
         assert_eq!(result.y, 100);
@@ -700,7 +734,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_x_too_high() {
-        let state = WindowState { x: 10001, y: 100, width: 680, height: 520 };
+        let state = WindowState {
+            x: 10001,
+            y: 100,
+            width: 680,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, 100);
         assert_eq!(result.y, 100);
@@ -708,7 +747,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_y_too_high() {
-        let state = WindowState { x: 100, y: 10001, width: 680, height: 520 };
+        let state = WindowState {
+            x: 100,
+            y: 10001,
+            width: 680,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, 100);
         assert_eq!(result.y, 100);
@@ -716,21 +760,36 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_boundary_minus_1000_ok() {
-        let state = WindowState { x: -1000, y: -1000, width: 680, height: 520 };
+        let state = WindowState {
+            x: -1000,
+            y: -1000,
+            width: 680,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, -1000);
     }
 
     #[test]
     fn test_validate_window_state_boundary_10000_ok() {
-        let state = WindowState { x: 10000, y: 10000, width: 680, height: 520 };
+        let state = WindowState {
+            x: 10000,
+            y: 10000,
+            width: 680,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.x, 10000);
     }
 
     #[test]
     fn test_validate_window_state_width_too_small() {
-        let state = WindowState { x: 100, y: 100, width: 479, height: 520 };
+        let state = WindowState {
+            x: 100,
+            y: 100,
+            width: 479,
+            height: 520,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.width, 680);
         assert_eq!(result.height, 520);
@@ -738,7 +797,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_height_too_small() {
-        let state = WindowState { x: 100, y: 100, width: 680, height: 319 };
+        let state = WindowState {
+            x: 100,
+            y: 100,
+            width: 680,
+            height: 319,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.width, 680);
         assert_eq!(result.height, 520);
@@ -746,7 +810,12 @@ mod tests {
 
     #[test]
     fn test_validate_window_state_min_size_boundary_ok() {
-        let state = WindowState { x: 100, y: 100, width: 480, height: 320 };
+        let state = WindowState {
+            x: 100,
+            y: 100,
+            width: 480,
+            height: 320,
+        };
         let result = validate_window_state(&state);
         assert_eq!(result.width, 480);
         assert_eq!(result.height, 320);
@@ -812,9 +881,11 @@ mod tests {
 
     #[test]
     fn test_settings_roundtrip_with_sort_fields() {
-        let mut s = Settings::default();
-        s.sort_mode = "alphabetical".to_string();
-        s.sort_direction = "asc".to_string();
+        let s = Settings {
+            sort_mode: "alphabetical".to_string(),
+            sort_direction: "asc".to_string(),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded.sort_mode, "alphabetical");

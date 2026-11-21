@@ -96,9 +96,8 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     // Schema migrations via user_version
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 1 {
-        conn.execute_batch(
-            "ALTER TABLE snippets ADD COLUMN last_used_at TEXT;"
-        ).ok(); // .ok() because fresh DBs already have the column from CREATE TABLE
+        conn.execute_batch("ALTER TABLE snippets ADD COLUMN last_used_at TEXT;")
+            .ok(); // .ok() because fresh DBs already have the column from CREATE TABLE
         conn.execute_batch("PRAGMA user_version = 1;")?;
     }
     Ok(())
@@ -245,7 +244,9 @@ pub fn open_db_or_ask(
         match classify_open_error(&err) {
             OpenFailure::Damaged => {
                 let kept_name = damaged_db_name(stamp, folder);
-                if !ask(&DbDialog::Damaged { kept_name: kept_name.clone() }) {
+                if !ask(&DbDialog::Damaged {
+                    kept_name: kept_name.clone(),
+                }) {
                     return None;
                 }
                 if let Err(e) = keep_damaged_db(db_path, &kept_name) {
@@ -344,14 +345,23 @@ fn text_lossy(value: ValueRef<'_>) -> Option<String> {
 /// letters, spaces (TASK-45). A date in this format is a date, even one that lies in the future.
 fn is_app_date(value: &str) -> bool {
     let b = value.as_bytes();
-    let separators = [(4, b'-'), (7, b'-'), (10, b'T'), (13, b':'), (16, b':'), (19, b'.')];
+    let separators = [
+        (4, b'-'),
+        (7, b'-'),
+        (10, b'T'),
+        (13, b':'),
+        (16, b':'),
+        (19, b'.'),
+    ];
     if b.len() != 23 || separators.iter().any(|&(at, separator)| b[at] != separator) {
         return false;
     }
     let number = |from: usize, to: usize| -> Option<u32> {
-        b[from..to]
-            .iter()
-            .try_fold(0, |n, &digit| digit.is_ascii_digit().then(|| n * 10 + u32::from(digit - b'0')))
+        b[from..to].iter().try_fold(0, |n, &digit| {
+            digit
+                .is_ascii_digit()
+                .then(|| n * 10 + u32::from(digit - b'0'))
+        })
     };
     let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second), Some(_)) = (
         number(0, 4),
@@ -378,10 +388,14 @@ fn is_app_date(value: &str) -> bool {
 /// Adds the ids (and the titles, where the query gives them) that `sql` returns until SQLite
 /// stops at damage.
 fn collect_ids(conn: &Connection, sql: &str, known: &mut BTreeMap<i64, Option<String>>) {
-    let Ok(mut stmt) = conn.prepare(sql) else { return };
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return;
+    };
     let Ok(mut rows) = stmt.query([]) else { return };
     while let Ok(Some(row)) = rows.next() {
-        let Ok(id) = row.get::<_, i64>(0) else { continue };
+        let Ok(id) = row.get::<_, i64>(0) else {
+            continue;
+        };
         let title = row.get_ref(1).ok().and_then(text_lossy);
         let entry = known.entry(id).or_insert(None);
         if entry.is_none() {
@@ -420,7 +434,9 @@ fn read_for_rescue(conn: &Connection, id: i64) -> RowRead {
              FROM snippets WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id])?;
-        let Some(row) = rows.next()? else { return Ok(RowRead::Missing) };
+        let Some(row) = rows.next()? else {
+            return Ok(RowRead::Missing);
+        };
         let is_encrypted = match row.get_ref(2)? {
             ValueRef::Integer(i) => i != 0,
             _ => return Ok(RowRead::Unreadable),
@@ -434,7 +450,9 @@ fn read_for_rescue(conn: &Connection, id: i64) -> RowRead {
         } else {
             String::from_utf8_lossy(&content).into_owned().into_bytes()
         };
-        let Some(title) = text_lossy(row.get_ref(0)?) else { return Ok(RowRead::Unreadable) };
+        let Some(title) = text_lossy(row.get_ref(0)?) else {
+            return Ok(RowRead::Unreadable);
+        };
         Ok(RowRead::Row(RescuedRow {
             title,
             content,
@@ -510,16 +528,39 @@ struct Reading {
 ///
 /// Reads `conn` only, in a read transaction (see [`keep_reading`]) that it ends again; a
 /// transaction the caller began stays open.
-fn read_snippets_one_by_one(conn: &Connection, keep: &mut dyn FnMut(i64, RescuedRow) -> bool) -> Reading {
+fn read_snippets_one_by_one(
+    conn: &Connection,
+    keep: &mut dyn FnMut(i64, RescuedRow) -> bool,
+) -> Reading {
     let caller_transaction = !conn.is_autocommit();
     keep_reading(conn);
     let mut named: BTreeMap<i64, Option<String>> = BTreeMap::new();
-    collect_ids(conn, "SELECT id, title FROM snippets INDEXED BY idx_snippets_title", &mut named);
-    collect_ids(conn, "SELECT id, NULL FROM snippets INDEXED BY idx_snippets_updated_at", &mut named);
-    collect_ids(conn, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id", &mut named);
-    collect_ids(conn, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id DESC", &mut named);
+    collect_ids(
+        conn,
+        "SELECT id, title FROM snippets INDEXED BY idx_snippets_title",
+        &mut named,
+    );
+    collect_ids(
+        conn,
+        "SELECT id, NULL FROM snippets INDEXED BY idx_snippets_updated_at",
+        &mut named,
+    );
+    collect_ids(
+        conn,
+        "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id",
+        &mut named,
+    );
+    collect_ids(
+        conn,
+        "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id DESC",
+        &mut named,
+    );
     let counter: Option<i64> = conn
-        .query_row("SELECT seq FROM sqlite_sequence WHERE name = 'snippets'", [], |r| r.get(0))
+        .query_row(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'snippets'",
+            [],
+            |r| r.get(0),
+        )
         .ok();
 
     // Snippets that exist but were not kept, with their titles where known.
@@ -549,7 +590,10 @@ fn read_snippets_one_by_one(conn: &Connection, keep: &mut dyn FnMut(i64, Rescued
             top = id;
         }
     }
-    let titled = named.iter().filter(|(_, title)| title.is_some()).map(|(&id, _)| id);
+    let titled = named
+        .iter()
+        .filter(|(_, title)| title.is_some())
+        .map(|(&id, _)| id);
     let ceiling = snippet_ceiling(top, counter, titled);
     for id in (1..=ceiling.min(MAX_TRIED_IDS)).filter(|id| !named.contains_key(id)) {
         try_one(id, None);
@@ -560,8 +604,15 @@ fn read_snippets_one_by_one(conn: &Connection, keep: &mut dyn FnMut(i64, Rescued
     }
     Reading {
         ceiling,
-        lost: missed.range(1..=ceiling).map(|(_, title)| title.clone()).collect(),
-        garbage: named.keys().copied().filter(|id| !(1..=ceiling).contains(id)).collect(),
+        lost: missed
+            .range(1..=ceiling)
+            .map(|(_, title)| title.clone())
+            .collect(),
+        garbage: named
+            .keys()
+            .copied()
+            .filter(|id| !(1..=ceiling).contains(id))
+            .collect(),
     }
 }
 
@@ -578,7 +629,9 @@ fn fill_damaged_dates(conn: &Connection, undated: &[i64], oldest: Option<String>
     }
     let date: String = match oldest {
         Some(date) => date,
-        None => conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| r.get(0))?,
+        None => conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| {
+            r.get(0)
+        })?,
     };
     let mut update = conn.prepare(
         "UPDATE snippets SET created_at = CASE created_at WHEN '' THEN ?1 ELSE created_at END,
@@ -588,7 +641,10 @@ fn fill_damaged_dates(conn: &Connection, undated: &[i64], oldest: Option<String>
     for id in undated {
         update.execute(params![date, id])?;
     }
-    eprintln!("The rescue filled the damaged dates of {} snippets with {date}", undated.len());
+    eprintln!(
+        "The rescue filled the damaged dates of {} snippets with {date}",
+        undated.len()
+    );
     Ok(())
 }
 
@@ -638,7 +694,10 @@ pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescu
                     undated.push(id);
                 }
                 // Dates in the app's one format sort as text in the order of their times.
-                oldest = [oldest.take(), created, updated].into_iter().flatten().min();
+                oldest = [oldest.take(), created, updated]
+                    .into_iter()
+                    .flatten()
+                    .min();
             }
             inserted
         })
@@ -646,7 +705,10 @@ pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescu
     fill_damaged_dates(&tx, &undated, oldest)?;
     if !reading.garbage.is_empty() {
         let shown = &reading.garbage[..reading.garbage.len().min(5)];
-        eprintln!("The rescue left out ids that name no snippet ({} in all): {shown:?}", reading.garbage.len());
+        eprintln!(
+            "The rescue left out ids that name no snippet ({} in all): {shown:?}",
+            reading.garbage.len()
+        );
     }
     // sqlite_sequence has no key: its one row for the table is changed, or added when no snippet
     // was copied. The inserts above have raised it to the highest id copied; the ceiling is not
@@ -661,7 +723,10 @@ pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescu
         params![reading.ceiling],
     )?;
     tx.commit()?;
-    let mut rescue = Rescue { saved, ..Rescue::default() };
+    let mut rescue = Rescue {
+        saved,
+        ..Rescue::default()
+    };
     for title in reading.lost {
         rescue.add_lost(title);
     }
@@ -757,14 +822,19 @@ pub fn rescue_if_damaged(
             Ok(rescue) => rescue,
             Err(e) => {
                 remove_rescue_file(&rescue_path);
-                if ask(&RescueDialog::Failed(RescueFailure::CopyFailed(e.to_string()))) {
+                if ask(&RescueDialog::Failed(RescueFailure::CopyFailed(
+                    e.to_string(),
+                ))) {
                     continue;
                 }
                 return RescueOutcome::Keep(conn);
             }
         };
         let kept_name = damaged_db_name(stamp, folder);
-        if !ask(&RescueDialog::Offer { rescue, kept_name: kept_name.clone() }) {
+        if !ask(&RescueDialog::Offer {
+            rescue,
+            kept_name: kept_name.clone(),
+        }) {
             remove_rescue_file(&rescue_path);
             return RescueOutcome::Keep(conn);
         }
@@ -779,7 +849,9 @@ pub fn rescue_if_damaged(
             Ok(conn) => conn,
             Err(_) => return RescueOutcome::Reopen,
         };
-        if !ask(&RescueDialog::Failed(RescueFailure::KeepFailed(failure.to_string()))) {
+        if !ask(&RescueDialog::Failed(RescueFailure::KeepFailed(
+            failure.to_string(),
+        ))) {
             return RescueOutcome::Keep(conn);
         }
     }
@@ -795,18 +867,26 @@ pub fn open_db_at_startup(db_path: &Path, lang: &str) -> Connection {
     loop {
         let conn = open_db_or_ask(db_path, &stamp, &mut |dialog| {
             let text = match dialog {
-                DbDialog::Damaged { kept_name } => error_dialogs::db_damaged(lang, kept_name, folder),
-                DbDialog::CannotOpen(failure) => error_dialogs::db_cannot_open(lang, failure, folder),
+                DbDialog::Damaged { kept_name } => {
+                    error_dialogs::db_damaged(lang, kept_name, folder)
+                }
+                DbDialog::CannotOpen(failure) => {
+                    error_dialogs::db_cannot_open(lang, failure, folder)
+                }
             };
             error_dialogs::ask_yes_no(&text)
         });
-        let Some(conn) = conn else { std::process::exit(0) };
+        let Some(conn) = conn else {
+            std::process::exit(0)
+        };
         let outcome = rescue_if_damaged(db_path, conn, &stamp, &mut |dialog| {
             let text = match dialog {
                 RescueDialog::Offer { rescue, kept_name } => {
                     error_dialogs::db_damaged_inside(lang, rescue, kept_name, folder)
                 }
-                RescueDialog::Failed(failure) => error_dialogs::db_rescue_failed(lang, failure, folder),
+                RescueDialog::Failed(failure) => {
+                    error_dialogs::db_rescue_failed(lang, failure, folder)
+                }
             };
             error_dialogs::ask_yes_no(&text)
         });
@@ -986,11 +1066,7 @@ pub fn list_snippets_for_search(conn: &Connection) -> Listing {
 
 /// List all snippets sorted by the given mode and direction.
 /// Unknown mode/direction falls back to "modified" / "desc".
-pub fn list_snippets_sorted(
-    conn: &Connection,
-    sort_mode: &str,
-    sort_direction: &str,
-) -> Listing {
+pub fn list_snippets_sorted(conn: &Connection, sort_mode: &str, sort_direction: &str) -> Listing {
     let dir = match sort_direction {
         "asc" => "ASC",
         "desc" => "DESC",
@@ -1005,9 +1081,7 @@ pub fn list_snippets_sorted(
         _ => format!("updated_at {dir}"),
     };
 
-    let sql = format!(
-        "SELECT id, title, is_encrypted FROM snippets ORDER BY {order_clause}"
-    );
+    let sql = format!("SELECT id, title, is_encrypted FROM snippets ORDER BY {order_clause}");
     read_listing(conn, &sql)
 }
 
@@ -1092,12 +1166,20 @@ pub(crate) mod test_damage {
         let leaves = pages_of(path, "snippets", "leaf");
         damage_page(path, leaves[leaves.len() / 2]);
         let conn = Connection::open(path).unwrap();
-        (1..=count).filter(|&id| get_snippet_by_id(&conn, id).is_err()).collect()
+        (1..=count)
+            .filter(|&id| get_snippet_by_id(&conn, id).is_err())
+            .collect()
     }
 
     /// Overwrites `bytes.len()` bytes of the file, `skip` bytes after the first (or, with `in_page`,
     /// the first one inside that page) place that holds `needle`, and returns the page.
-    pub fn overwrite_after(path: &Path, needle: &[u8], in_page: Option<&[i64]>, skip: usize, bytes: &[u8]) -> i64 {
+    pub fn overwrite_after(
+        path: &Path,
+        needle: &[u8],
+        in_page: Option<&[i64]>,
+        skip: usize,
+        bytes: &[u8],
+    ) -> i64 {
         let mut file = std::fs::read(path).unwrap();
         let at = (0..=file.len() - needle.len())
             .filter(|&i| &file[i..i + needle.len()] == needle)
@@ -1228,7 +1310,10 @@ mod tests {
         let conn = setup_test_db();
         let exact = vec![0u8; 65536];
         let result = create_snippet(&conn, "title-ok", exact, false);
-        assert!(result.is_ok(), "content of exactly 65536 bytes should be ok");
+        assert!(
+            result.is_ok(),
+            "content of exactly 65536 bytes should be ok"
+        );
     }
 
     #[test]
@@ -1244,7 +1329,10 @@ mod tests {
         let conn = setup_test_db();
         create_snippet(&conn, "title A", b"content1".to_vec(), false).unwrap();
         let result = create_snippet(&conn, "title B", b"content2".to_vec(), false);
-        assert!(result.is_ok(), "two snippets with different titles should be ok");
+        assert!(
+            result.is_ok(),
+            "two snippets with different titles should be ok"
+        );
     }
 
     // --- CRUD ---
@@ -1302,7 +1390,10 @@ mod tests {
         update_snippet(&conn, id, "New title", b"should-be-ignored".to_vec()).unwrap();
         let row = get_snippet_by_id(&conn, id).unwrap();
         assert_eq!(row.title, "New title");
-        assert_eq!(row.content, original_blob, "encrypted content must not change");
+        assert_eq!(
+            row.content, original_blob,
+            "encrypted content must not change"
+        );
     }
 
     // --- replace_encrypted_blob ---
@@ -1324,7 +1415,10 @@ mod tests {
         assert_eq!(row.content, b"new-blob");
         assert!(row.is_encrypted);
         assert_eq!(row.title, "Enc title");
-        assert_eq!(row.updated_at, "2026-02-03T04:05:06.000", "updated_at must not change");
+        assert_eq!(
+            row.updated_at, "2026-02-03T04:05:06.000",
+            "updated_at must not change"
+        );
     }
 
     #[test]
@@ -1335,7 +1429,10 @@ mod tests {
         let replaced = replace_encrypted_blob(&conn, id, b"stale-blob", b"new-blob").unwrap();
 
         assert!(!replaced);
-        assert_eq!(get_snippet_by_id(&conn, id).unwrap().content, b"current-blob");
+        assert_eq!(
+            get_snippet_by_id(&conn, id).unwrap().content,
+            b"current-blob"
+        );
     }
 
     #[test]
@@ -1357,8 +1454,14 @@ mod tests {
 
         assert!(replace_encrypted_blob(&conn, first, b"same-blob", b"new-blob").unwrap());
 
-        assert_eq!(get_snippet_by_id(&conn, first).unwrap().content, b"new-blob");
-        assert_eq!(get_snippet_by_id(&conn, second).unwrap().content, b"same-blob");
+        assert_eq!(
+            get_snippet_by_id(&conn, first).unwrap().content,
+            b"new-blob"
+        );
+        assert_eq!(
+            get_snippet_by_id(&conn, second).unwrap().content,
+            b"same-blob"
+        );
         assert!(!replace_encrypted_blob(&conn, 9999, b"same-blob", b"new-blob").unwrap());
     }
 
@@ -1370,7 +1473,10 @@ mod tests {
 
         let result = replace_encrypted_blob(&conn, id, b"old-blob", &too_long);
 
-        assert!(result.is_err(), "the content length CHECK must reject the new blob");
+        assert!(
+            result.is_err(),
+            "the content length CHECK must reject the new blob"
+        );
         assert_eq!(get_snippet_by_id(&conn, id).unwrap().content, b"old-blob");
     }
 
@@ -1398,7 +1504,10 @@ mod tests {
     fn test_delete_nonexistent_snippet() {
         let conn = setup_test_db();
         let result = delete_snippet(&conn, 9999);
-        assert!(result.is_err(), "deleting non-existent snippet should return Err");
+        assert!(
+            result.is_err(),
+            "deleting non-existent snippet should return Err"
+        );
     }
 
     // --- List ---
@@ -1484,7 +1593,10 @@ mod tests {
         let mode: String = conn
             .query_row("PRAGMA journal_mode;", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(mode, "delete", "DELETE journal mode must be enabled on a real file DB");
+        assert_eq!(
+            mode, "delete",
+            "DELETE journal mode must be enabled on a real file DB"
+        );
     }
 
     #[test]
@@ -1523,7 +1635,10 @@ mod tests {
 
         assert!(!db_path.exists(), "precondition: file must not exist yet");
         let _conn = open_and_init_db(&db_path).unwrap();
-        assert!(db_path.is_file(), "open_and_init_db must create the db file");
+        assert!(
+            db_path.is_file(),
+            "open_and_init_db must create the db file"
+        );
     }
 
     /// The snippets table contains all six expected columns.
@@ -1533,9 +1648,7 @@ mod tests {
         let db_path = dir.path().join("snippets.db");
         let conn = open_and_init_db(&db_path).unwrap();
 
-        let mut stmt = conn
-            .prepare("PRAGMA table_info(snippets)")
-            .unwrap();
+        let mut stmt = conn.prepare("PRAGMA table_info(snippets)").unwrap();
 
         let columns: Vec<String> = stmt
             .query_map([], |row| row.get::<_, String>(1))
@@ -1543,7 +1656,15 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
-        for expected in &["id", "title", "content", "is_encrypted", "created_at", "updated_at", "last_used_at"] {
+        for expected in &[
+            "id",
+            "title",
+            "content",
+            "is_encrypted",
+            "created_at",
+            "updated_at",
+            "last_used_at",
+        ] {
             assert!(
                 columns.iter().any(|c| c == expected),
                 "column '{}' not found in snippets table; found: {:?}",
@@ -1641,11 +1762,17 @@ mod tests {
         let conn = setup_test_db();
         let id = create_snippet(&conn, "test snip", b"data".to_vec(), false).unwrap();
         let row = get_snippet_by_id(&conn, id).unwrap();
-        assert!(row.last_used_at.is_none(), "last_used_at should be None initially");
+        assert!(
+            row.last_used_at.is_none(),
+            "last_used_at should be None initially"
+        );
 
         touch_last_used(&conn, id).unwrap();
         let row = get_snippet_by_id(&conn, id).unwrap();
-        assert!(row.last_used_at.is_some(), "last_used_at should be set after touch");
+        assert!(
+            row.last_used_at.is_some(),
+            "last_used_at should be set after touch"
+        );
     }
 
     #[test]
@@ -1770,7 +1897,8 @@ mod tests {
     }
 
     fn snippet_count(conn: &Connection) -> i64 {
-        conn.query_row("SELECT COUNT(*) FROM snippets", [], |row| row.get(0)).unwrap()
+        conn.query_row("SELECT COUNT(*) FROM snippets", [], |row| row.get(0))
+            .unwrap()
     }
 
     fn file_names(dir: &std::path::Path) -> Vec<String> {
@@ -1797,24 +1925,45 @@ mod tests {
             true
         })
         .expect("a healthy database must open");
-        assert!(asked.is_empty(), "no question for a healthy database: {asked:?}");
+        assert!(
+            asked.is_empty(),
+            "no question for a healthy database: {asked:?}"
+        );
         assert_eq!(snippet_count(&conn), 1);
     }
 
     #[test]
     fn test_classify_open_error_damage() {
-        assert_eq!(classify_open_error(&sqlite_failure(11)), OpenFailure::Damaged); // SQLITE_CORRUPT
-        assert_eq!(classify_open_error(&sqlite_failure(26)), OpenFailure::Damaged); // SQLITE_NOTADB
+        assert_eq!(
+            classify_open_error(&sqlite_failure(11)),
+            OpenFailure::Damaged
+        ); // SQLITE_CORRUPT
+        assert_eq!(
+            classify_open_error(&sqlite_failure(26)),
+            OpenFailure::Damaged
+        ); // SQLITE_NOTADB
     }
 
     #[test]
     fn test_classify_open_error_other_reasons_are_not_damage() {
         assert_eq!(classify_open_error(&sqlite_failure(5)), OpenFailure::Busy); // SQLITE_BUSY
         assert_eq!(classify_open_error(&sqlite_failure(6)), OpenFailure::Busy); // SQLITE_LOCKED
-        assert_eq!(classify_open_error(&sqlite_failure(14)), OpenFailure::CannotOpen); // SQLITE_CANTOPEN
-        assert_eq!(classify_open_error(&sqlite_failure(3)), OpenFailure::NoAccess); // SQLITE_PERM
-        assert_eq!(classify_open_error(&sqlite_failure(8)), OpenFailure::NoAccess); // SQLITE_READONLY
-        assert_eq!(classify_open_error(&sqlite_failure(13)), OpenFailure::DiskFull); // SQLITE_FULL
+        assert_eq!(
+            classify_open_error(&sqlite_failure(14)),
+            OpenFailure::CannotOpen
+        ); // SQLITE_CANTOPEN
+        assert_eq!(
+            classify_open_error(&sqlite_failure(3)),
+            OpenFailure::NoAccess
+        ); // SQLITE_PERM
+        assert_eq!(
+            classify_open_error(&sqlite_failure(8)),
+            OpenFailure::NoAccess
+        ); // SQLITE_READONLY
+        assert_eq!(
+            classify_open_error(&sqlite_failure(13)),
+            OpenFailure::DiskFull
+        ); // SQLITE_FULL
         assert!(matches!(
             classify_open_error(&sqlite_failure(10)), // SQLITE_IOERR
             OpenFailure::Other(_)
@@ -1860,7 +2009,10 @@ mod tests {
         assert_eq!(stamp.len(), 16, "{stamp}");
         let parts: Vec<&str> = stamp.split('-').collect();
         assert_eq!(parts.len(), 5, "{stamp}");
-        assert!(parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())), "{stamp}");
+        assert!(
+            parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())),
+            "{stamp}"
+        );
     }
 
     #[test]
@@ -1875,13 +2027,22 @@ mod tests {
     #[test]
     fn test_damaged_db_name_never_reuses_a_taken_name() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("snippets-damaged-2026-11-20-14-35.db"), b"1").unwrap();
+        std::fs::write(
+            dir.path().join("snippets-damaged-2026-11-20-14-35.db"),
+            b"1",
+        )
+        .unwrap();
         assert_eq!(
             damaged_db_name(STAMP, dir.path()),
             "snippets-damaged-2026-11-20-14-35-2.db"
         );
         // A leftover journal alone also takes the name.
-        std::fs::write(dir.path().join("snippets-damaged-2026-11-20-14-35-2.db-journal"), b"j").unwrap();
+        std::fs::write(
+            dir.path()
+                .join("snippets-damaged-2026-11-20-14-35-2.db-journal"),
+            b"j",
+        )
+        .unwrap();
         assert_eq!(
             damaged_db_name(STAMP, dir.path()),
             "snippets-damaged-2026-11-20-14-35-3.db"
@@ -1898,7 +2059,11 @@ mod tests {
         let kept = keep_damaged_db(&db_path, "snippets-damaged-x.db").unwrap();
 
         assert_eq!(kept, dir.path().join("snippets-damaged-x.db"));
-        assert_eq!(std::fs::read(&kept).unwrap(), GARBAGE, "bytes must be kept as they were");
+        assert_eq!(
+            std::fs::read(&kept).unwrap(),
+            GARBAGE,
+            "bytes must be kept as they were"
+        );
         assert_eq!(
             std::fs::read(dir.path().join("snippets-damaged-x.db-journal")).unwrap(),
             b"journal bytes"
@@ -1944,7 +2109,11 @@ mod tests {
             }]
         );
         let kept = dir.path().join("snippets-damaged-2026-11-20-14-35.db");
-        assert_eq!(std::fs::read(&kept).unwrap(), GARBAGE, "the damaged file must be kept as it was");
+        assert_eq!(
+            std::fs::read(&kept).unwrap(),
+            GARBAGE,
+            "the damaged file must be kept as it was"
+        );
         assert_eq!(snippet_count(&conn), 0);
         create_snippet(&conn, "New snippet", b"y".to_vec(), false).unwrap();
         assert_eq!(snippet_count(&conn), 1);
@@ -2058,7 +2227,11 @@ mod tests {
         })
         .expect("the second try must open");
         assert_eq!(asked, 1);
-        assert_eq!(snippet_count(&conn), 1, "the user's snippets must still be there");
+        assert_eq!(
+            snippet_count(&conn),
+            1,
+            "the user's snippets must still be there"
+        );
     }
 
     /// When the damaged file cannot be renamed, the user is told so and nothing
@@ -2103,7 +2276,11 @@ mod tests {
 
     const COUNT: i64 = 90;
 
-    fn all_rows(conn: &Connection) -> Vec<(i64, String, Vec<u8>, i64, String, String, Option<String>)> {
+    /// One row of `snippets`: id, title, content, is_encrypted, created_at, updated_at,
+    /// last_used_at.
+    type Row = (i64, String, Vec<u8>, i64, String, String, Option<String>);
+
+    fn all_rows(conn: &Connection) -> Vec<Row> {
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, content, is_encrypted, created_at, updated_at, last_used_at
@@ -2112,7 +2289,15 @@ mod tests {
             .unwrap();
         let rows = stmt
             .query_map([], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
             })
             .unwrap()
             .map(|r| r.unwrap())
@@ -2140,7 +2325,11 @@ mod tests {
         let conn = open_and_init_db(&path).expect("damage after the schema does not stop the open");
         assert!(matches!(check_health(&conn), Health::Damaged(_)));
         drop(conn);
-        assert_eq!(std::fs::read(&path).unwrap(), before, "the check must not change the file");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "the check must not change the file"
+        );
     }
 
     #[test]
@@ -2155,12 +2344,21 @@ mod tests {
         let path = build_db(dir.path(), 3);
         {
             let conn = open_and_init_db(&path).unwrap();
-            create_snippet(&conn, "Long one", "довгий текст ".repeat(2000).into_bytes(), false).unwrap();
+            create_snippet(
+                &conn,
+                "Long one",
+                "довгий текст ".repeat(2000).into_bytes(),
+                false,
+            )
+            .unwrap();
         }
         let overflow = pages_of(&path, "snippets", "overflow");
         damage_page(&path, overflow[overflow.len() / 2]);
         let conn = open_and_init_db(&path).unwrap();
-        assert!(matches!(check_health(&conn), Health::Damaged(_)), "overflow page");
+        assert!(
+            matches!(check_health(&conn), Health::Damaged(_)),
+            "overflow page"
+        );
     }
 
     /// The limit of the quick check: bytes changed inside a text break no structure, and SQLite
@@ -2186,7 +2384,11 @@ mod tests {
         }
         assert!(!list_snippets_for_search(&conn).damaged);
         // The test database lists the newest first, by id: the damage tests rely on it.
-        let ids: Vec<i64> = list_snippets_sorted(&conn, "modified", "desc").rows.iter().map(|r| r.0).collect();
+        let ids: Vec<i64> = list_snippets_sorted(&conn, "modified", "desc")
+            .rows
+            .iter()
+            .map(|r| r.0)
+            .collect();
         assert_eq!(ids, (1..=COUNT).rev().collect::<Vec<_>>());
     }
 
@@ -2201,10 +2403,16 @@ mod tests {
 
         let modified = list_snippets_sorted(&conn, "modified", "desc");
         assert!(modified.damaged);
-        assert!(!modified.rows.is_empty() && (modified.rows.len() as i64) < COUNT - unreadable.len() as i64);
+        assert!(
+            !modified.rows.is_empty()
+                && (modified.rows.len() as i64) < COUNT - unreadable.len() as i64
+        );
         let alphabetical = list_snippets_sorted(&conn, "alphabetical", "asc");
         assert!(alphabetical.damaged);
-        assert!(alphabetical.rows.is_empty(), "sorting reads every row first");
+        assert!(
+            alphabetical.rows.is_empty(),
+            "sorting reads every row first"
+        );
         let search = list_snippets_for_search(&conn);
         assert!(search.damaged);
         assert_eq!(search.rows.len(), modified.rows.len());
@@ -2216,7 +2424,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), COUNT);
         let leaves = pages_of(&path, "snippets", "leaf");
-        overwrite_after(&path, title_of(41).as_bytes(), Some(&leaves), 2, &[0xFF, 0xFE]);
+        overwrite_after(
+            &path,
+            title_of(41).as_bytes(),
+            Some(&leaves),
+            2,
+            &[0xFF, 0xFE],
+        );
         let conn = open_and_init_db(&path).unwrap();
 
         let listing = list_snippets_sorted(&conn, "modified", "desc");
@@ -2255,7 +2469,9 @@ mod tests {
             [],
         )
         .unwrap();
-        let err = get_snippet_by_id(&conn, 1).err().expect("the title is not UTF-8");
+        let err = get_snippet_by_id(&conn, 1)
+            .err()
+            .expect("the title is not UTF-8");
         assert_eq!(damage_of(&err), Some(Damage::Snippet), "{err}");
     }
 
@@ -2266,7 +2482,13 @@ mod tests {
         {
             let conn = open_and_init_db(&path).unwrap();
             // An encrypted snippet keeps its bytes, also those that are not UTF-8.
-            create_snippet(&conn, "Encrypted one", vec![0x76, 0x32, 0x3A, 0xFF, 0x00, 0x80], true).unwrap();
+            create_snippet(
+                &conn,
+                "Encrypted one",
+                vec![0x76, 0x32, 0x3A, 0xFF, 0x00, 0x80],
+                true,
+            )
+            .unwrap();
             touch_last_used(&conn, 3).unwrap();
             delete_snippet(&conn, 7).unwrap();
         }
@@ -2275,11 +2497,20 @@ mod tests {
 
         let rescue = copy_readable_snippets(&src, &dst_path).unwrap();
 
-        assert_eq!(rescue, Rescue { saved: 20, lost_titles: vec![], lost_untitled: 0 });
+        assert_eq!(
+            rescue,
+            Rescue {
+                saved: 20,
+                lost_titles: vec![],
+                lost_untitled: 0
+            }
+        );
         let dst = open_and_init_db(&dst_path).unwrap();
         assert_eq!(all_rows(&dst), all_rows(&src), "every value byte for byte");
         assert_eq!(check_health(&dst), Health::Healthy);
-        let version: i32 = dst.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        let version: i32 = dst
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
         assert_eq!(version, 1);
         // New snippets come after every id the old database used.
         let id = create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap();
@@ -2306,9 +2537,16 @@ mod tests {
         let listing = list_snippets_sorted(&dst, "alphabetical", "asc");
         assert!(!listing.damaged);
         assert_eq!(listing.rows.len(), rescue.saved);
-        assert_eq!(get_snippet_by_id(&dst, 1).unwrap().content, content_of(1).into_bytes());
+        assert_eq!(
+            get_snippet_by_id(&dst, 1).unwrap().content,
+            content_of(1).into_bytes()
+        );
         drop(src);
-        assert_eq!(std::fs::read(&path).unwrap(), before, "the damaged file must stay as it was");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "the damaged file must stay as it was"
+        );
     }
 
     /// When the newest snippets are lost, new ones still get ids after theirs, and the id counter
@@ -2319,17 +2557,27 @@ mod tests {
         let path = build_db(dir.path(), COUNT);
         damage_page(&path, *pages_of(&path, "snippets", "leaf").last().unwrap());
         let src = open_and_init_db(&path).unwrap();
-        assert!(get_snippet_by_id(&src, COUNT).is_err(), "the newest snippet is lost");
+        assert!(
+            get_snippet_by_id(&src, COUNT).is_err(),
+            "the newest snippet is lost"
+        );
 
         let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
         assert!(rescue.lost() > 0);
 
         let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
         let counters: i64 = dst
-            .query_row("SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'snippets'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'snippets'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(counters, 1);
-        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+        assert_eq!(
+            create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(),
+            COUNT + 1
+        );
 
         // Nothing could be copied: the counter row is added.
         let empty = Connection::open_in_memory().unwrap();
@@ -2337,7 +2585,10 @@ mod tests {
         let dst2 = dir.path().join("copy2.db");
         copy_readable_snippets(&empty, &dst2).unwrap();
         let dst2 = open_and_init_db(&dst2).unwrap();
-        assert_eq!(create_snippet(&dst2, "First one", b"x".to_vec(), false).unwrap(), 1);
+        assert_eq!(
+            create_snippet(&dst2, "First one", b"x".to_vec(), false).unwrap(),
+            1
+        );
     }
 
     /// With the table's root page damaged no snippet can be read, but the title index still names
@@ -2352,7 +2603,10 @@ mod tests {
         let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
 
         assert_eq!(rescue.saved, 0);
-        assert_eq!(rescue.lost_titles, (1..=COUNT).map(title_of).collect::<Vec<_>>());
+        assert_eq!(
+            rescue.lost_titles,
+            (1..=COUNT).map(title_of).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -2361,7 +2615,9 @@ mod tests {
         let path = build_db(dir.path(), COUNT);
         damage_page(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0]);
         let src = open_and_init_db(&path).unwrap();
-        assert!(list_snippets_sorted(&src, "modified", "desc").rows.is_empty());
+        assert!(list_snippets_sorted(&src, "modified", "desc")
+            .rows
+            .is_empty());
 
         let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
 
@@ -2380,7 +2636,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), COUNT);
         let leaves = pages_of(&path, "snippets", "leaf");
-        overwrite_after(&path, title_of(41).as_bytes(), Some(&leaves), 2, &[0xFF, 0xFE]);
+        overwrite_after(
+            &path,
+            title_of(41).as_bytes(),
+            Some(&leaves),
+            2,
+            &[0xFF, 0xFE],
+        );
         overwrite_after(&path, content_of(40).as_bytes(), None, 10, &[0xFF, 0xFF]);
         // Some structural damage too, so that the start-up would offer the rescue.
         damage_page(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0]);
@@ -2391,10 +2653,17 @@ mod tests {
         assert_eq!(rescue.saved as i64, COUNT);
         let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
         let title = get_snippet_by_id(&dst, 41).unwrap().title;
-        assert!(title.contains('\u{FFFD}') && title.ends_with("1 тест"), "{title}");
-        let text = String::from_utf8(get_snippet_by_id(&dst, 40).unwrap().content).expect("UTF-8 now");
+        assert!(
+            title.contains('\u{FFFD}') && title.ends_with("1 тест"),
+            "{title}"
+        );
+        let text =
+            String::from_utf8(get_snippet_by_id(&dst, 40).unwrap().content).expect("UTF-8 now");
         assert!(text.contains('\u{FFFD}'), "{text}");
-        assert_eq!(list_snippets_sorted(&dst, "modified", "desc").rows.len() as i64, COUNT);
+        assert_eq!(
+            list_snippets_sorted(&dst, "modified", "desc").rows.len() as i64,
+            COUNT
+        );
     }
 
     // --- garbage ids from a damaged sector (TASK-43) ---
@@ -2422,7 +2691,8 @@ mod tests {
         let (src, dst) = (src.to_path_buf(), dst.to_path_buf());
         let started = Instant::now();
         std::thread::spawn(move || {
-            let result = open_and_init_db(&src).and_then(|conn| copy_readable_snippets(&conn, &dst));
+            let result =
+                open_and_init_db(&src).and_then(|conn| copy_readable_snippets(&conn, &dst));
             tx.send(result.map_err(|e| e.to_string())).ok();
         });
         rx.recv_timeout(limit)
@@ -2451,10 +2721,17 @@ mod tests {
         {
             let conn = open_and_init_db(&path).unwrap();
             let ids = scan_ids(&conn, "SELECT id FROM snippets NOT INDEXED ORDER BY id");
-            assert!(ids.contains(&GARBAGE_A5), "the scan returns the garbage id: {ids:?}");
+            assert!(
+                ids.contains(&GARBAGE_A5),
+                "the scan returns the garbage id: {ids:?}"
+            );
         }
         let readable = readable_snippets(&path);
-        assert!(!readable.is_empty() && (readable.len() as i64) < COUNT, "{}", readable.len());
+        assert!(
+            !readable.is_empty() && (readable.len() as i64) < COUNT,
+            "{}",
+            readable.len()
+        );
         let before = std::fs::read(&path).unwrap();
         let dst_path = dir.path().join("copy.db");
 
@@ -2464,16 +2741,29 @@ mod tests {
         for (id, title, content) in &readable {
             let row = get_snippet_by_id(&dst, *id).unwrap_or_else(|e| panic!("snippet {id}: {e}"));
             assert_eq!(&row.title, title);
-            assert_eq!(row.content, String::from_utf8_lossy(content).into_owned().into_bytes());
+            assert_eq!(
+                row.content,
+                String::from_utf8_lossy(content).into_owned().into_bytes()
+            );
         }
         let copied: Vec<i64> = all_rows(&dst).iter().map(|r| r.0).collect();
         assert_eq!(rescue.saved, copied.len());
-        let lost: Vec<String> = (1..=COUNT).filter(|id| !copied.contains(id)).map(title_of).collect();
+        let lost: Vec<String> = (1..=COUNT)
+            .filter(|id| !copied.contains(id))
+            .map(title_of)
+            .collect();
         assert!(!lost.is_empty());
-        assert_eq!(rescue.lost_titles, lost, "the lost snippets, named by the title index");
+        assert_eq!(
+            rescue.lost_titles, lost,
+            "the lost snippets, named by the title index"
+        );
         assert_eq!(rescue.lost_untitled, 0, "the garbage id is no lost snippet");
         assert_eq!(rescue.total() as i64, COUNT);
-        assert_eq!(std::fs::read(&path).unwrap(), before, "the damaged file must stay as it was");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "the damaged file must stay as it was"
+        );
     }
 
     /// New snippets in the rescued database get the ids after the real ones, not after a garbage
@@ -2489,9 +2779,15 @@ mod tests {
         copy_within(&path, &dst_path, Duration::from_secs(1)).unwrap();
 
         let dst = open_and_init_db(&dst_path).unwrap();
-        let counter: Vec<i64> = scan_ids(&dst, "SELECT seq FROM sqlite_sequence WHERE name = 'snippets'");
+        let counter: Vec<i64> = scan_ids(
+            &dst,
+            "SELECT seq FROM sqlite_sequence WHERE name = 'snippets'",
+        );
         assert_eq!(counter, vec![COUNT]);
-        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+        assert_eq!(
+            create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(),
+            COUNT + 1
+        );
     }
 
     /// A sector of 0x7F in the modification date index gives its scan the id 127, a little above
@@ -2501,20 +2797,41 @@ mod tests {
     fn test_copy_readable_snippets_does_not_count_a_garbage_id_as_lost() {
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), COUNT);
-        damage_sector(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0], 4, 0x7F);
+        damage_sector(
+            &path,
+            pages_of(&path, "idx_snippets_updated_at", "leaf")[0],
+            4,
+            0x7F,
+        );
         {
             let conn = open_and_init_db(&path).unwrap();
-            let ids = scan_ids(&conn, "SELECT id FROM snippets INDEXED BY idx_snippets_updated_at");
-            assert!(ids.contains(&127), "the index scan returns the garbage id: {ids:?}");
+            let ids = scan_ids(
+                &conn,
+                "SELECT id FROM snippets INDEXED BY idx_snippets_updated_at",
+            );
+            assert!(
+                ids.contains(&127),
+                "the index scan returns the garbage id: {ids:?}"
+            );
             assert!(matches!(check_health(&conn), Health::Damaged(_)));
         }
         let dst_path = dir.path().join("copy.db");
 
         let rescue = copy_within(&path, &dst_path, Duration::from_secs(1)).unwrap();
 
-        assert_eq!(rescue, Rescue { saved: COUNT as usize, lost_titles: vec![], lost_untitled: 0 });
+        assert_eq!(
+            rescue,
+            Rescue {
+                saved: COUNT as usize,
+                lost_titles: vec![],
+                lost_untitled: 0
+            }
+        );
         let dst = open_and_init_db(&dst_path).unwrap();
-        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+        assert_eq!(
+            create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(),
+            COUNT + 1
+        );
     }
 
     #[test]
@@ -2522,10 +2839,25 @@ mod tests {
         let none = std::iter::empty::<i64>;
         // The counter agrees with what could be read: it is the ceiling.
         assert_eq!(snippet_ceiling(90, Some(90), none()), 90);
-        assert_eq!(snippet_ceiling(84, Some(90), none()), 90, "the newest snippets are lost");
-        assert_eq!(snippet_ceiling(0, Some(90), none()), 90, "no snippet could be read");
-        assert_eq!(snippet_ceiling(90, Some(90 + ID_MARGIN), none()), 90 + ID_MARGIN);
-        assert_eq!(snippet_ceiling(90, Some(90), [95].into_iter()), 90, "the counter decides");
+        assert_eq!(
+            snippet_ceiling(84, Some(90), none()),
+            90,
+            "the newest snippets are lost"
+        );
+        assert_eq!(
+            snippet_ceiling(0, Some(90), none()),
+            90,
+            "no snippet could be read"
+        );
+        assert_eq!(
+            snippet_ceiling(90, Some(90 + ID_MARGIN), none()),
+            90 + ID_MARGIN
+        );
+        assert_eq!(
+            snippet_ceiling(90, Some(90), [95].into_iter()),
+            90,
+            "the counter decides"
+        );
         // A counter below what could be read, or far above it, is damaged too.
         assert_eq!(snippet_ceiling(90, Some(50), none()), 90);
         assert_eq!(snippet_ceiling(90, Some(-1), none()), 90);
@@ -2533,11 +2865,20 @@ mod tests {
         assert_eq!(snippet_ceiling(90, Some(GARBAGE_A5), none()), 90);
         // Without a counter, the ids the title index names count up to ID_MARGIN above.
         assert_eq!(snippet_ceiling(84, None, [3, 90, 84].into_iter()), 90);
-        assert_eq!(snippet_ceiling(84, None, [85 + ID_MARGIN, GARBAGE_A5].into_iter()), 84);
+        assert_eq!(
+            snippet_ceiling(84, None, [85 + ID_MARGIN, GARBAGE_A5].into_iter()),
+            84
+        );
         assert_eq!(snippet_ceiling(0, None, none()), 0, "an empty database");
         // Never above the ids the window can hold.
-        assert_eq!(snippet_ceiling(MAX_SNIPPET_ID, Some(MAX_SNIPPET_ID), none()), MAX_SNIPPET_ID);
-        assert_eq!(snippet_ceiling(MAX_SNIPPET_ID - 5, None, [MAX_SNIPPET_ID + 1].into_iter()), MAX_SNIPPET_ID - 5);
+        assert_eq!(
+            snippet_ceiling(MAX_SNIPPET_ID, Some(MAX_SNIPPET_ID), none()),
+            MAX_SNIPPET_ID
+        );
+        assert_eq!(
+            snippet_ceiling(MAX_SNIPPET_ID - 5, None, [MAX_SNIPPET_ID + 1].into_iter()),
+            MAX_SNIPPET_ID - 5
+        );
     }
 
     /// With the id counter damaged as well, the title index still names the newest snippets that
@@ -2549,17 +2890,27 @@ mod tests {
         damage_page(&path, *pages_of(&path, "snippets", "leaf").last().unwrap());
         damage_page(&path, pages_of(&path, "sqlite_sequence", "leaf")[0]);
         let src = open_and_init_db(&path).unwrap();
-        let counter = src.query_row("SELECT seq FROM sqlite_sequence", [], |r| r.get::<_, i64>(0));
+        let counter = src.query_row("SELECT seq FROM sqlite_sequence", [], |r| {
+            r.get::<_, i64>(0)
+        });
         assert!(counter.is_err(), "the counter cannot be read: {counter:?}");
-        let unreadable: Vec<i64> = (1..=COUNT).filter(|&id| get_snippet_by_id(&src, id).is_err()).collect();
+        let unreadable: Vec<i64> = (1..=COUNT)
+            .filter(|&id| get_snippet_by_id(&src, id).is_err())
+            .collect();
         assert!(unreadable.contains(&COUNT), "the newest snippet is lost");
 
         let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
 
-        assert_eq!(rescue.lost_titles, unreadable.iter().map(|&i| title_of(i)).collect::<Vec<_>>());
+        assert_eq!(
+            rescue.lost_titles,
+            unreadable.iter().map(|&i| title_of(i)).collect::<Vec<_>>()
+        );
         assert_eq!(rescue.total() as i64, COUNT);
         let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
-        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+        assert_eq!(
+            create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(),
+            COUNT + 1
+        );
     }
 
     /// A counter that agrees with the ids that can be read is kept: the ids of the snippets
@@ -2567,17 +2918,38 @@ mod tests {
     /// neither followed nor written into the new database.
     #[test]
     fn test_copy_readable_snippets_trusts_the_counter_only_near_the_real_ids() {
-        for (seq, next) in [(25, 26), (20 + ID_MARGIN, 21 + ID_MARGIN), (21 + ID_MARGIN, 21), (1_000_000_000_000, 21)] {
+        for (seq, next) in [
+            (25, 26),
+            (20 + ID_MARGIN, 21 + ID_MARGIN),
+            (21 + ID_MARGIN, 21),
+            (1_000_000_000_000, 21),
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let path = build_db(dir.path(), 20);
             let src = open_and_init_db(&path).unwrap();
-            src.execute("UPDATE sqlite_sequence SET seq = ?1 WHERE name = 'snippets'", [seq]).unwrap();
+            src.execute(
+                "UPDATE sqlite_sequence SET seq = ?1 WHERE name = 'snippets'",
+                [seq],
+            )
+            .unwrap();
 
             let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
 
-            assert_eq!(rescue, Rescue { saved: 20, lost_titles: vec![], lost_untitled: 0 }, "{seq}");
+            assert_eq!(
+                rescue,
+                Rescue {
+                    saved: 20,
+                    lost_titles: vec![],
+                    lost_untitled: 0
+                },
+                "{seq}"
+            );
             let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
-            assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), next, "{seq}");
+            assert_eq!(
+                create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(),
+                next,
+                "{seq}"
+            );
         }
     }
 
@@ -2591,21 +2963,46 @@ mod tests {
                       VALUES (?1, 'Huge id', X'00', 'a', 'b')";
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), 5);
-        open_and_init_db(&path).unwrap().execute(insert, [MAX_SNIPPET_ID + 1]).unwrap();
+        open_and_init_db(&path)
+            .unwrap()
+            .execute(insert, [MAX_SNIPPET_ID + 1])
+            .unwrap();
 
-        let rescue = copy_within(&path, &dir.path().join("copy.db"), Duration::from_secs(1)).unwrap();
+        let rescue =
+            copy_within(&path, &dir.path().join("copy.db"), Duration::from_secs(1)).unwrap();
 
-        assert_eq!(rescue, Rescue { saved: 5, lost_titles: vec![], lost_untitled: 0 });
+        assert_eq!(
+            rescue,
+            Rescue {
+                saved: 5,
+                lost_titles: vec![],
+                lost_untitled: 0
+            }
+        );
         let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
-        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), 6);
+        assert_eq!(
+            create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(),
+            6
+        );
 
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), 5);
-        open_and_init_db(&path).unwrap().execute(insert, [1_000_000_000_000_i64]).unwrap();
+        open_and_init_db(&path)
+            .unwrap()
+            .execute(insert, [1_000_000_000_000_i64])
+            .unwrap();
 
-        let rescue = copy_within(&path, &dir.path().join("copy.db"), Duration::from_secs(15)).unwrap();
+        let rescue =
+            copy_within(&path, &dir.path().join("copy.db"), Duration::from_secs(15)).unwrap();
 
-        assert_eq!(rescue, Rescue { saved: 6, lost_titles: vec![], lost_untitled: 0 });
+        assert_eq!(
+            rescue,
+            Rescue {
+                saved: 6,
+                lost_titles: vec![],
+                lost_untitled: 0
+            }
+        );
     }
 
     /// The rescue reads every snippet inside one read transaction (each read outside one takes
@@ -2630,7 +3027,10 @@ mod tests {
 
         src.execute_batch("BEGIN").unwrap();
         copy_readable_snippets(&src, &dir.path().join("copy2.db")).unwrap();
-        assert!(!src.is_autocommit(), "the caller's transaction is still open");
+        assert!(
+            !src.is_autocommit(),
+            "the caller's transaction is still open"
+        );
         src.execute_batch("COMMIT").unwrap();
     }
 
@@ -2653,12 +3053,19 @@ mod tests {
 
     /// The dates of every snippet of a database.
     fn dates_of(conn: &Connection) -> BTreeMap<i64, Dates> {
-        all_rows(conn).into_iter().map(|r| (r.0, (Some(r.4), Some(r.5), r.6))).collect()
+        all_rows(conn)
+            .into_iter()
+            .map(|r| (r.0, (Some(r.4), Some(r.5), r.6)))
+            .collect()
     }
 
     /// The ids of a list in the order the window shows it.
     fn order_of(conn: &Connection, mode: &str, direction: &str) -> Vec<i64> {
-        list_snippets_sorted(conn, mode, direction).rows.iter().map(|r| r.0).collect()
+        list_snippets_sorted(conn, mode, direction)
+            .rows
+            .iter()
+            .map(|r| r.0)
+            .collect()
     }
 
     /// `is_app_date` agrees with SQLite itself, which writes every date of the app: a value is such a
@@ -2667,10 +3074,18 @@ mod tests {
     fn test_is_app_date_agrees_with_sqlite() {
         let conn = Connection::open_in_memory().unwrap();
         let sqlite_says = |value: &str| -> bool {
-            conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', ?1) IS ?1", params![value], |r| r.get(0))
-                .unwrap()
+            conn.query_row(
+                "SELECT strftime('%Y-%m-%dT%H:%M:%f', ?1) IS ?1",
+                params![value],
+                |r| r.get(0),
+            )
+            .unwrap()
         };
-        let now: String = conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| r.get(0)).unwrap();
+        let now: String = conn
+            .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         let dates = [
             now.as_str(),
             "2026-11-21T10:13:05.123",
@@ -2740,10 +3155,24 @@ mod tests {
         damage_sector(&path, leaves[leaves.len() / 2], 1, 0xA5);
         let read = rescued_dates(&path);
         let is_date = |d: &Option<String>| d.as_deref().is_some_and(is_app_date);
-        let overwritten: Vec<i64> =
-            read.iter().filter(|(_, (c, u, _))| !is_date(c) || !is_date(u)).map(|(&id, _)| id).collect();
-        assert_eq!(overwritten, vec![56], "the sector covers the dates of snippet 056");
-        assert!(read[&56].0.as_deref().is_some_and(|d| d.starts_with('\u{FFFD}')), "{:?}", read[&56]);
+        let overwritten: Vec<i64> = read
+            .iter()
+            .filter(|(_, (c, u, _))| !is_date(c) || !is_date(u))
+            .map(|(&id, _)| id)
+            .collect();
+        assert_eq!(
+            overwritten,
+            vec![56],
+            "the sector covers the dates of snippet 056"
+        );
+        assert!(
+            read[&56]
+                .0
+                .as_deref()
+                .is_some_and(|d| d.starts_with('\u{FFFD}')),
+            "{:?}",
+            read[&56]
+        );
         let oldest = read
             .iter()
             .filter(|(id, _)| **id != 56)
@@ -2758,16 +3187,35 @@ mod tests {
         let dst = open_and_init_db(&dst_path).unwrap();
         let mut expected = read.clone();
         expected.insert(56, (oldest.clone(), oldest.clone(), None));
-        assert_eq!(dates_of(&dst), expected, "056 gets the oldest date; every other date byte for byte");
+        assert_eq!(
+            dates_of(&dst),
+            expected,
+            "056 gets the oldest date; every other date byte for byte"
+        );
         let by_change = order_of(&dst, "modified", "desc");
-        assert_eq!(by_change.first(), Some(&COUNT), "the newest snippet comes first again");
+        assert_eq!(
+            by_change.first(),
+            Some(&COUNT),
+            "the newest snippet comes first again"
+        );
         assert_eq!(by_change.last(), Some(&56));
         assert_eq!(order_of(&dst, "modified", "asc").first(), Some(&56));
         // 056 now shares its date of creation with the oldest snippet: equal dates may come either way.
         let by_creation = order_of(&dst, "created", "desc");
-        assert!(by_creation[by_creation.len() - 2..].contains(&56), "{by_creation:?}");
-        let search: Vec<i64> = list_snippets_for_search(&dst).rows.iter().map(|r| r.0).collect();
-        assert_eq!(search.last(), Some(&56), "equally good search matches keep the order by date of change");
+        assert!(
+            by_creation[by_creation.len() - 2..].contains(&56),
+            "{by_creation:?}"
+        );
+        let search: Vec<i64> = list_snippets_for_search(&dst)
+            .rows
+            .iter()
+            .map(|r| r.0)
+            .collect();
+        assert_eq!(
+            search.last(),
+            Some(&56),
+            "equally good search matches keep the order by date of change"
+        );
     }
 
     /// Damage of a few bytes can hit a single date. A damaged date of creation or change gets the
@@ -2820,7 +3268,8 @@ mod tests {
     fn test_copy_readable_snippets_fills_empty_dates_like_overwritten_ones() {
         let dir = tempfile::tempdir().unwrap();
         // The app's table without NOT NULL, so that the test can store what damage can leave.
-        let table = "CREATE TABLE snippets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content BLOB,
+        let table =
+            "CREATE TABLE snippets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content BLOB,
                          is_encrypted INTEGER, created_at TEXT, updated_at TEXT, last_used_at TEXT);
                      CREATE INDEX idx_snippets_updated_at ON snippets (updated_at DESC);
                      CREATE UNIQUE INDEX idx_snippets_title ON snippets (title);";
@@ -2846,7 +3295,14 @@ mod tests {
             BTreeMap::from([
                 (1, (oldest.clone(), date("2026-01-05T10:00:00.000"), None)),
                 (2, (oldest.clone(), oldest.clone(), None)),
-                (3, (oldest.clone(), date("2026-03-01T10:00:00.000"), date("2026-03-02T10:00:00.000"))),
+                (
+                    3,
+                    (
+                        oldest.clone(),
+                        date("2026-03-01T10:00:00.000"),
+                        date("2026-03-02T10:00:00.000")
+                    )
+                ),
                 (4, (date("2026-02-01T10:00:00.000"), oldest, None)),
             ])
         );
@@ -2859,7 +3315,10 @@ mod tests {
         ))
         .unwrap();
         let now = || -> String {
-            src.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| r.get(0)).unwrap()
+            src.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| {
+                r.get(0)
+            })
+            .unwrap()
         };
         let started = now();
         let dst_path = dir.path().join("copy2.db");
@@ -2868,7 +3327,10 @@ mod tests {
         let (created, updated, used) = dates_of(&open_and_init_db(&dst_path).unwrap())[&1].clone();
         assert_eq!(created, updated);
         let created = created.unwrap();
-        assert!(is_app_date(&created) && started <= created && created <= ended, "{started} {created} {ended}");
+        assert!(
+            is_app_date(&created) && started <= created && created <= ended,
+            "{started} {created} {ended}"
+        );
         assert_eq!(used, None);
     }
 
@@ -2890,11 +3352,16 @@ mod tests {
                 asked.push(d.clone());
                 true
             });
-            tx.send((asked, matches!(outcome, RescueOutcome::Reopen))).ok();
+            tx.send((asked, matches!(outcome, RescueOutcome::Reopen)))
+                .ok();
         });
-        let (asked, reopened) = rx.recv_timeout(Duration::from_secs(1)).expect("the rescue ends within a second");
+        let (asked, reopened) = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("the rescue ends within a second");
 
-        let [RescueDialog::Offer { rescue, .. }] = asked.as_slice() else { panic!("{asked:?}") };
+        let [RescueDialog::Offer { rescue, .. }] = asked.as_slice() else {
+            panic!("{asked:?}")
+        };
         assert!(reopened, "Yes opens the new database");
         let conn = open_and_init_db(&path).unwrap();
         assert_eq!(check_health(&conn), Health::Healthy);
@@ -2941,7 +3408,9 @@ mod tests {
             false
         });
 
-        let RescueOutcome::Keep(conn) = outcome else { panic!("No must keep the connection") };
+        let RescueOutcome::Keep(conn) = outcome else {
+            panic!("No must keep the connection")
+        };
         assert_eq!(
             asked,
             vec![RescueDialog::Offer {
@@ -2953,7 +3422,10 @@ mod tests {
                 kept_name: "snippets-damaged-2026-11-20-14-35.db".to_string(),
             }]
         );
-        assert!(get_snippet_by_id(&conn, 1).is_ok(), "the app works with the damaged file");
+        assert!(
+            get_snippet_by_id(&conn, 1).is_ok(),
+            "the app works with the damaged file"
+        );
         drop(conn);
         assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
         assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -3013,14 +3485,20 @@ mod tests {
                     answer
                 });
                 let kept = match outcome {
-                    RescueOutcome::Keep(conn) => Some(conn.is_autocommit() && get_snippet_by_id(&conn, 1).is_ok()),
+                    RescueOutcome::Keep(conn) => {
+                        Some(conn.is_autocommit() && get_snippet_by_id(&conn, 1).is_ok())
+                    }
                     RescueOutcome::Reopen => None,
                 };
                 tx.send((asked, kept)).ok();
             });
-            let (asked, kept) = rx.recv_timeout(Duration::from_secs(1)).expect("the dialog comes within a second");
+            let (asked, kept) = rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("the dialog comes within a second");
 
-            let [RescueDialog::Offer { rescue, kept_name }] = asked.as_slice() else { panic!("{asked:?}") };
+            let [RescueDialog::Offer { rescue, kept_name }] = asked.as_slice() else {
+                panic!("{asked:?}")
+            };
             assert!(rescue.saved >= readable, "{} < {readable}", rescue.saved);
             assert_eq!(rescue.lost_untitled, 0);
             assert_eq!(rescue.total() as i64, COUNT);
@@ -3032,12 +3510,18 @@ mod tests {
                 continue;
             }
             assert_eq!(kept, None, "Yes opens the new database");
-            assert_eq!(file_names(dir.path()), vec![kept_name.as_str(), "snippets.db"]);
+            assert_eq!(
+                file_names(dir.path()),
+                vec![kept_name.as_str(), "snippets.db"]
+            );
             assert_eq!(std::fs::read(dir.path().join(kept_name)).unwrap(), damaged);
             let conn = open_and_init_db(&path).unwrap();
             assert_eq!(check_health(&conn), Health::Healthy);
             assert_eq!(snippet_count(&conn), rescue.saved as i64);
-            assert_eq!(create_snippet(&conn, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+            assert_eq!(
+                create_snippet(&conn, "New one", b"x".to_vec(), false).unwrap(),
+                COUNT + 1
+            );
         }
     }
 
@@ -3070,7 +3554,10 @@ mod tests {
 
         assert!(matches!(outcome, RescueOutcome::Keep(_)));
         assert_eq!(asked.len(), 2, "{asked:?}");
-        assert!(matches!(asked[1], RescueDialog::Failed(RescueFailure::KeepFailed(_))), "{asked:?}");
+        assert!(
+            matches!(asked[1], RescueDialog::Failed(RescueFailure::KeepFailed(_))),
+            "{asked:?}"
+        );
         drop(outcome);
         assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
         assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -3094,9 +3581,18 @@ mod tests {
         });
 
         assert!(matches!(outcome, RescueOutcome::Keep(_)));
-        assert!(matches!(asked[..], [RescueDialog::Failed(RescueFailure::CopyFailed(_))]), "{asked:?}");
+        assert!(
+            matches!(
+                asked[..],
+                [RescueDialog::Failed(RescueFailure::CopyFailed(_))]
+            ),
+            "{asked:?}"
+        );
         drop(outcome);
-        assert!(rescue_path(dir.path()).is_dir(), "a folder of that name stays");
+        assert!(
+            rescue_path(dir.path()).is_dir(),
+            "a folder of that name stays"
+        );
         assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 
