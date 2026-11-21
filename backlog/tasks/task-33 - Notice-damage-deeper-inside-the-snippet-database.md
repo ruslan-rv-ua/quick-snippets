@@ -180,6 +180,8 @@ The other options offered: "Лише повідомлення під час ро
 - `npm run test:all` on develop right after the merge (5e67702) had 1 failure of 370 Rust tests; in a loop of 10 full runs it came back once (run 7): `commands::tests::test_lists_report_damage` at `assert!(!sorted.items.is_empty())`. Run alone it passed 40 of 40 times.
 - Cause: `build_db` saved its 90 snippets within a few milliseconds, so many share one updated_at. idx_snippets_updated_at is `updated_at DESC` with ties by id ascending, so the list by modification date starts at the lowest id of the newest group; when that id was on the damaged page, the list came out empty. Shown with SQLite itself (3.50.4, Python): 90 rows, ids 49-90 sharing the newest time: the first ids by date are 49, 50, 51, 52, 53. The app is not affected in a way that matters: snippets saved by hand get their own times.
 - Fix (tests only): `build_db` gives every snippet its own dates, a minute apart, later for a higher id (same length, so every snippet stays on its page); `test_listing_of_a_healthy_database_is_not_damaged` checks that the test database lists ids 90..1 by date. 8 of 8 full runs of the Rust tests passed afterwards; `cargo clippy -- -D warnings` passes. The release build is unchanged (test code only), so the real_db copy of cbaf647 stands.
+
+Merged into develop with git flow feature finish --no-ff: feature/damaged-db-inside (5e67702) and feature/damaged-db-test-dates (f977c26). On develop at f977c26: npm run test:all (612 frontend, 370 Rust, 1 ignored) and npm run lint pass. Nothing pushed; not archived: left to the managing session.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
