@@ -32,14 +32,14 @@ just test-cov          # Vitest з coverage
 
 just check             # швидко: tsc --noEmit + cargo check
 just lint              # tsc --noEmit + cargo clippy -D warnings, разом із кодом тестів
-just format            # cargo fmt
+just format            # cargo fmt (стиль rustfmt за замовчуванням)
 
 just build             # debug-збірка (npm run build + cargo build)
 just build release     # release-збірка через Tauri
 just build-fast        # release-fast профіль: швидка компіляція, більший exe
 just release           # tsc + release-збірка через Tauri
 
-just final-checks      # version sync + tsc + clippy + тести + збірка
+just final-checks      # version sync + tsc + cargo fmt --check + clippy + тести + збірка
 just db-reset          # видалити локальну quick-snippets-data\snippets.db
 just clean             # видалити dist/ та src-tauri/target/
 ```
@@ -64,6 +64,16 @@ Clippy у `npm run lint`, `just lint` і `just final-checks` запускаєт�
 програми (з TASK-34). `npm run lint` запускають також CI і Release workflow, тож зауваження clippy
 в тесті зупиняє і їх. Зауваження виправляйте, не послаблюючи перевірок тесту; `#[allow(...)]`
 лише тоді, коли інакше ніяк, з коментарем чому.
+
+Код Rust відформатовано `cargo fmt` зі стилем rustfmt за замовчуванням (з TASK-48; файлу
+`rustfmt.toml` немає). Після змін у Rust запускайте `just format`. Перевіряє форматування лише
+`just final-checks` (`cargo fmt --check`), на цьому комп'ютері: `npm run lint`, `just lint`, CI і
+Release workflow його не перевіряють (у workflow Rust ставиться без rustfmt).
+
+Коміти, які лише форматують код, записано в `.git-blame-ignore-revs`. GitHub пропускає їх у blame
+сам; щоб і локальний `git blame` їх пропускав, один раз виконайте
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`. Новий такий коміт додавайте у файл
+окремим комітом, повним хешем.
 
 ## Перевірка з NVDA (smoke)
 

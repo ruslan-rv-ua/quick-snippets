@@ -46,6 +46,11 @@ just smoke-tray          # the same with the test copy started in the tray: the 
 npm run lint             # TypeScript strict noEmit + cargo clippy --all-targets -D warnings
                          # (Rust test code too; CI and the release run it, so a finding in a
                          # test stops them: fix it without weakening the test)
+
+# Format (rustfmt's default style, no rustfmt.toml; TASK-48). Only `just final-checks` runs
+# `cargo fmt --check`: npm run lint, CI and the release do not (their Rust has no rustfmt).
+# Formatting-only commits go into .git-blame-ignore-revs (full hash, in a commit of its own).
+just format              # cd src-tauri; cargo fmt
 ```
 
 ## Architecture
