@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T23:55:00Z'
-updated_date: '2026-11-21T08:10:00Z'
+updated_date: '2026-11-21T08:18:00Z'
 labels:
   - bug
   - backend
@@ -174,6 +174,12 @@ The other options offered: "Лише повідомлення під час ро
 2. Damaged bytes inside a text or a title are not found by quick_check; they show up when the snippet is read («цей сніпет пошкоджений»). A rescue started by other damage repairs them with U+FFFD in the copy.
 3. A snippet that the list shows but the row lookup no longer finds after partial damage still gives the raw "Query returned no rows" (TASK-42's area).
 4. SettingsModal.test.tsx failed once while it ran in parallel with an NVDA probe (load) and passed when run again alone: timing-sensitive under load.
+
+## After the merge: a flaky test, fixed (branch feature/damaged-db-test-dates)
+
+- `npm run test:all` on develop right after the merge (5e67702) had 1 failure of 370 Rust tests; in a loop of 10 full runs it came back once (run 7): `commands::tests::test_lists_report_damage` at `assert!(!sorted.items.is_empty())`. Run alone it passed 40 of 40 times.
+- Cause: `build_db` saved its 90 snippets within a few milliseconds, so many share one updated_at. idx_snippets_updated_at is `updated_at DESC` with ties by id ascending, so the list by modification date starts at the lowest id of the newest group; when that id was on the damaged page, the list came out empty. Shown with SQLite itself (3.50.4, Python): 90 rows, ids 49-90 sharing the newest time: the first ids by date are 49, 50, 51, 52, 53. The app is not affected in a way that matters: snippets saved by hand get their own times.
+- Fix (tests only): `build_db` gives every snippet its own dates, a minute apart, later for a higher id (same length, so every snippet stays on its page); `test_listing_of_a_healthy_database_is_not_damaged` checks that the test database lists ids 90..1 by date. 8 of 8 full runs of the Rust tests passed afterwards; `cargo clippy -- -D warnings` passes. The release build is unchanged (test code only), so the real_db copy of cbaf647 stands.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
