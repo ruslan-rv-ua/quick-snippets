@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T11:45:00Z'
-updated_date: '2026-11-21T18:54:00Z'
+updated_date: '2026-11-21T18:55:00Z'
 labels:
   - test
   - frontend
@@ -100,6 +100,9 @@ Definition of Done #3 to #5 are checked as satisfied or not applicable: CHANGELO
 ## Noticed, no task created
 1. In the app itself, Escape or Ctrl+Enter pressed in the few milliseconds between the screen update after a Save and React's effects still reaches the old handler (the settings dialog then ignores it as if saving). A person cannot press that fast; the user chose to leave the app as it is («Лише тест (Рекомендовано)»). If it is ever changed: useModalKeyboard keeps the newest handlers in a ref updated in a layout effect and adds the listener once per opening.
 2. The probe covers one kind of timing only (React's step late by 1 to 100 ms); other timer orders are not covered.
+
+## Merge (2026-11-21)
+Merged into develop with git flow feature finish --no-ff: feature/reliable-dialog-tests (merge 129429b; tests 92095d1, CLAUDE.md 2b43554, Backlog a9288a5). The tree of develop after the merge is the tree of the branch (git diff a9288a5 129429b is empty); the test code is the code that npm run test:all, npm run lint, the probe and the load runs checked. Nothing pushed, no tag, version unchanged; not archived: left to the managing session.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
