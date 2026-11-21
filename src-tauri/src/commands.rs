@@ -323,6 +323,44 @@ fn plaintext_to_string(plaintext: &[u8]) -> Result<Zeroizing<String>, String> {
     }
 }
 
+/// Auto-type of one snippet, apart from the Tauri command so that it can be tested. Reads the
+/// snippet (`password` decrypts an encrypted one), then calls `hide` (the app window hides, and the
+/// program to type into gets the keyboard back), then `type_text` types the text.
+///
+/// A failure before `hide` (the database, a wrong password, damage) is shown in the window, which
+/// is still on screen. A failure of the typing comes after the window has hidden, where a message
+/// is neither seen nor read by a screen reader: `alert` (the Windows error sound) then tells the
+/// user (TASK-42). The error is returned as it is either way. The text is erased from memory
+/// before returning, and no error holds any of it.
+pub fn autotype_snippet_inner(
+    conn: &Mutex<Connection>,
+    id: i64,
+    password: &str,
+    hide: impl FnOnce(),
+    type_text: impl FnOnce(&str) -> Result<(), String>,
+    alert: impl FnOnce(),
+) -> Result<(), String> {
+    use zeroize::Zeroize;
+
+    let plaintext = {
+        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let content = activate_snippet_get_content(&conn, id, password)?;
+        db::touch_last_used(&conn, id).ok();
+        content
+    };
+    // Plaintext (Zeroizing<Vec<u8>>) is erased when it drops at the end.
+    let mut text = plaintext_to_string(&plaintext)?;
+
+    hide();
+    let result = type_text(&text);
+    // Erased before returning; dropping it would erase it too, but be explicit.
+    text.zeroize();
+    if result.is_err() {
+        alert();
+    }
+    result
+}
+
 /// Which change of "Start with Windows" Windows refused.
 #[derive(serde::Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -581,36 +619,27 @@ pub mod tauri_commands {
         window: Window,
         state: State<AppState>,
     ) -> Result<(), String> {
-        use zeroize::Zeroize;
-
-        let plaintext = {
-            let conn = state.conn.lock().map_err(|e| e.to_string())?;
-            let content = activate_snippet_get_content(&conn, id, &password)?;
-            db::touch_last_used(&conn, id).ok();
-            content
-        };
-
-        // Convert to String for typing; plaintext (Zeroizing<Vec<u8>>) drops after this block.
-        let mut text = plaintext_to_string(&plaintext)?;
-
-        // Hide window so the target app receives focus.
-        let _ = window.hide();
-        std::thread::sleep(std::time::Duration::from_millis(FOCUS_DELAY_MS));
-
-        // Read user-configured inter-character delay.
-        let delay_ms = state
-            .settings
-            .lock()
-            .map(|s| s.autotype_delay_ms)
-            .unwrap_or(0);
-
-        // Type the text via PostMessage (primary) or SendInput (fallback).
-        let result = crate::autotype::win::send_unicode_text(&text, delay_ms);
-
-        // Zeroize text before returning — drop will also zeroize, but be explicit.
-        text.zeroize();
-
-        result
+        autotype_snippet_inner(
+            &state.conn,
+            id,
+            &password,
+            || {
+                // Hide window so the target app receives focus.
+                let _ = window.hide();
+                std::thread::sleep(std::time::Duration::from_millis(FOCUS_DELAY_MS));
+            },
+            |text| {
+                // Read user-configured inter-character delay.
+                let delay_ms = state
+                    .settings
+                    .lock()
+                    .map(|s| s.autotype_delay_ms)
+                    .unwrap_or(0);
+                // Type the text via PostMessage (primary) or SendInput (fallback).
+                crate::autotype::win::send_unicode_text(text, delay_ms)
+            },
+            crate::autotype::win::error_sound,
+        )
         // IPC response: Ok(()) or Err(...) — plaintext NEVER in the response.
     }
 
@@ -1730,5 +1759,121 @@ mod tests {
         assert_eq!(get_snippet_by_id_inner(&conn, 41).err().unwrap(), db::SNIPPET_DAMAGED);
         let deleted = delete_snippet_inner(&conn, 41).unwrap_err();
         assert!(deleted == db::DATABASE_DAMAGED || deleted == db::SNIPPET_DAMAGED, "{deleted}");
+    }
+
+    // ── Auto-type: the window hides first; a failure after that plays the error sound (TASK-42) ──
+
+    /// What `autotype_snippet_inner` did, in order: "hide", "type:<text>", "alert".
+    fn run_autotype(
+        state: &AppState,
+        id: i64,
+        password: &str,
+        typing: Result<(), String>,
+    ) -> (Result<(), String>, Vec<String>) {
+        let steps = std::cell::RefCell::new(Vec::new());
+        let result = autotype_snippet_inner(
+            &state.conn,
+            id,
+            password,
+            || steps.borrow_mut().push("hide".to_string()),
+            |text: &str| {
+                steps.borrow_mut().push(format!("type:{text}"));
+                typing
+            },
+            || steps.borrow_mut().push("alert".to_string()),
+        );
+        (result, steps.into_inner())
+    }
+
+    /// One of the errors of the typing itself (autotype.rs), after the window has hidden.
+    const TYPING_FAILED: &str = "PostMessageW(WM_CHAR) failed: Invalid window handle. (os error 1400)";
+
+    #[test]
+    fn test_autotype_hides_the_window_then_types_without_a_sound() {
+        let state = AppState::new_for_test();
+        let id = create_snippet_inner(&state.conn.lock().unwrap(), "Привітання", "Привіт", "").unwrap();
+        let (result, steps) = run_autotype(&state, id, "", Ok(()));
+        assert_eq!(result, Ok(()));
+        assert_eq!(steps, ["hide", "type:Привіт"]);
+    }
+
+    #[test]
+    fn test_autotype_typing_failure_after_hiding_plays_the_error_sound_once() {
+        let state = AppState::new_for_test();
+        let id = create_snippet_inner(&state.conn.lock().unwrap(), "Привітання", "Привіт", "").unwrap();
+        let (result, steps) = run_autotype(&state, id, "", Err(TYPING_FAILED.to_string()));
+        assert_eq!(result.unwrap_err(), TYPING_FAILED, "the error goes to the frontend as it is");
+        assert_eq!(steps, ["hide", "type:Привіт", "alert"]);
+    }
+
+    /// An encrypted snippet: the right password types the decrypted text; a typing failure sounds,
+    /// and the error never holds the text or the password.
+    #[test]
+    fn test_autotype_of_an_encrypted_snippet() {
+        let state = AppState::new_for_test();
+        let id = create_snippet_inner(&state.conn.lock().unwrap(), "Таємниця", "секрет 456", "pass-42").unwrap();
+        let (result, steps) = run_autotype(&state, id, "pass-42", Ok(()));
+        assert_eq!(result, Ok(()));
+        assert_eq!(steps, ["hide", "type:секрет 456"]);
+
+        let (result, steps) = run_autotype(&state, id, "pass-42", Err(TYPING_FAILED.to_string()));
+        let err = result.unwrap_err();
+        assert!(!err.contains("секрет") && !err.contains("pass-42"), "{err}");
+        assert_eq!(steps.last().map(String::as_str), Some("alert"));
+    }
+
+    /// Failures before the window hides are shown in the window, which is still on screen: no
+    /// hiding, no typing, no sound.
+    #[test]
+    fn test_autotype_failure_before_hiding_keeps_the_window_and_plays_no_sound() {
+        let state = AppState::new_for_test();
+        let (plain, secret, damaged) = {
+            let conn = state.conn.lock().unwrap();
+            let plain = create_snippet_inner(&conn, "Привітання", "Привіт", "").unwrap();
+            let secret = create_snippet_inner(&conn, "Таємниця", "секрет 456", "pass-42").unwrap();
+            // A text the app never writes: not UTF-8.
+            let damaged = db::create_snippet(&conn, "Пошкоджений", vec![b's', 0xFF, 0xFE], false).unwrap();
+            (plain, secret, damaged)
+        };
+
+        let missing = plain + 100;
+        let (result, steps) = run_autotype(&state, missing, "", Ok(()));
+        assert_eq!(result.unwrap_err(), "Query returned no rows");
+        assert!(steps.is_empty(), "{steps:?}");
+
+        let (result, steps) = run_autotype(&state, secret, "wrong", Ok(()));
+        assert_eq!(result.unwrap_err(), crypto::WRONG_PASSWORD);
+        assert!(steps.is_empty(), "{steps:?}");
+
+        let (result, steps) = run_autotype(&state, damaged, "", Ok(()));
+        assert_eq!(result.unwrap_err(), db::SNIPPET_DAMAGED);
+        assert!(steps.is_empty(), "{steps:?}");
+    }
+
+    /// Another program holds the database: the read fails ("database is locked") before the
+    /// window hides, so there is no sound; the window shows the message.
+    #[test]
+    fn test_autotype_with_a_locked_database_fails_before_hiding() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snippets.db");
+        let conn = db::open_and_init_db(&path).unwrap();
+        let id = create_snippet_inner(&conn, "Привітання", "Привіт", "").unwrap();
+        // Waiting SQLite's busy timeout of 5 s would only slow the test down.
+        conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let state = AppState {
+            conn: Mutex::new(conn),
+            ..AppState::new_for_test()
+        };
+        let other = Connection::open(&path).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+
+        let (result, steps) = run_autotype(&state, id, "", Ok(()));
+        assert_eq!(result.unwrap_err(), "database is locked");
+        assert!(steps.is_empty(), "{steps:?}");
+
+        other.execute_batch("COMMIT;").unwrap();
+        let (result, steps) = run_autotype(&state, id, "", Ok(()));
+        assert_eq!(result, Ok(()));
+        assert_eq!(steps, ["hide", "type:Привіт"]);
     }
 }
