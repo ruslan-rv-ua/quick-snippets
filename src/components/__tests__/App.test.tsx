@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import App from '../../App';
+import { settle } from '../../test/settle';
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
@@ -371,12 +372,17 @@ describe('App: where the screen reader is', () => {
     return release;
   }
 
-  /** Opens the app with the search box focused and waits until the first snippet is selected. */
+  /**
+   * Opens the app with the search box focused. Returns once the first snippet is selected and the
+   * app has finished loading at start (see settle): a list that came later would select the first
+   * snippet again.
+   */
   async function openApp(): Promise<HTMLInputElement> {
     renderShownApp();
-    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
-    search.focus();
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    await settle();
+    const search = screen.getByRole('combobox') as HTMLInputElement;
+    act(() => search.focus());
+    expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true');
     return search;
   }
 
@@ -728,12 +734,16 @@ describe('App: where focus goes after a dialog changes the list', () => {
   const pointsAt = (search: HTMLElement) => search.getAttribute('aria-activedescendant') ?? '';
   const listIds = () => Array.from(document.querySelectorAll('#snippet-list [role="option"]')).map((o) => o.id);
 
-  /** Opens the app with the search box focused and waits until the first snippet is selected. */
+  /**
+   * Opens the app with the search box focused. Returns once the first snippet is selected and the
+   * shortcuts know it: Ctrl+D and Delete need a selected snippet (see settle).
+   */
   async function openApp(): Promise<HTMLInputElement> {
     renderShownApp();
-    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
-    search.focus();
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    await settle();
+    const search = screen.getByRole('combobox') as HTMLInputElement;
+    act(() => search.focus());
+    expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true');
     return search;
   }
 
@@ -863,11 +873,16 @@ describe('App: a damaged snippet database', () => {
     });
   });
 
+  /**
+   * Opens the app with the search box focused. Returns once the first snippet is selected and the
+   * shortcuts know it: Ctrl+E needs a selected snippet (see settle).
+   */
   async function openApp(): Promise<HTMLInputElement> {
     renderShownApp();
-    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
-    search.focus();
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    await settle();
+    const search = screen.getByRole('combobox') as HTMLInputElement;
+    act(() => search.focus());
+    expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true');
     return search;
   }
 
@@ -965,12 +980,16 @@ describe('App: a failed copy, auto-type, opening for editing or reading of the s
     });
   });
 
-  /** The app shown, in its language, with the first snippet selected. */
+  /**
+   * The app shown, in its language, with the first snippet selected. Returns once the shortcuts
+   * know that snippet: Ctrl+E needs a selected snippet (see settle).
+   */
   async function openApp(placeholder = 'Search'): Promise<HTMLInputElement> {
     renderShownApp();
-    const search = (await screen.findByPlaceholderText(placeholder)) as HTMLInputElement;
-    search.focus();
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    await settle();
+    const search = screen.getByPlaceholderText(placeholder) as HTMLInputElement;
+    act(() => search.focus());
+    expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true');
     return search;
   }
 
