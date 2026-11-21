@@ -2103,7 +2103,11 @@ mod tests {
 
     const COUNT: i64 = 90;
 
-    fn all_rows(conn: &Connection) -> Vec<(i64, String, Vec<u8>, i64, String, String, Option<String>)> {
+    /// One row of `snippets`: id, title, content, is_encrypted, created_at, updated_at,
+    /// last_used_at.
+    type Row = (i64, String, Vec<u8>, i64, String, String, Option<String>);
+
+    fn all_rows(conn: &Connection) -> Vec<Row> {
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, content, is_encrypted, created_at, updated_at, last_used_at

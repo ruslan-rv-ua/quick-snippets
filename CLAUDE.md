@@ -43,7 +43,9 @@ just smoke-tray          # the same with the test copy started in the tray: the 
                          # at startup, and NVDA must read the first Ctrl+Alt+Space show
 
 # Lint
-npm run lint             # TypeScript strict noEmit + cargo clippy -D warnings
+npm run lint             # TypeScript strict noEmit + cargo clippy --all-targets -D warnings
+                         # (Rust test code too; CI and the release run it, so a finding in a
+                         # test stops them: fix it without weakening the test)
 ```
 
 ## Architecture

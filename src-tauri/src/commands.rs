@@ -1449,7 +1449,7 @@ mod tests {
 
         let results = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap().items;
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].is_encrypted, true);
+        assert!(results[0].is_encrypted);
         assert_eq!(results[0].score, 0);
     }
 

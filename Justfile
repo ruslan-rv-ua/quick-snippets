@@ -99,10 +99,10 @@ check:
     npx tsc --noEmit
     cd src-tauri; cargo check
 
-# Full lint: tsc --noEmit + cargo clippy -D warnings  (alias: l)
+# Full lint: tsc --noEmit + cargo clippy -D warnings, Rust test code included  (alias: l)
 lint:
     npx tsc --noEmit
-    cd src-tauri; cargo clippy -- -D warnings
+    cd src-tauri; cargo clippy --all-targets -- -D warnings
 
 # Format Rust source with cargo fmt  (alias: fmt)
 format:

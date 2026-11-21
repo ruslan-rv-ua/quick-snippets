@@ -276,7 +276,7 @@ mod tests {
     fn test_search_returns_encrypted_flag() {
         let items = snippets(&[(1, "secret", true)]);
         let results = search("sec", &items);
-        assert_eq!(results[0].is_encrypted, true);
+        assert!(results[0].is_encrypted);
     }
 
     #[test]
