@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-21T00:00:00Z'
+updated_date: '2026-11-21T08:45:00Z'
 labels:
   - bug
   - frontend
@@ -51,3 +52,11 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Added from TASK-33 (2026-11-21)
+
+Point 3 of "Noticed" in TASK-33's archived notes: after partial damage of the snippet database, a snippet that the list still shows but whose row the lookup by id no longer finds gives the raw "Query returned no rows" when it is opened for editing, edited or deleted (the dialogs frame it since TASK-40, for example "Не вдалося видалити сніпет. Причина: Query returned no rows."). Say this case in the language of the app as well. The user chose to add it here (question dialog, 2026-11-21: "Дописати в TASK-42").
+<!-- SECTION:NOTES:END -->

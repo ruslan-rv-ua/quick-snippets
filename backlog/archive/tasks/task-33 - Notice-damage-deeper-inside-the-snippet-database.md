@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T23:55:00Z'
-updated_date: '2026-11-21T08:18:00Z'
+updated_date: '2026-11-21T08:45:00Z'
 labels:
   - bug
   - backend
@@ -182,6 +182,12 @@ The other options offered: "Лише повідомлення під час ро
 - Fix (tests only): `build_db` gives every snippet its own dates, a minute apart, later for a higher id (same length, so every snippet stays on its page); `test_listing_of_a_healthy_database_is_not_damaged` checks that the test database lists ids 90..1 by date. 8 of 8 full runs of the Rust tests passed afterwards; `cargo clippy -- -D warnings` passes. The release build is unchanged (test code only), so the real_db copy of cbaf647 stands.
 
 Merged into develop with git flow feature finish --no-ff: feature/damaged-db-inside (5e67702) and feature/damaged-db-test-dates (f977c26). On develop at f977c26: npm run test:all (612 frontend, 370 Rust, 1 ignored) and npm run lint pass. Nothing pushed; not archived: left to the managing session.
+
+## Check by the managing session (2026-11-21)
+
+- Passed on develop 8c185b8: `npm run test` (612), `npm run test:rust` (370, 1 ignored), `npm run lint`. Both features were finished with --no-ff; develop was 7 commits ahead of origin. The real_db copy quick-snippets-TASK-33-cbaf647.exe is byte for byte the release build (SHA-256 8E973B6F16E461EBBA28DC82808C33A94624BACA262C20CEB2C9E01FD5C53D80); since cbaf647 only the test modules of db.rs and Backlog changed. The user's autostart values unchanged (entry absent, mark 02 00 00 00 00 00 00 00 00 00 00 00); no test folders left in %TEMP%; no copy of the app running.
+- Found: the rescue can hang the start-up. `copy_readable_snippets` reads every id from 1 to the highest id a scan returned, and a damaged sector can give a scan a garbage id: with sector 1 of a page of snippets filled with 0xA5 the table scan returns 5374248273442940325. The app's own `copy_readable_snippets` (SQLite 3.46.0) had not finished after 30 s; a whole page of 0xA5 or a sector of 0xFF finished in about 30 ms. In the app this means no dialog, no window, NVDA silent, at every start. Python's SQLite 3.50.4 gave a huge id in 8 of 32 damaged sectors of that page (fills 0xA5, 0xFF, 0x00, random). Moved to TASK-43 (high priority, before the next release).
+- The user's answers (question dialog, verbatim): archive "Так, обидві (Рекомендовано)"; push "Так, надіслати (Рекомендовано)"; new tasks "Зависання запуску (Рекомендовано),Повний список після «Ні»,Дописати в TASK-42"; next "Виправити зависання (Рекомендовано)". Created TASK-43 (the hang) and TASK-44 (every readable snippet in the list after No); point 3 of "Noticed" added to TASK-42.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
