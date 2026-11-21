@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { asSentence, ipcErrorToString, parseContentTooLong, parseTitleLength } from '../errors';
+import {
+  asSentence,
+  DATABASE_DAMAGED,
+  failureMessage,
+  ipcErrorToString,
+  isDamage,
+  isDatabaseDamaged,
+  isSnippetDamaged,
+  isWrongPassword,
+  parseContentTooLong,
+  parseTitleLength,
+  SNIPPET_DAMAGED,
+  WRONG_PASSWORD,
+} from '../errors';
+import { translations } from '../../i18n/translations';
 
 describe('ipcErrorToString', () => {
   it('keeps a string and turns anything else into one', () => {
@@ -71,5 +85,73 @@ describe('parseTitleLength', () => {
     ]) {
       expect(parseTitleLength(message), message).toBeNull();
     }
+  });
+});
+
+// WRONG_PASSWORD in src-tauri/src/crypto.rs: only that exact text is a wrong password.
+describe('isWrongPassword', () => {
+  it('is the text of the backend for a wrong password', () => {
+    expect(WRONG_PASSWORD).toBe('Wrong password');
+    expect(isWrongPassword('Wrong password')).toBe(true);
+  });
+
+  it.each([
+    'database is locked',
+    'Invalid data',
+    'Query returned no rows',
+    'Invalid UTF-8 content',
+    'wrong password',
+    'Wrong password.',
+    'Error: Wrong password',
+    '',
+  ])('is not %j', (message) => {
+    expect(isWrongPassword(message)).toBe(false);
+  });
+});
+
+// TASK-33: the fixed texts of src-tauri/src/db.rs (DATABASE_DAMAGED, SNIPPET_DAMAGED).
+describe('damage', () => {
+  it('knows the exact texts of the backend', () => {
+    expect(DATABASE_DAMAGED).toBe('The snippet database is damaged');
+    expect(SNIPPET_DAMAGED).toBe('This snippet is damaged');
+    expect(isDatabaseDamaged(DATABASE_DAMAGED)).toBe(true);
+    expect(isSnippetDamaged(SNIPPET_DAMAGED)).toBe(true);
+    expect(isDamage(DATABASE_DAMAGED) && isDamage(SNIPPET_DAMAGED)).toBe(true);
+  });
+
+  it.each([
+    ['the own text of SQLite', 'database disk image is malformed'],
+    ['a locked database', 'database is locked'],
+    ['other letters', 'the snippet database is damaged'],
+    ['more text', 'The snippet database is damaged.'],
+    ['a wrong password', WRONG_PASSWORD],
+  ])('%s is no damage the app recognises', (_, text) => {
+    expect(isDamage(text)).toBe(false);
+  });
+
+  it('builds the message: damage in words of the app, any other error as the backend gives it', () => {
+    const tf = translations.en;
+    expect(failureMessage(tf.snippetSaveFailed, DATABASE_DAMAGED, tf)).toBe(
+      'Could not save the snippet. Reason: the snippet database is damaged. Nothing was changed. ' +
+        'Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.',
+    );
+    expect(failureMessage(tf.snippetCopyFailed, SNIPPET_DAMAGED, tf)).toBe(
+      'Could not copy the snippet. Reason: this snippet is damaged and cannot be read.',
+    );
+    expect(failureMessage(tf.snippetDeleteFailed, 'database is locked', tf)).toBe(
+      'Could not delete the snippet. Reason: database is locked.',
+    );
+  });
+
+  it('has the words in every language', () => {
+    for (const lang of ['en', 'uk', 'de'] as const) {
+      const tf = translations[lang];
+      for (const text of [tf.databaseDamaged, tf.restartToRepair, tf.snippetDamaged, tf.listDamaged]) {
+        expect(text.trim()).not.toBe('');
+        expect(text).toMatch(/[.!?]$/);
+      }
+    }
+    expect(translations.uk.listDamaged).not.toBe(translations.en.listDamaged);
+    expect(translations.de.listDamaged).not.toBe(translations.en.listDamaged);
   });
 });

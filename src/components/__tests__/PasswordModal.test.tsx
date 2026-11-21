@@ -71,7 +71,8 @@ describe('PasswordModal', () => {
   });
 
   it('shows "wrong password" error in the same live region, clears and refocuses field', async () => {
-    mockInvoke.mockRejectedValue(new Error('wrong password'));
+    // Exactly the text of WRONG_PASSWORD in src-tauri/src/crypto.rs, as Tauri passes it on.
+    mockInvoke.mockRejectedValue('Wrong password');
     renderModal();
     const regionBefore = document.getElementById('pwd-error');
     fireEvent.change(screen.getByLabelText(/^(password|пароль)$/i), { target: { value: 'wrong' } });
@@ -195,6 +196,180 @@ describe('PasswordModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /auto-type|автодрук|automatisch tippen/i }));
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('autotype_snippet', { id: 5, password: 'mypass' });
+    });
+  });
+  // Only a wrong password is the password's fault. Any other failure (a locked database, damaged
+  // content, the clipboard) gets its own message above the buttons, and the password stays.
+  describe('a failure that is not a wrong password', () => {
+    const LOCKED = 'database is locked';
+    const message = () => document.getElementById('pwd-failure') as HTMLElement;
+    const field = () => document.getElementById('pwd-input') as HTMLInputElement;
+    const copyFailed = {
+      en: 'Could not copy the snippet. Reason: database is locked.',
+      uk: 'Не вдалося скопіювати сніпет. Причина: database is locked.',
+      de: 'Das Snippet ließ sich nicht kopieren. Grund: database is locked.',
+    };
+    const decrypts = () =>
+      mockInvoke.mock.calls.filter(([cmd]) => cmd === 'activate_snippet' || cmd === 'autotype_snippet').length;
+
+    function backend(language: string, error: unknown = LOCKED) {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_settings') return { language };
+        if (cmd === 'get_system_language') return 'en';
+        if (cmd === 'activate_snippet' || cmd === 'autotype_snippet') throw error;
+        return undefined;
+      });
+    }
+
+    function submit(password = 'right one') {
+      fireEvent.change(field(), { target: { value: password } });
+      fireEvent.keyDown(field(), { key: 'Enter' });
+    }
+
+    it('has an empty assertive live region above the buttons before any failure', () => {
+      renderModal();
+      const region = message();
+      expect(region).toBeEmptyDOMElement();
+      expect(region).toHaveAttribute('aria-live', 'assertive');
+      expect(region).toHaveAttribute('aria-atomic', 'true');
+      expect(region).not.toHaveAttribute('role', 'alert');
+      expect(region.nextElementSibling).toHaveClass('modal-actions');
+    });
+
+    it('says why above the buttons, not "wrong password", and keeps the password', async () => {
+      backend('en');
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+      renderModal({ onSuccess, onClose });
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(copyFailed.en));
+
+      expect(document.getElementById('pwd-error')).toBeEmptyDOMElement();
+      expect(screen.queryByText(/wrong password/i)).not.toBeInTheDocument();
+      expect(field()).toHaveValue('right one');
+      expect(field()).not.toHaveAttribute('aria-invalid');
+      expect(field()).toHaveFocus();
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['damaged content', 'Invalid data', 'Could not copy the snippet. Reason: Invalid data.'],
+      ['a busy clipboard', 'The native clipboard is not accessible due to being held by an other party',
+        'Could not copy the snippet. Reason: The native clipboard is not accessible due to being held by an other party.'],
+      ['an Error object', new Error('Wrong password'), 'Could not copy the snippet. Reason: Error: Wrong password.'],
+      ['the text in other letters', 'wrong password', 'Could not copy the snippet. Reason: wrong password.'],
+    ])('%s is not a wrong password', async (_, error, text) => {
+      backend('en', error);
+      renderModal();
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(text));
+      expect(document.getElementById('pwd-error')).toBeEmptyDOMElement();
+    });
+
+    it('focus goes back to the field when the button was used', async () => {
+      backend('en');
+      renderModal();
+      fireEvent.change(field(), { target: { value: 'right one' } });
+      const copy = screen.getByRole('button', { name: 'Copy' });
+      copy.focus();
+      fireEvent.click(copy);
+      await waitFor(() => expect(message()).toHaveTextContent(copyFailed.en));
+      expect(field()).toHaveFocus();
+    });
+
+    it('Enter tries again with the same password, and a second failure is announced again', async () => {
+      backend('en');
+      renderModal();
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(copyFailed.en));
+
+      const region = message();
+      const texts: string[] = [];
+      const observer = new MutationObserver(() => texts.push(region.textContent ?? ''));
+      observer.observe(region, { childList: true, characterData: true, subtree: true });
+      fireEvent.keyDown(field(), { key: 'Enter' });
+      await waitFor(() => expect(texts[texts.length - 1]).toBe(copyFailed.en));
+      observer.disconnect();
+
+      expect(texts).toContain('');
+      expect(texts.indexOf('')).toBeLessThan(texts.length - 1);
+      expect(mockInvoke).toHaveBeenLastCalledWith('activate_snippet', { id: 5, password: 'right one' });
+      expect(decrypts()).toBe(2);
+    });
+
+    it('a wrong password afterwards takes the place of the message', async () => {
+      backend('en');
+      renderModal();
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(copyFailed.en));
+
+      backend('en', 'Wrong password');
+      submit('wrong one');
+      await waitFor(() => expect(document.getElementById('pwd-error')).toHaveTextContent('Wrong password'));
+      expect(message()).toBeEmptyDOMElement();
+      expect(field()).toHaveValue('');
+    });
+
+    it('auto-type says that it could not type the snippet', async () => {
+      backend('en');
+      renderModal({ action: 'autotype' });
+      submit();
+      await waitFor(() =>
+        expect(message()).toHaveTextContent('Could not type the snippet. Reason: database is locked.'));
+      expect(decrypts()).toBe(1);
+    });
+
+    it.each([['uk'], ['de']] as const)('says it in the language of the app (%s)', async (language) => {
+      backend(language);
+      renderModal();
+      await screen.findByRole('button', { name: language === 'uk' ? 'Скасувати' : 'Abbrechen' });
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(copyFailed[language]));
+    });
+
+    it.each([
+      ['uk', 'Не вдалося надрукувати сніпет. Причина: database is locked.'],
+      ['de', 'Das Snippet ließ sich nicht automatisch tippen. Grund: database is locked.'],
+    ] as const)('says the auto-type failure in the language of the app (%s)', async (language, text) => {
+      backend(language);
+      renderModal({ action: 'autotype' });
+      await screen.findByRole('button', { name: language === 'uk' ? 'Скасувати' : 'Abbrechen' });
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(text));
+    });
+
+    // TASK-33: damage reaches the dialog as DATABASE_DAMAGED or SNIPPET_DAMAGED.
+    it.each([
+      ['en', 'Cancel', 'copy', 'The snippet database is damaged', 'Could not copy the snippet. Reason: the snippet database is damaged. Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.'],
+      ['uk', 'Скасувати', 'copy', 'The snippet database is damaged', 'Не вдалося скопіювати сніпет. Причина: база сніпетів пошкоджена. Перезапустіть QuickSnippets: під час запуску програма перевірить базу й запропонує зберегти сніпети, які ще вдається прочитати.'],
+      ['de', 'Abbrechen', 'autotype', 'The snippet database is damaged', 'Das Snippet ließ sich nicht automatisch tippen. Grund: Die Snippet-Datenbank ist beschädigt. Starten Sie QuickSnippets neu: Beim Start prüft es die Datenbank und bietet an, die noch lesbaren Snippets zu sichern.'],
+      ['en', 'Cancel', 'copy', 'This snippet is damaged', 'Could not copy the snippet. Reason: this snippet is damaged and cannot be read.'],
+      ['uk', 'Скасувати', 'autotype', 'This snippet is damaged', 'Не вдалося надрукувати сніпет. Причина: цей сніпет пошкоджений, його не вдається прочитати.'],
+      ['de', 'Abbrechen', 'copy', 'This snippet is damaged', 'Das Snippet ließ sich nicht kopieren. Grund: Dieses Snippet ist beschädigt und kann nicht gelesen werden.'],
+    ] as const)('says damage in the language of the app (%s, %s, %s)', async (language, cancel, action, error, text) => {
+      backend(language, error);
+      renderModal({ action });
+      await screen.findByRole('button', { name: cancel });
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(text));
+      expect(document.getElementById('pwd-error')).toBeEmptyDOMElement();
+      expect(field()).toHaveValue('right one');
+    });
+
+    it('opening the dialog again shows no old message', async () => {
+      backend('en');
+      const view = (open: boolean) => (
+        <LanguageProvider>
+          <PasswordModal isOpen={open} onClose={vi.fn()} snippetId={5} snippetTitle="Secret Snippet" onSuccess={vi.fn()} />
+        </LanguageProvider>
+      );
+      const { rerender } = render(view(true));
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(copyFailed.en));
+      rerender(view(false));
+      rerender(view(true));
+      expect(message()).toBeEmptyDOMElement();
     });
   });
 });

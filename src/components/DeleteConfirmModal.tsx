@@ -1,7 +1,9 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { ModalOverlay } from './ModalOverlay';
+import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { deleteSnippet } from '../hooks/useIpc';
+import { failureMessage, ipcErrorToString } from '../utils/errors';
 
 export interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -10,7 +12,6 @@ export interface DeleteConfirmModalProps {
   snippetId: number;
   /** Called after the delete; the dialog closes once a returned promise settles. */
   onSuccess: () => void | Promise<void>;
-  onError: (err: string) => void;
 }
 
 export function DeleteConfirmModal({
@@ -19,29 +20,43 @@ export function DeleteConfirmModal({
   snippetTitle,
   snippetId,
   onSuccess,
-  onError,
 }: DeleteConfirmModalProps): React.ReactElement | null {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const cancelRef = useRef<HTMLButtonElement>(null);
+  // Guards against a second delete while one runs (a locked database answers after 5 s).
+  const busyRef = useRef(false);
+  // The backend's error of the last failed delete, shown above the buttons.
+  const [failure, setFailure] = useState<string | null>(null);
 
   // Focus Cancel on open
   useEffect(() => {
     if (isOpen) {
+      busyRef.current = false;
+      setFailure(null);
       setTimeout(() => cancelRef.current?.focus(), 10);
     }
   }, [isOpen]);
 
   const handleDelete = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    // Empty the live region first, so that a repeated failure is announced again.
+    setFailure(null);
     try {
       await deleteSnippet(snippetId);
     } catch (err: unknown) {
-      onError(String(err));
+      // The dialog stays open and focus stays where it is: the message above the buttons
+      // is a live region (FieldError), read once. A toast outside this aria-modal dialog
+      // was gone after 2 s.
+      setFailure(ipcErrorToString(err));
+      busyRef.current = false;
       return;
     }
     // The list behind the dialog no longer has the snippet when focus returns to it.
     await onSuccess();
+    busyRef.current = false;
     onClose();
-  }, [snippetId, onSuccess, onClose, onError]);
+  }, [snippetId, onSuccess, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -68,6 +83,11 @@ export function DeleteConfirmModal({
       <p className="settings-hint">
         {t('cannotUndo')}
       </p>
+
+      <FieldError
+        id="delete-error"
+        message={failure === null ? undefined : failureMessage(tf.snippetDeleteFailed, failure, tf)}
+      />
 
       <div className="modal-actions">
         <button

@@ -19,6 +19,11 @@ export interface SearchLogicState {
    * for the results of a query typed in the meantime.
    */
   listQuery: string;
+  /**
+   * Damage of the snippet database cut the list in `snippets` short (see SnippetListResult):
+   * the window says so instead of "no snippets yet" or "no results".
+   */
+  listDamaged: boolean;
   activeIndex: number;
   setActiveIndex: (index: number) => void;
   /**
@@ -47,6 +52,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
   const [query, setQuery] = useState<string>('');
   const [snippets, setSnippets] = useState<SearchResult[]>([]);
   const [listQuery, setListQuery] = useState<string>('');
+  const [listDamaged, setListDamaged] = useState<boolean>(false);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [listFocused, setListFocused] = useState<boolean>(false);
   const [refreshTick, setRefreshTick] = useState<number>(0);
@@ -65,9 +71,10 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
         : searchSnippets(debouncedQuery);
 
     fetchPromise
-      .then((results) => {
-        const safeResults = Array.isArray(results) ? results : [];
+      .then((result) => {
+        const safeResults = Array.isArray(result?.items) ? result.items : [];
         setSnippets(safeResults);
+        setListDamaged(result?.damaged === true);
         setListQuery(debouncedQuery);
         setActiveIndex(safeResults.length > 0 ? 0 : -1);
       })
@@ -88,6 +95,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
   const reset = useCallback(() => {
     setQuery('');
     setSnippets([]);
+    setListDamaged(false);
     setActiveIndex(-1);
     setListFocused(false);
   }, []);
@@ -97,6 +105,7 @@ export function useSearchLogic(sortConfig?: SortConfig): SearchLogicState {
     setQuery,
     snippets,
     listQuery,
+    listDamaged,
     activeIndex,
     setActiveIndex,
     listFocused,

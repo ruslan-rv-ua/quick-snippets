@@ -271,4 +271,120 @@ describe('EditSnippetModal', () => {
     await act(async () => finish());
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+  // An error of the backend that is not about a field (here a locked database) belongs to the
+  // whole dialog: above the buttons, not under Title, and focus stays where it was.
+  describe('a failed save that is not about a field', () => {
+    const LOCKED = 'database is locked';
+    const message = () => document.getElementById('edit-error') as HTMLElement;
+    const failedText = {
+      en: 'Could not save the snippet. Reason: database is locked. Nothing was changed.',
+      uk: 'Не вдалося зберегти сніпет. Причина: database is locked. Нічого не змінено.',
+      de: 'Das Snippet ließ sich nicht speichern. Grund: database is locked. Es wurde nichts geändert.',
+    };
+    const saves = () => mockInvoke.mock.calls.filter(([cmd]) => cmd === 'update_snippet').length;
+
+    function backend(language: string, error: unknown = LOCKED) {
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'get_settings') return { language };
+        if (cmd === 'get_system_language') return 'en';
+        if (cmd === 'update_snippet') throw error;
+        return undefined;
+      });
+    }
+
+    it('has an empty assertive live region above the buttons before any failure', () => {
+      renderModal(plainSnippet);
+      const region = message();
+      expect(region).toBeEmptyDOMElement();
+      expect(region).toHaveAttribute('aria-live', 'assertive');
+      expect(region).toHaveAttribute('aria-atomic', 'true');
+      expect(region).not.toHaveAttribute('role', 'alert');
+      expect(region.nextElementSibling).toHaveClass('modal-actions');
+      expect(screen.getByRole('dialog')).toContainElement(region);
+    });
+
+    it('keeps the dialog, the text and the focus, and says why above the buttons', async () => {
+      backend('en');
+      const props = { onSuccess: vi.fn(), onClose: vi.fn() };
+      renderModal(plainSnippet, props);
+      const content = screen.getByLabelText(/^content|^вміст/i);
+      content.focus();
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+
+      expect(content).toHaveFocus();
+      expect(screen.getByLabelText(/title|назва/i)).toHaveValue('My Snippet');
+      expect(content).toHaveValue('Hello world');
+      for (const id of ['edit-title-err', 'edit-content-err']) expect(document.getElementById(id)).toBeEmptyDOMElement();
+      for (const field of screen.getAllByRole('textbox')) expect(field).not.toHaveAttribute('aria-invalid');
+      expect(screen.getAllByText(/database is locked/)).toEqual([message()]);
+      expect(props.onSuccess).not.toHaveBeenCalled();
+      expect(props.onClose).not.toHaveBeenCalled();
+    });
+
+    it('a second failure empties the message first, so that it is announced again', async () => {
+      backend('en');
+      renderModal(plainSnippet);
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+
+      const region = message();
+      const texts: string[] = [];
+      const observer = new MutationObserver(() => texts.push(region.textContent ?? ''));
+      observer.observe(region, { childList: true, characterData: true, subtree: true });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(texts[texts.length - 1]).toBe(failedText.en));
+      observer.disconnect();
+
+      expect(texts).toContain('');
+      expect(texts.indexOf('')).toBeLessThan(texts.length - 1);
+      expect(saves()).toBe(2);
+    });
+
+    it('an error of a field afterwards takes the place of the message', async () => {
+      backend('en');
+      renderModal(plainSnippet);
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+
+      fireEvent.change(screen.getByLabelText(/title|назва/i), { target: { value: 'ab' } });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(document.getElementById('edit-title-err')).not.toBeEmptyDOMElement());
+      expect(message()).toBeEmptyDOMElement();
+      expect(saves()).toBe(1);
+    });
+
+    it.each([['uk'], ['de']] as const)('says it in the language of the app (%s)', async (language) => {
+      backend(language);
+      renderModal(plainSnippet);
+      await screen.findByRole('button', { name: language === 'uk' ? 'Скасувати' : 'Abbrechen' });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText[language]));
+    });
+
+    // TASK-33: SQLite's "database disk image is malformed" became the backend's DATABASE_DAMAGED.
+    it.each([
+      ['en', 'Cancel', 'Could not save the snippet. Reason: the snippet database is damaged. Nothing was changed. Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.'],
+      ['uk', 'Скасувати', 'Не вдалося зберегти сніпет. Причина: база сніпетів пошкоджена. Нічого не змінено. Перезапустіть QuickSnippets: під час запуску програма перевірить базу й запропонує зберегти сніпети, які ще вдається прочитати.'],
+      ['de', 'Abbrechen', 'Das Snippet ließ sich nicht speichern. Grund: Die Snippet-Datenbank ist beschädigt. Es wurde nichts geändert. Starten Sie QuickSnippets neu: Beim Start prüft es die Datenbank und bietet an, die noch lesbaren Snippets zu sichern.'],
+    ] as const)('a damaged database is said in the language of the app, with what to do (%s)', async (language, cancel, text) => {
+      backend(language, 'The snippet database is damaged');
+      renderModal(plainSnippet);
+      await screen.findByRole('button', { name: cancel });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(text));
+      expect(screen.queryByText(/The snippet database is damaged/)).not.toBeInTheDocument();
+    });
+
+    it('opening the dialog again shows no old message', async () => {
+      backend('en');
+      const view = (open: boolean) => <LanguageProvider><EditSnippetModal isOpen={open} onClose={vi.fn()} snippet={plainSnippet} onSuccess={vi.fn()} /></LanguageProvider>;
+      const { rerender } = render(view(true));
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(failedText.en));
+      rerender(view(false));
+      rerender(view(true));
+      expect(message()).toBeEmptyDOMElement();
+    });
+  });
 });

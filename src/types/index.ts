@@ -40,6 +40,19 @@ export interface SearchResult {
   is_encrypted: boolean;
 }
 
+/**
+ * A list of snippets as `get_sorted_snippets` and `search_snippets` return it
+ * (commands.rs `SnippetListView`).
+ */
+export interface SnippetListResult {
+  items: SearchResult[];
+  /**
+   * Damage of the snippet database cut the list short: snippets are missing from it, so the
+   * window must not claim that there are no (more) snippets.
+   */
+  damaged: boolean;
+}
+
 /** Persisted window position/size. */
 export interface WindowState {
   x: number;

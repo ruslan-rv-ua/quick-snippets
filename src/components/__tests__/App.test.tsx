@@ -123,7 +123,7 @@ describe('App: keyboard shortcuts help (F1)', () => {
           };
         case 'search_snippets':
         case 'get_sorted_snippets':
-          return [];
+          return { items: [], damaged: false };
         default:
           return null;
       }
@@ -276,7 +276,7 @@ describe('App: Delete in the search box', () => {
           };
         case 'search_snippets':
         case 'get_sorted_snippets':
-          return [{ id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false }];
+          return { items: [{ id: 1, title: 'Greeting', score: 0, matched_positions: [], is_encrypted: false }], damaged: false };
         default:
           return null;
       }
@@ -340,10 +340,10 @@ describe('App: where the screen reader is', () => {
         case 'search_snippets': {
           const query = String((args as { query?: string } | undefined)?.query ?? '').toLowerCase();
           // A new array each time, as from IPC.
-          return snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s }));
+          return { items: snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s })), damaged: false };
         }
         case 'get_sorted_snippets':
-          return snippets.map((s) => ({ ...s }));
+          return { items: snippets.map((s) => ({ ...s })), damaged: false };
         default:
           return null;
       }
@@ -516,7 +516,7 @@ describe('App: telling the backend that the page is ready', () => {
           return settings;
         case 'get_sorted_snippets':
           lastListRequestWhenReady = args;
-          return snippets.map((s) => ({ ...s }));
+          return { items: snippets.map((s) => ({ ...s })), damaged: false };
         case 'frontend_ready':
           themeWhenReady = document.documentElement.classList.contains('theme-light');
           return undefined;
@@ -552,7 +552,7 @@ describe('App: telling the backend that the page is ready', () => {
     beforeEach(() => {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === 'get_settings') return settings;
-        return cmd === 'get_sorted_snippets' ? snippets.map((s) => ({ ...s })) : null;
+        return cmd === 'get_sorted_snippets' ? { items: snippets.map((s) => ({ ...s })), damaged: false } : null;
       });
     });
 
@@ -615,10 +615,10 @@ describe('App: the keyboard moves inside the window, or the window hides', () =>
           };
         case 'search_snippets': {
           const query = (args as { query: string }).query.toLowerCase();
-          return snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s }));
+          return { items: snippets.filter((s) => s.title.toLowerCase().includes(query)).map((s) => ({ ...s })), damaged: false };
         }
         case 'get_sorted_snippets':
-          return snippets.map((s) => ({ ...s }));
+          return { items: snippets.map((s) => ({ ...s })), damaged: false };
         default:
           return null;
       }
@@ -711,7 +711,7 @@ describe('App: where focus goes after a dialog changes the list', () => {
           };
         case 'search_snippets':
         case 'get_sorted_snippets':
-          return snippets.map((s) => ({ ...s }));
+          return { items: snippets.map((s) => ({ ...s })), damaged: false };
         case 'delete_snippet':
           snippets = snippets.filter((s) => s.id !== (args as { id: number }).id);
           return null;
@@ -785,6 +785,26 @@ describe('App: where focus goes after a dialog changes the list', () => {
     expect(search).toHaveFocus();
   });
 
+  // Up to 0.3.5 the app showed the backend's text as a toast outside the open aria-modal dialog,
+  // gone after 2 s. Now the dialog says it above its buttons, in the language of the app.
+  it('a failed delete: the dialog stays open and says why above its buttons; no toast', async () => {
+    const backend = mockInvoke.getMockImplementation()!;
+    mockInvoke.mockImplementation(async (cmd, args) =>
+      cmd === 'delete_snippet' ? Promise.reject('database is locked') : backend(cmd, args));
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'd', code: 'KeyD', ctrlKey: true });
+    const dialog = await screen.findByRole('dialog', { name: 'Delete snippet' });
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+    fireEvent.keyDown(cancel, { key: 'Enter', ctrlKey: true });
+
+    const message = 'Could not delete the snippet. Reason: database is locked.';
+    await waitFor(() => expect(within(dialog).getByText(message)).toBeInTheDocument());
+    expect(screen.getAllByText(/database is locked/)).toHaveLength(1);
+    expect(cancel).toHaveFocus();
+    expect(screen.getByRole('option', { name: 'Greeting' })).toBeInTheDocument();
+  });
+
   it('Ctrl+N, Ctrl+Enter: focus comes back once, to the new snippet, not first to the one selected before', async () => {
     const search = await openApp();
     const seen = recordFocus(search);
@@ -799,3 +819,102 @@ describe('App: where focus goes after a dialog changes the list', () => {
     expect(search).toHaveFocus();
   });
 });
+
+// TASK-33: a snippet database damaged inside. Up to 0.3.5 the list was silently incomplete (or said
+// "No snippets yet") and copying or opening a damaged snippet showed SQLite's English text.
+describe('App: a damaged snippet database', () => {
+  type Item = { id: number; title: string; score: number; matched_positions: number[]; is_encrypted: boolean };
+  const item = (id: number, title: string): Item => ({ id, title, score: 0, matched_positions: [], is_encrypted: false });
+  const RESTART =
+    'Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.';
+  let listed: { items: Item[]; damaged: boolean };
+  let failure: string;
+
+  beforeEach(() => {
+    listed = { items: [item(1, 'Greeting'), item(2, 'Goodbye')], damaged: true };
+    failure = 'The snippet database is damaged';
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      switch (cmd) {
+        case 'get_settings':
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language: 'en',
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 0,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets':
+        case 'get_sorted_snippets':
+          return { items: listed.items.map((s) => ({ ...s })), damaged: listed.damaged };
+        case 'activate_snippet':
+        case 'autotype_snippet':
+        case 'get_snippet_by_id':
+          throw failure;
+        default:
+          return null;
+      }
+    });
+  });
+
+  async function openApp(): Promise<HTMLInputElement> {
+    renderShownApp();
+    const search = (await screen.findByRole('combobox')) as HTMLInputElement;
+    search.focus();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    return search;
+  }
+
+  it('says above the list that not all snippets are shown', async () => {
+    await openApp();
+    expect(screen.getByText(`Not all snippets are shown: the snippet database is damaged. ${RESTART}`)).toBeInTheDocument();
+  });
+
+  it('an empty damaged list does not claim that there are no snippets yet', async () => {
+    listed = { items: [], damaged: true };
+    renderShownApp();
+    await waitFor(() => expect(document.getElementById('list-damaged')).toBeInTheDocument());
+    expect(screen.queryByText(/No snippets yet/)).not.toBeInTheDocument();
+  });
+
+  it('a complete list shows no notice', async () => {
+    listed = { ...listed, damaged: false };
+    await openApp();
+    expect(document.getElementById('list-damaged')).not.toBeInTheDocument();
+  });
+
+  it('copying a snippet of a damaged database says so in the language of the app, with what to do', async () => {
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(await screen.findByText(`Could not copy the snippet. Reason: the snippet database is damaged. ${RESTART}`)).toBeInTheDocument();
+    expect(screen.queryByText('The snippet database is damaged')).not.toBeInTheDocument();
+  });
+
+  it('typing a damaged snippet says that this snippet is damaged', async () => {
+    failure = 'This snippet is damaged';
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'Enter', shiftKey: true });
+    expect(await screen.findByText('Could not type the snippet. Reason: this snippet is damaged and cannot be read.')).toBeInTheDocument();
+  });
+
+  it('opening a damaged snippet for editing says so in the language of the app', async () => {
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'e', code: 'KeyE', ctrlKey: true });
+    expect(await screen.findByText(`Could not open the snippet. Reason: the snippet database is damaged. ${RESTART}`)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('any other failure of copying is still shown as the backend gives it (TASK-42)', async () => {
+    failure = 'database is locked';
+    const search = await openApp();
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(await screen.findByText('database is locked')).toBeInTheDocument();
+  });
+});
+

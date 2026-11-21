@@ -97,12 +97,20 @@ pub struct SnippetView {
 // Inner (testable) functions — accept &Connection, no Tauri runtime needed
 // ---------------------------------------------------------------------------
 
-pub fn search_snippets_inner(
-    conn: &Connection,
-    query: &str,
-) -> Result<Vec<search::SearchResult>, String> {
-    let rows = db::list_snippets_for_search(conn);
-    Ok(search::search(query, &rows))
+/// A list for the main window, and whether damage of the database cut it short (the window then
+/// says so instead of claiming that there are no more snippets).
+#[derive(serde::Serialize, Clone, Debug, Default)]
+pub struct SnippetListView {
+    pub items: Vec<search::SearchResult>,
+    pub damaged: bool,
+}
+
+pub fn search_snippets_inner(conn: &Connection, query: &str) -> Result<SnippetListView, String> {
+    let listing = db::list_snippets_for_search(conn);
+    Ok(SnippetListView {
+        items: search::search(query, &listing.rows),
+        damaged: listing.damaged,
+    })
 }
 
 /// The error for content over its size limit; `size` and `max` are bytes of UTF-8.
@@ -131,22 +139,28 @@ fn check_title(title: &str) -> Result<(), String> {
     }
 }
 
-/// Maps a rusqlite error to a user-facing string.
-/// Unique constraint violations are reported as a friendly message.
-fn map_rusqlite_err(e: rusqlite::Error) -> String {
-    if e.to_string().contains("UNIQUE constraint failed") {
-        "Title already exists".to_string()
-    } else {
-        e.to_string()
+/// Maps a rusqlite error to the text the frontend gets. Damage becomes one of the fixed texts the
+/// frontend recognises and says in the language of the app (`db::DATABASE_DAMAGED`,
+/// `db::SNIPPET_DAMAGED`); a duplicate title becomes "Title already exists"; anything else is
+/// SQLite's own message.
+fn db_err(e: rusqlite::Error) -> String {
+    match db::damage_of(&e) {
+        Some(db::Damage::Database) => db::DATABASE_DAMAGED.to_string(),
+        Some(db::Damage::Snippet) => db::SNIPPET_DAMAGED.to_string(),
+        None if e.to_string().contains("UNIQUE constraint failed") => {
+            "Title already exists".to_string()
+        }
+        None => e.to_string(),
     }
 }
 
 pub fn get_snippet_by_id_inner(conn: &Connection, id: i64) -> Result<SnippetView, String> {
-    let row = db::get_snippet_by_id(conn, id).map_err(|e| e.to_string())?;
+    let row = db::get_snippet_by_id(conn, id).map_err(db_err)?;
     let content = if row.is_encrypted {
         String::new() // SECURITY: never expose encrypted content to frontend
     } else {
-        String::from_utf8(row.content).map_err(|e| e.to_string())?
+        // The app stores the text of a plain snippet as UTF-8: anything else is damage.
+        String::from_utf8(row.content).map_err(|_| db::SNIPPET_DAMAGED.to_string())?
     };
     Ok(SnippetView {
         id: row.id,
@@ -177,10 +191,10 @@ pub fn create_snippet_inner(
 
     if password.is_empty() {
         let blob = content_bytes.to_vec();
-        db::create_snippet(conn, title, blob, false).map_err(map_rusqlite_err)
+        db::create_snippet(conn, title, blob, false).map_err(db_err)
     } else {
         let blob = crypto::encrypt(content_bytes, password).map_err(|e| e.to_string())?;
-        db::create_snippet(conn, title, blob, true).map_err(map_rusqlite_err)
+        db::create_snippet(conn, title, blob, true).map_err(db_err)
     }
 }
 
@@ -194,7 +208,7 @@ pub fn activate_snippet_get_content(
     id: i64,
     password: &str,
 ) -> Result<Zeroizing<Vec<u8>>, String> {
-    let row = db::get_snippet_by_id(conn, id).map_err(|e| e.to_string())?;
+    let row = db::get_snippet_by_id(conn, id).map_err(db_err)?;
     if !row.is_encrypted {
         return Ok(Zeroizing::new(row.content));
     }
@@ -261,33 +275,52 @@ pub fn update_snippet_inner(
     }
 
     let blob = content_bytes.to_vec();
-    db::update_snippet(conn, id, title, blob).map_err(map_rusqlite_err)
+    db::update_snippet(conn, id, title, blob).map_err(db_err)
 }
 
 pub fn delete_snippet_inner(conn: &Connection, id: i64) -> Result<(), String> {
-    db::delete_snippet(conn, id).map_err(|e| e.to_string())
+    db::delete_snippet(conn, id).map_err(db_err)
 }
 
 pub fn get_sorted_snippets_inner(
     conn: &Connection,
     sort_mode: &str,
     sort_direction: &str,
-) -> Result<Vec<search::SearchResult>, String> {
-    let rows = db::list_snippets_sorted(conn, sort_mode, sort_direction);
-    Ok(rows
-        .into_iter()
-        .map(|(id, title, is_encrypted)| search::SearchResult {
-            id,
-            title,
-            score: 0,
-            matched_positions: vec![],
-            is_encrypted,
-        })
-        .collect())
+) -> Result<SnippetListView, String> {
+    let listing = db::list_snippets_sorted(conn, sort_mode, sort_direction);
+    Ok(SnippetListView {
+        items: listing
+            .rows
+            .into_iter()
+            .map(|(id, title, is_encrypted)| search::SearchResult {
+                id,
+                title,
+                score: 0,
+                matched_positions: vec![],
+                is_encrypted,
+            })
+            .collect(),
+        damaged: listing.damaged,
+    })
 }
 
 pub fn touch_last_used_inner(conn: &Connection, id: i64) -> Result<(), String> {
-    db::touch_last_used(conn, id).map_err(|e| e.to_string())
+    db::touch_last_used(conn, id).map_err(db_err)
+}
+
+/// The text of a snippet as the clipboard or auto-type gets it. The app stores text as UTF-8,
+/// so anything else is damage (`db::SNIPPET_DAMAGED`); the bytes are erased either way, and the
+/// error never holds any of them.
+fn plaintext_to_string(plaintext: &[u8]) -> Result<Zeroizing<String>, String> {
+    use zeroize::Zeroize;
+    match String::from_utf8(plaintext.to_vec()) {
+        Ok(s) => Ok(Zeroizing::new(s)),
+        Err(e) => {
+            let mut bytes = e.into_bytes();
+            bytes.zeroize();
+            Err(db::SNIPPET_DAMAGED.to_string())
+        }
+    }
 }
 
 /// Which change of "Start with Windows" Windows refused.
@@ -371,7 +404,7 @@ pub mod tauri_commands {
     pub fn search_snippets(
         query: String,
         state: State<AppState>,
-    ) -> Result<Vec<search::SearchResult>, String> {
+    ) -> Result<SnippetListView, String> {
         let conn = state.conn.lock().map_err(|e| e.to_string())?;
         search_snippets_inner(&conn, &query)
     }
@@ -401,8 +434,6 @@ pub mod tauri_commands {
         app: AppHandle,
         state: State<AppState>,
     ) -> Result<(), String> {
-        use zeroize::Zeroize;
-
         // Get plaintext in a limited scope so it is dropped before we return
         let plaintext = {
             let conn = state.conn.lock().map_err(|e| e.to_string())?;
@@ -413,14 +444,7 @@ pub mod tauri_commands {
         // SECURITY: only clipboard call here — plaintext never enters IPC response.
         // plaintext is already Zeroizing<Vec<u8>>, so it will be securely erased on drop.
         // Create a new Zeroizing<String> for clipboard write to ensure proper cleanup.
-        let text: Zeroizing<String> = match String::from_utf8(plaintext.to_vec()) {
-            Ok(s) => Zeroizing::new(s),
-            Err(e) => {
-                let mut bytes = e.into_bytes();
-                bytes.zeroize();
-                return Err("Invalid UTF-8 content".to_string());
-            }
-        };
+        let text = plaintext_to_string(&plaintext)?;
         let result = app.clipboard().write_text(text.as_str()).map_err(|e| e.to_string());
         result?;
         // Both plaintext and text are Zeroizing; automatically zeroed on drop at end of scope
@@ -449,7 +473,7 @@ pub mod tauri_commands {
         sort_mode: String,
         sort_direction: String,
         state: State<AppState>,
-    ) -> Result<Vec<search::SearchResult>, String> {
+    ) -> Result<SnippetListView, String> {
         let conn = state.conn.lock().map_err(|e| e.to_string())?;
         get_sorted_snippets_inner(&conn, &sort_mode, &sort_direction)
     }
@@ -567,14 +591,7 @@ pub mod tauri_commands {
         };
 
         // Convert to String for typing; plaintext (Zeroizing<Vec<u8>>) drops after this block.
-        let mut text: Zeroizing<String> = match String::from_utf8(plaintext.to_vec()) {
-            Ok(s) => Zeroizing::new(s),
-            Err(e) => {
-                let mut bytes = e.into_bytes();
-                bytes.zeroize();
-                return Err("Invalid UTF-8 content".to_string());
-            }
-        };
+        let mut text = plaintext_to_string(&plaintext)?;
 
         // Hide window so the target app receives focus.
         let _ = window.hide();
@@ -641,7 +658,7 @@ mod tests {
         let conn = setup();
         db::create_snippet(&conn, "alpha", b"content1".to_vec(), false).unwrap();
         db::create_snippet(&conn, "beta test", b"content2".to_vec(), false).unwrap();
-        let results = search_snippets_inner(&conn, "").unwrap();
+        let results = search_snippets_inner(&conn, "").unwrap().items;
         assert_eq!(results.len(), 2);
     }
 
@@ -650,7 +667,7 @@ mod tests {
         let conn = setup();
         db::create_snippet(&conn, "alpha", b"c1".to_vec(), false).unwrap();
         db::create_snippet(&conn, "beta", b"c2".to_vec(), false).unwrap();
-        let results = search_snippets_inner(&conn, "alp").unwrap();
+        let results = search_snippets_inner(&conn, "alp").unwrap().items;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "alpha");
     }
@@ -755,7 +772,80 @@ mod tests {
         let encrypted = crypto::encrypt(b"secret data", "mypass").unwrap();
         let id = db::create_snippet(&conn, "encrypted", encrypted, true).unwrap();
         let result = activate_snippet_get_content(&conn, id, "wrongpass");
-        assert!(result.is_err());
+        // Exactly this text: the password dialog says "wrong password" only for it.
+        assert_eq!(result.unwrap_err(), crypto::WRONG_PASSWORD);
+    }
+
+    #[test]
+    fn test_activate_damaged_encrypted_content_is_not_a_wrong_password() {
+        let conn = setup();
+        let id = db::create_snippet(&conn, "damaged", b"v2:not base64 at all".to_vec(), true).unwrap();
+        let err = activate_snippet_get_content(&conn, id, "mypass").unwrap_err();
+        assert_eq!(err, "Invalid data");
+        assert_ne!(err, crypto::WRONG_PASSWORD);
+    }
+
+    #[test]
+    fn test_activate_missing_snippet_is_not_a_wrong_password() {
+        let conn = setup();
+        let err = activate_snippet_get_content(&conn, 99999, "mypass").unwrap_err();
+        assert_ne!(err, crypto::WRONG_PASSWORD);
+    }
+
+    /// A database file locked by another connection, as when another program holds it: every
+    /// change and every read fails with SQLite's "database is locked". The app's connection
+    /// gives up at once here instead of after its busy timeout of 5 s.
+    fn locked_database() -> (tempfile::TempDir, Connection, Connection, i64, i64) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("snippets.db");
+        let conn = db::open_and_init_db(&path).unwrap();
+        let plain = db::create_snippet(&conn, "plain", b"plain text".to_vec(), false).unwrap();
+        let secret = crypto::encrypt(b"secret data", "mypass").unwrap();
+        let encrypted = db::create_snippet(&conn, "encrypted", secret, true).unwrap();
+        conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let other = Connection::open(&path).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE;").unwrap();
+        (dir, conn, other, plain, encrypted)
+    }
+
+    #[test]
+    fn test_locked_database_fails_delete_create_and_update_with_the_reason() {
+        let (_dir, conn, _other, plain, _) = locked_database();
+        assert_eq!(delete_snippet_inner(&conn, plain).unwrap_err(), "database is locked");
+        assert_eq!(
+            create_snippet_inner(&conn, "new one", "text", "").unwrap_err(),
+            "database is locked"
+        );
+        assert_eq!(
+            update_snippet_inner(&conn, plain, "renamed", "text").unwrap_err(),
+            "database is locked"
+        );
+    }
+
+    #[test]
+    fn test_locked_database_with_the_right_password_is_not_a_wrong_password() {
+        let (_dir, conn, _other, _, encrypted) = locked_database();
+        let err = activate_snippet_get_content(&conn, encrypted, "mypass").unwrap_err();
+        assert_eq!(err, "database is locked");
+        assert_ne!(err, crypto::WRONG_PASSWORD);
+    }
+
+    /// The error goes to the frontend: it never holds the password or the decrypted text.
+    #[test]
+    fn test_activate_errors_never_hold_the_password_or_the_content() {
+        let conn = setup();
+        let secret = crypto::encrypt(b"secret data", "mypass").unwrap();
+        let id = db::create_snippet(&conn, "encrypted", secret, true).unwrap();
+        let damaged = db::create_snippet(&conn, "damaged", b"v2:@@@".to_vec(), true).unwrap();
+        let errors = [
+            activate_snippet_get_content(&conn, id, "wrong mypass").unwrap_err(),
+            activate_snippet_get_content(&conn, damaged, "mypass").unwrap_err(),
+            activate_snippet_get_content(&conn, 99999, "mypass").unwrap_err(),
+        ];
+        for err in errors {
+            assert!(!err.contains("mypass"), "{err}");
+            assert!(!err.contains("secret data"), "{err}");
+        }
     }
 
     // === activate_snippet: snippets in the legacy encryption format (0.1.0 to 0.2.1) ===
@@ -1078,7 +1168,7 @@ mod tests {
         let oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
         let result = create_snippet_inner(&conn, "title", &oversized, "");
         assert_eq!(result.unwrap_err(), "Content too long (65537 bytes, max 65536 bytes)");
-        assert!(search_snippets_inner(&conn, "").unwrap().is_empty(), "nothing is stored");
+        assert!(search_snippets_inner(&conn, "").unwrap().items.is_empty(), "nothing is stored");
     }
 
     #[test]
@@ -1127,7 +1217,7 @@ mod tests {
             result.unwrap_err(),
             "Content too long for an encrypted snippet (49106 bytes, max 49105 bytes)"
         );
-        assert!(search_snippets_inner(&conn, "").unwrap().is_empty(), "nothing is stored");
+        assert!(search_snippets_inner(&conn, "").unwrap().items.is_empty(), "nothing is stored");
     }
 
     #[test]
@@ -1211,7 +1301,7 @@ mod tests {
             let conn = setup();
             let result = create_snippet_inner(&conn, &title, "content", "");
             assert_eq!(result.unwrap_err(), "Title must be 3 to 50 characters (51 characters)");
-            assert!(search_snippets_inner(&conn, "").unwrap().is_empty(), "nothing is stored");
+            assert!(search_snippets_inner(&conn, "").unwrap().items.is_empty(), "nothing is stored");
         }
     }
 
@@ -1290,7 +1380,7 @@ mod tests {
         let conn = setup();
         let id = db::create_snippet(&conn, "to delete", b"data".to_vec(), false).unwrap();
         delete_snippet_inner(&conn, id).unwrap();
-        let results = search_snippets_inner(&conn, "").unwrap();
+        let results = search_snippets_inner(&conn, "").unwrap().items;
         assert_eq!(results.len(), 0);
     }
 
@@ -1314,7 +1404,7 @@ mod tests {
         db::create_snippet(&conn, "Alpha", b"a".to_vec(), false).unwrap();
         db::create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
 
-        let results = get_sorted_snippets_inner(&conn, "alphabetical", "asc").unwrap();
+        let results = get_sorted_snippets_inner(&conn, "alphabetical", "asc").unwrap().items;
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].title, "Alpha");
         assert_eq!(results[1].title, "Bravo");
@@ -1328,7 +1418,7 @@ mod tests {
         let conn = setup();
         db::create_snippet(&conn, "Test item", b"data".to_vec(), true).unwrap();
 
-        let results = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap();
+        let results = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap().items;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].is_encrypted, true);
         assert_eq!(results[0].score, 0);
@@ -1526,13 +1616,119 @@ mod tests {
     fn test_full_flow_create_search_activate_delete() {
         let conn = setup();
         let id = create_snippet_inner(&conn, "my test", "hello world", "").unwrap();
-        let results = search_snippets_inner(&conn, "test").unwrap();
+        let results = search_snippets_inner(&conn, "test").unwrap().items;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, id);
         let content = activate_snippet_get_content(&conn, id, "").unwrap();
         assert_eq!(String::from_utf8(content.to_vec()).unwrap(), "hello world");
         delete_snippet_inner(&conn, id).unwrap();
-        let results = search_snippets_inner(&conn, "").unwrap();
+        let results = search_snippets_inner(&conn, "").unwrap().items;
         assert_eq!(results.len(), 0);
+    }
+
+    // === damage met while the app works (TASK-33) ===
+
+    use crate::db::test_damage::{build_db, content_of, damage_middle_leaf, damage_page, overwrite_after, pages_of};
+
+    const COUNT: i64 = 90;
+
+    #[test]
+    fn test_lists_report_damage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let healthy = db::open_and_init_db(&path).unwrap();
+        assert!(!get_sorted_snippets_inner(&healthy, "modified", "desc").unwrap().damaged);
+        assert!(!search_snippets_inner(&healthy, "сніпет").unwrap().damaged);
+        drop(healthy);
+
+        damage_middle_leaf(&path, COUNT);
+        let conn = db::open_and_init_db(&path).unwrap();
+        let sorted = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap();
+        assert!(sorted.damaged);
+        assert!(!sorted.items.is_empty(), "the snippets before the damaged page are still listed");
+        assert!(get_sorted_snippets_inner(&conn, "alphabetical", "asc").unwrap().damaged);
+        let found = search_snippets_inner(&conn, "сніпет").unwrap();
+        assert!(found.damaged);
+        assert_eq!(found.items.len(), sorted.items.len());
+    }
+
+    /// The list reaches the frontend as { items, damaged } (src/types/index.ts reads these names).
+    #[test]
+    fn test_snippet_list_view_names_for_the_frontend() {
+        let view = SnippetListView { items: vec![], damaged: true };
+        assert_eq!(
+            serde_json::to_value(view).unwrap(),
+            serde_json::json!({ "items": [], "damaged": true })
+        );
+    }
+
+    /// Up to 0.3.5 every command passed SQLite's English "database disk image is malformed" on.
+    #[test]
+    fn test_commands_report_a_damaged_page_as_database_damaged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let unreadable = damage_middle_leaf(&path, COUNT);
+        let id = unreadable[0];
+        let conn = db::open_and_init_db(&path).unwrap();
+
+        assert_eq!(get_snippet_by_id_inner(&conn, id).err().unwrap(), db::DATABASE_DAMAGED);
+        assert_eq!(activate_snippet_get_content(&conn, id, "").err().unwrap(), db::DATABASE_DAMAGED);
+        assert_eq!(update_snippet_inner(&conn, id, "New title", "x").unwrap_err(), db::DATABASE_DAMAGED);
+        assert_eq!(delete_snippet_inner(&conn, id).unwrap_err(), db::DATABASE_DAMAGED);
+    }
+
+    /// Damage in an index stops every change of the table, also of snippets that read fine.
+    #[test]
+    fn test_saving_with_a_damaged_index_reports_database_damaged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_page(&path, pages_of(&path, "idx_snippets_title", "leaf")[0]);
+        let conn = db::open_and_init_db(&path).unwrap();
+
+        assert_eq!(create_snippet_inner(&conn, "Brand new", "text", "").unwrap_err(), db::DATABASE_DAMAGED);
+        assert_eq!(
+            create_snippet_inner(&conn, "Brand new secret", "text", "pass").unwrap_err(),
+            db::DATABASE_DAMAGED
+        );
+        assert_eq!(update_snippet_inner(&conn, 1, "Renamed", "x").unwrap_err(), db::DATABASE_DAMAGED);
+    }
+
+    /// A plain snippet whose text is no longer UTF-8: SNIPPET_DAMAGED, never any of its bytes
+    /// (up to 0.3.5 "Invalid UTF-8 content", or "invalid utf-8 sequence ..." when opening it).
+    #[test]
+    fn test_damaged_text_of_one_snippet_reports_snippet_damaged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        overwrite_after(&path, content_of(40).as_bytes(), None, 10, &[0xFF, 0xFF]);
+        let conn = db::open_and_init_db(&path).unwrap();
+
+        assert_eq!(get_snippet_by_id_inner(&conn, 40).err().unwrap(), db::SNIPPET_DAMAGED);
+        let bytes = activate_snippet_get_content(&conn, 40, "").unwrap();
+        let err = plaintext_to_string(&bytes).unwrap_err();
+        assert_eq!(err, db::SNIPPET_DAMAGED);
+        assert!(get_snippet_by_id_inner(&conn, 41).is_ok(), "the other snippets are fine");
+    }
+
+    #[test]
+    fn test_plaintext_to_string_keeps_text_and_never_shows_bytes() {
+        assert_eq!(plaintext_to_string("Привіт".as_bytes()).unwrap().as_str(), "Привіт");
+        let err = plaintext_to_string(&[b's', b'e', 0xFF, b'c']).unwrap_err();
+        assert_eq!(err, db::SNIPPET_DAMAGED);
+        assert!(!err.contains("se"), "{err}");
+    }
+
+    /// A title that is not UTF-8 makes opening the snippet report SNIPPET_DAMAGED, and editing or
+    /// deleting it DATABASE_DAMAGED (SQLite finds the index out of step).
+    #[test]
+    fn test_damaged_title_reports_damage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        overwrite_after(&path, crate::db::test_damage::title_of(41).as_bytes(), Some(&leaves), 2, &[0xFF, 0xFE]);
+        let conn = db::open_and_init_db(&path).unwrap();
+
+        assert_eq!(get_snippet_by_id_inner(&conn, 41).err().unwrap(), db::SNIPPET_DAMAGED);
+        let deleted = delete_snippet_inner(&conn, 41).unwrap_err();
+        assert!(deleted == db::DATABASE_DAMAGED || deleted == db::SNIPPET_DAMAGED, "{deleted}");
     }
 }
