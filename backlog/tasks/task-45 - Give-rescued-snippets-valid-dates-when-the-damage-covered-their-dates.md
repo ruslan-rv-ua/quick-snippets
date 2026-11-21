@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T10:13:00Z'
-updated_date: '2026-11-21T11:38:00Z'
+updated_date: '2026-11-21T11:39:00Z'
 labels:
   - bug
   - backend
@@ -125,6 +125,10 @@ The other options offered: "Сусід і своя дата (Рекомендо�
 2. The probe's sweep found the damage covering the dates of creation and change always together; a single date is damaged only by damage of a few bytes.
 
 Definition of Done #4 and #5 are checked as not applicable: there is no new user-facing string, and nothing changed in focus, dialogs or what screen readers read (the release exe was rebuilt and checked with a test copy and NVDA all the same).
+
+## Merge (2026-11-21)
+
+Merged into develop with git flow feature finish --no-ff --no-push: feature/rescue-damaged-dates (merge 8266059; code e0eddc8, Backlog d90ffa1). The tree of develop after the merge is the tree that was tested (git diff d90ffa1 8266059 is empty). Nothing pushed, no tag, version unchanged; not archived: left to the managing session.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
