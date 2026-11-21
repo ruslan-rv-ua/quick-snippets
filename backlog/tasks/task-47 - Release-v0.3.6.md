@@ -1,10 +1,11 @@
 ---
 id: TASK-47
 title: Release v0.3.6
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-21T11:45:00Z'
-updated_date: '2026-11-21T11:54:00Z'
+updated_date: '2026-11-21T12:01:00Z'
 labels:
   - release
   - model-sonnet
@@ -47,3 +48,17 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Check that CHANGELOG [Unreleased] lists only user-visible changes and that snippets.db and settings.json keep the 0.3.5 format (otherwise ask the user about the version again).
+2. git flow release start 0.3.6; version 0.3.6 in package.json, tauri.conf.json, Cargo.toml and both lock files; CHANGELOG [Unreleased] becomes "v0.3.6 - 2026-11-21" with an empty [Unreleased] above it.
+3. On the release branch: npm run test:all, npm run lint, just final-checks, npx tauri build --no-bundle.
+4. just smoke and just smoke-tray on that release exe (a minute apart, each with the user's go-ahead right before it); compare the user's autostart values before and after (read only).
+5. Copy the release exe to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-47-<short commit>.exe and compare SHA-256.
+6. git flow release finish 0.3.6 --no-ff --notag --no-push; push main and develop (no tags; with the user's go-ahead; CI does not run on push).
+7. Release workflow on main with version 0.3.6 (with the user's go-ahead); check the ZIP and .sha256; release notes = the v0.3.6 CHANGELOG section (replacement with the user's go-ahead).
+8. Excavator in scoop-bucket; manifest shows 0.3.6 and the same hash. Back up C:\scoop\persist\quick-snippets\quick-snippets-data with checksums, scoop update quick-snippets (with the user's go-ahead), checksums after match; the app is not started.
+9. Notes, acceptance criteria, final summary, status Done (not archived); hand-over note task-47-release-0.3.6-handover.md.
+<!-- SECTION:PLAN:END -->
