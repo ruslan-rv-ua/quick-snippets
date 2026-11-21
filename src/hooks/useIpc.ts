@@ -3,19 +3,19 @@
  * One function per Rust `#[tauri::command]`, all returning Promise.
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { SearchResult, SnippetView, Settings, SaveSettingsOutcome } from '../types';
+import type { SnippetListResult, SnippetView, Settings, SaveSettingsOutcome } from '../types';
 
 // ── Snippets ──────────────────────────────────────────────────────────────
 
-export function searchSnippets(query: string): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>('search_snippets', { query });
+export function searchSnippets(query: string): Promise<SnippetListResult> {
+  return invoke<SnippetListResult>('search_snippets', { query });
 }
 
 export function getSortedSnippets(
   sortMode: string,
   sortDirection: string,
-): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>('get_sorted_snippets', {
+): Promise<SnippetListResult> {
+  return invoke<SnippetListResult>('get_sorted_snippets', {
     sortMode,
     sortDirection,
   });

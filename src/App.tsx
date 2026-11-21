@@ -32,7 +32,11 @@ import { KeyboardHelpModal } from './components/KeyboardHelpModal';
 import { ToastContainer } from './components/ToastContainer';
 
 import type { SearchResult } from './types';
+import { failureMessage, ipcErrorToString, isDamage } from './utils/errors';
 import './styles/theme.css';
+
+/** A notice about damage holds a sentence of advice: it stays long enough to be read. */
+export const DAMAGE_TOAST_MS = 8000;
 
 function getSortLabelKey(mode: string, direction: string): string {
   const map: Record<string, string> = {
@@ -91,6 +95,7 @@ function AppInner(): React.ReactElement {
     setQuery,
     snippets,
     listQuery,
+    listDamaged,
     activeIndex,
     setActiveIndex,
     listFocused,
@@ -124,6 +129,8 @@ function AppInner(): React.ReactElement {
   // show, as it does on every later show (hiding clears the selection).
   const [shownOnce, setShownOnce] = useState(false);
   const markedIndex = shownOnce ? activeIndex : -1;
+  // Each show of the window (see SnippetList: the notice about a damaged database).
+  const [shownCount, setShownCount] = useState(0);
 
   // ── Pending notification on startup ──────────────────────────────────
   useEffect(() => {
@@ -182,8 +189,22 @@ function AppInner(): React.ReactElement {
     setShowSettings,
     setShowExit,
     setAutotypeMode,
-    onWindowShown: () => setShownOnce(true),
+    onWindowShown: () => {
+      setShownOnce(true);
+      setShownCount((n) => n + 1);
+    },
   });
+
+  // A failure of copying or typing a plain snippet. Damage is said in the language of the app;
+  // any other error is still shown as the backend gives it (TASK-42).
+  const showActionError = useCallback(
+    (err: unknown, frame: (reason: string) => string) => {
+      const msg = ipcErrorToString(err);
+      if (isDamage(msg)) addToast(failureMessage(frame, msg, tf), 'error', DAMAGE_TOAST_MS);
+      else addToast(msg, 'error');
+    },
+    [addToast, tf],
+  );
 
   // ── Snippet activation ────────────────────────────────────────────────
   const handleActivate = useCallback(
@@ -197,10 +218,10 @@ function AppInner(): React.ReactElement {
             addToast(t('copySuccess'), 'success');
             hideWindow();
           })
-          .catch((err: unknown) => addToast(String(err), 'error'));
+          .catch((err: unknown) => showActionError(err, tf.snippetCopyFailed));
       }
     },
-    [t, addToast, hideWindow],
+    [t, tf, addToast, hideWindow, showActionError],
   );
 
   // ── Snippet auto-type ──────────────────────────────────────────────────
@@ -216,10 +237,10 @@ function AppInner(): React.ReactElement {
             addToast(t('autotypeSuccess'), 'success');
             hideWindow();
           })
-          .catch((err: unknown) => addToast(String(err), 'error'));
+          .catch((err: unknown) => showActionError(err, tf.snippetAutotypeFailed));
       }
     },
-    [t, addToast, hideWindow, setPasswordSnippet, setShowPassword],
+    [t, tf, addToast, hideWindow, setPasswordSnippet, setShowPassword, showActionError],
   );
 
   // Announce for accessibility
@@ -299,6 +320,8 @@ function AppInner(): React.ReactElement {
         activeIndex={markedIndex}
         query={query}
         listQuery={listQuery}
+        damaged={listDamaged}
+        shownCount={shownCount}
         onActiveIndexChange={setActiveIndex}
         onActivate={handleActivate}
       />

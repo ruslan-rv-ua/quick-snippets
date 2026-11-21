@@ -1,8 +1,51 @@
 // Database CRUD operations
 
-use crate::error_dialogs::OpenFailure;
+use crate::error_dialogs::{OpenFailure, RescueFailure};
+use rusqlite::types::ValueRef;
 use rusqlite::{params, Connection, Result};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+// ---------------------------------------------------------------------------
+// Damage met while the app works
+// ---------------------------------------------------------------------------
+
+/// The error the commands give when SQLite finds the database damaged (SQLITE_CORRUPT,
+/// SQLITE_NOTADB). The frontend recognises this exact text (`DATABASE_DAMAGED` in
+/// src/utils/errors.ts) and says it in the language of the app: change the two together.
+pub const DATABASE_DAMAGED: &str = "The snippet database is damaged";
+
+/// The error for a snippet whose stored values are no longer what the app wrote, for example a
+/// title or a text that is not UTF-8. SQLite reads such a row without an error, and the check
+/// at start-up does not see it. `SNIPPET_DAMAGED` in src/utils/errors.ts: change the two
+/// together.
+pub const SNIPPET_DAMAGED: &str = "This snippet is damaged";
+
+/// What kind of damage an error shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Damage {
+    /// SQLite finds the file damaged: a page of snippets, an index, the list of free pages.
+    Database,
+    /// One row reads, but a value in it is not what the app stores.
+    Snippet,
+}
+
+/// The damage an error of SQLite or rusqlite shows, or `None` for any other error (a locked
+/// database, a missing snippet, a full disk).
+pub fn damage_of(err: &rusqlite::Error) -> Option<Damage> {
+    use rusqlite::ErrorCode;
+    match err {
+        rusqlite::Error::SqliteFailure(e, _)
+            if matches!(e.code, ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) =>
+        {
+            Some(Damage::Database)
+        }
+        rusqlite::Error::FromSqlConversionFailure(..)
+        | rusqlite::Error::InvalidColumnType(..)
+        | rusqlite::Error::Utf8Error(_) => Some(Damage::Snippet),
+        _ => None,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,22 +264,373 @@ pub fn open_db_or_ask(
     }
 }
 
-/// [`open_db_or_ask`] with the native dialogs in `lang`; No quits the app.
+// ---------------------------------------------------------------------------
+// Damage inside a database that opens: check and rescue at start-up
+// ---------------------------------------------------------------------------
+
+/// What the quick check says about a database that opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Health {
+    Healthy,
+    /// The check found damage; its first lines, for the log.
+    Damaged(String),
+    /// The check could not run for another reason (the file is busy, a read error): nothing is
+    /// known, and nothing is offered.
+    Unknown(String),
+}
+
+/// `PRAGMA quick_check`: whether the database is damaged anywhere, not only in the header and the
+/// schema that opening it reads. It reads every page and changes nothing. It does not see bytes
+/// changed inside a title or a text: SQLite keeps no checksums.
+pub fn check_health(conn: &Connection) -> Health {
+    let lines: Result<Vec<String>> = (|| {
+        let mut stmt = conn.prepare("PRAGMA quick_check")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect()
+    })();
+    match lines {
+        Ok(lines) if lines.len() == 1 && lines[0] == "ok" => Health::Healthy,
+        Ok(lines) => Health::Damaged(lines.into_iter().take(5).collect::<Vec<_>>().join("; ")),
+        // A page full of garbage stops the check itself.
+        Err(e) if damage_of(&e) == Some(Damage::Database) => Health::Damaged(e.to_string()),
+        Err(e) => Health::Unknown(e.to_string()),
+    }
+}
+
+/// What the rescue of a damaged database saved.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Rescue {
+    /// Snippets copied into the new database.
+    pub saved: usize,
+    /// Titles of the snippets that exist but cannot be read, as far as the title index still
+    /// names them, in the order of their ids.
+    pub lost_titles: Vec<String>,
+    /// Snippets that exist but cannot be read, and whose title is not known either.
+    pub lost_untitled: usize,
+}
+
+impl Rescue {
+    /// Snippets that exist but cannot be read.
+    pub fn lost(&self) -> usize {
+        self.lost_titles.len() + self.lost_untitled
+    }
+
+    /// Snippets known to be in the damaged database.
+    pub fn total(&self) -> usize {
+        self.saved + self.lost()
+    }
+
+    fn add_lost(&mut self, title: Option<String>) {
+        match title {
+            Some(t) => self.lost_titles.push(t),
+            None => self.lost_untitled += 1,
+        }
+    }
+}
+
+/// A stored value as text, whatever SQLite holds: bytes that are not UTF-8 become U+FFFD.
+fn text_lossy(value: ValueRef<'_>) -> Option<String> {
+    match value {
+        ValueRef::Null => None,
+        ValueRef::Text(b) | ValueRef::Blob(b) => Some(String::from_utf8_lossy(b).into_owned()),
+        ValueRef::Integer(i) => Some(i.to_string()),
+        ValueRef::Real(f) => Some(f.to_string()),
+    }
+}
+
+/// Adds the ids (and the titles, where the query gives them) that `sql` returns until SQLite
+/// stops at damage.
+fn collect_ids(conn: &Connection, sql: &str, known: &mut BTreeMap<i64, Option<String>>) {
+    let Ok(mut stmt) = conn.prepare(sql) else { return };
+    let Ok(mut rows) = stmt.query([]) else { return };
+    while let Ok(Some(row)) = rows.next() {
+        let Ok(id) = row.get::<_, i64>(0) else { continue };
+        let title = row.get_ref(1).ok().and_then(text_lossy);
+        let entry = known.entry(id).or_insert(None);
+        if entry.is_none() {
+            *entry = title;
+        }
+    }
+}
+
+/// One snippet as the rescue reads it.
+struct RescuedRow {
+    title: String,
+    content: Vec<u8>,
+    is_encrypted: bool,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    last_used_at: Option<String>,
+}
+
+enum RowRead {
+    /// No row with this id.
+    Missing,
+    /// SQLite cannot read the row, or a value the app needs is gone.
+    Unreadable,
+    Row(RescuedRow),
+}
+
+/// Reads one snippet by its id, the way that still works when other pages are damaged. A title
+/// or the text of a plain snippet that is no longer UTF-8 is repaired with U+FFFD, so that the
+/// snippet can be listed, opened and copied; an encrypted snippet keeps its bytes as they are.
+fn read_for_rescue(conn: &Connection, id: i64) -> RowRead {
+    let read = || -> Result<RowRead> {
+        let mut stmt = conn.prepare_cached(
+            "SELECT title, content, is_encrypted, created_at, updated_at, last_used_at
+             FROM snippets WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        let Some(row) = rows.next()? else { return Ok(RowRead::Missing) };
+        let is_encrypted = match row.get_ref(2)? {
+            ValueRef::Integer(i) => i != 0,
+            _ => return Ok(RowRead::Unreadable),
+        };
+        let content = match row.get_ref(1)? {
+            ValueRef::Blob(b) | ValueRef::Text(b) => b.to_vec(),
+            _ => return Ok(RowRead::Unreadable),
+        };
+        let content = if is_encrypted {
+            content
+        } else {
+            String::from_utf8_lossy(&content).into_owned().into_bytes()
+        };
+        let Some(title) = text_lossy(row.get_ref(0)?) else { return Ok(RowRead::Unreadable) };
+        Ok(RowRead::Row(RescuedRow {
+            title,
+            content,
+            is_encrypted,
+            created_at: text_lossy(row.get_ref(3)?),
+            updated_at: text_lossy(row.get_ref(4)?),
+            last_used_at: text_lossy(row.get_ref(5)?),
+        }))
+    };
+    read().unwrap_or(RowRead::Unreadable)
+}
+
+/// Copies every snippet of `src` that can still be read into a new database at `dst_path`, with
+/// the same schema (see [`init_db`]), ids, titles, texts and dates; encrypted snippets stay
+/// encrypted, byte for byte. Reads `src` only.
+///
+/// The ids come from a scan of the table in both directions and from both indexes, each up to
+/// the first damaged page, and every id up to the highest one is then read on its own: a
+/// damaged page loses only the snippets on it. The titles of the lost ones come from the title
+/// index. A file at `dst_path` is written over; an error leaves it half written.
+pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescue> {
+    let mut known: BTreeMap<i64, Option<String>> = BTreeMap::new();
+    collect_ids(src, "SELECT id, title FROM snippets INDEXED BY idx_snippets_title", &mut known);
+    collect_ids(src, "SELECT id, NULL FROM snippets INDEXED BY idx_snippets_updated_at", &mut known);
+    collect_ids(src, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id", &mut known);
+    collect_ids(src, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id DESC", &mut known);
+    let known_max = known.keys().next_back().copied().unwrap_or(0);
+    // The id counter may name ids that no scan reached; it is trusted only so far.
+    let counter: Option<i64> = src
+        .query_row("SELECT seq FROM sqlite_sequence WHERE name = 'snippets'", [], |r| r.get(0))
+        .ok();
+    let last_id = match counter {
+        Some(seq) if seq > known_max => seq.min(known_max + 100_000),
+        _ => known_max,
+    };
+
+    let mut dst = Connection::open(dst_path)?;
+    init_db(&dst)?;
+    let tx = dst.transaction()?;
+    let mut rescue = Rescue::default();
+    {
+        let mut insert = tx.prepare(
+            "INSERT INTO snippets (id, title, content, is_encrypted, created_at, updated_at, last_used_at)
+             VALUES (?1, ?2, ?3, ?4,
+                     COALESCE(?5, ?6, strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+                     COALESCE(?6, ?5, strftime('%Y-%m-%dT%H:%M:%f', 'now')),
+                     ?7)",
+        )?;
+        for id in 1..=last_id {
+            match read_for_rescue(src, id) {
+                RowRead::Row(row) => {
+                    let inserted = insert.execute(params![
+                        id,
+                        row.title,
+                        row.content,
+                        row.is_encrypted as i64,
+                        row.created_at,
+                        row.updated_at,
+                        row.last_used_at
+                    ]);
+                    match inserted {
+                        Ok(_) => rescue.saved += 1,
+                        // A value the schema refuses (a title of a wrong length after damage).
+                        Err(_) => rescue.add_lost(Some(row.title)),
+                    }
+                }
+                // Not known to exist: a deleted snippet, or one no index names any more.
+                RowRead::Missing | RowRead::Unreadable if !known.contains_key(&id) => {}
+                RowRead::Missing | RowRead::Unreadable => {
+                    rescue.add_lost(known.get(&id).cloned().flatten())
+                }
+            }
+        }
+    }
+    // New snippets get ids after every id the damaged database used. sqlite_sequence has no key:
+    // its one row for the table is changed, or added when no snippet was copied.
+    tx.execute(
+        "UPDATE sqlite_sequence SET seq = MAX(seq, ?1) WHERE name = 'snippets'",
+        params![last_id],
+    )?;
+    tx.execute(
+        "INSERT INTO sqlite_sequence (name, seq) SELECT 'snippets', ?1
+         WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'snippets')",
+        params![last_id],
+    )?;
+    tx.commit()?;
+    Ok(rescue)
+}
+
+/// Name of the new database while the rescue writes it, next to snippets.db. Only the rescue
+/// creates this file; one left by an interrupted rescue is removed before the next one.
+pub const RESCUE_FILE_NAME: &str = "snippets-rescue.tmp";
+
+/// Removes the rescue's own file and its journal. A folder of that name is left alone.
+fn remove_rescue_file(path: &Path) {
+    if path.is_file() {
+        std::fs::remove_file(path).ok();
+    }
+    let journal = journal_path(path);
+    if journal.is_file() {
+        std::fs::remove_file(journal).ok();
+    }
+}
+
+/// Puts the database renamed by [`keep_damaged_db`] (and its journal) back as `db_path`.
+fn put_back_kept_db(kept: &Path, db_path: &Path) {
+    std::fs::rename(kept, db_path).ok();
+    let kept_journal = journal_path(kept);
+    if kept_journal.exists() {
+        std::fs::rename(&kept_journal, journal_path(db_path)).ok();
+    }
+}
+
+/// Renames the damaged `db_path` to `kept_name` (see [`keep_damaged_db`]) and puts the rescued
+/// database in its place. Nothing has changed when this fails.
+fn replace_with_rescue(db_path: &Path, rescue_path: &Path, kept_name: &str) -> std::io::Result<()> {
+    let kept = keep_damaged_db(db_path, kept_name)?;
+    if let Err(e) = std::fs::rename(rescue_path, db_path) {
+        put_back_kept_db(&kept, db_path);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// A question the start-up asks about a database that opened but is damaged inside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RescueDialog {
+    /// Move the readable snippets into a new database and keep the damaged file as `kept_name`?
+    Offer { rescue: Rescue, kept_name: String },
+    /// The rescue failed and nothing was changed: try again?
+    Failed(RescueFailure),
+}
+
+/// What the start-up goes on with after [`rescue_if_damaged`].
+#[derive(Debug)]
+pub enum RescueOutcome {
+    /// This connection: the database is healthy or could not be checked, or the user chose to
+    /// keep working with the damaged file.
+    Keep(Connection),
+    /// Open the database again: the rescued one is now snippets.db (or, very rarely, the damaged
+    /// one could not be opened again after a failed rescue).
+    Reopen,
+}
+
+/// Checks the database the start-up opened and, when it is damaged inside, asks the user (`ask`
+/// returns true for Yes) whether to move the snippets that can still be read into a new database.
+///
+/// * Yes: the damaged file is renamed to `snippets-damaged-<stamp>.db` (see [`damaged_db_name`])
+///   next to it, unchanged, and the new database takes its place.
+/// * No: nothing is renamed; the app works with the damaged file, and the next start asks again.
+/// * When the copy or the renaming fails, nothing is changed and the user is asked whether to try
+///   again; No then works with the damaged file.
+///
+/// The damaged file itself is only read; the new database is written next to it as
+/// [`RESCUE_FILE_NAME`] first, and removed again whenever it is not used.
+pub fn rescue_if_damaged(
+    db_path: &Path,
+    conn: Connection,
+    stamp: &str,
+    ask: &mut dyn FnMut(&RescueDialog) -> bool,
+) -> RescueOutcome {
+    let folder = db_path.parent().unwrap_or(Path::new("."));
+    let rescue_path = folder.join(RESCUE_FILE_NAME);
+    let mut conn = conn;
+    loop {
+        match check_health(&conn) {
+            Health::Healthy => return RescueOutcome::Keep(conn),
+            Health::Unknown(e) => {
+                eprintln!("The database could not be checked: {e}");
+                return RescueOutcome::Keep(conn);
+            }
+            Health::Damaged(details) => eprintln!("The database is damaged: {details}"),
+        }
+        remove_rescue_file(&rescue_path);
+        let rescue = match copy_readable_snippets(&conn, &rescue_path) {
+            Ok(rescue) => rescue,
+            Err(e) => {
+                remove_rescue_file(&rescue_path);
+                if ask(&RescueDialog::Failed(RescueFailure::CopyFailed(e.to_string()))) {
+                    continue;
+                }
+                return RescueOutcome::Keep(conn);
+            }
+        };
+        let kept_name = damaged_db_name(stamp, folder);
+        if !ask(&RescueDialog::Offer { rescue, kept_name: kept_name.clone() }) {
+            remove_rescue_file(&rescue_path);
+            return RescueOutcome::Keep(conn);
+        }
+        // The damaged file must be closed before it can be renamed.
+        drop(conn);
+        let failure = match replace_with_rescue(db_path, &rescue_path, &kept_name) {
+            Ok(()) => return RescueOutcome::Reopen,
+            Err(e) => e,
+        };
+        remove_rescue_file(&rescue_path);
+        conn = match open_and_init_db(db_path) {
+            Ok(conn) => conn,
+            Err(_) => return RescueOutcome::Reopen,
+        };
+        if !ask(&RescueDialog::Failed(RescueFailure::KeepFailed(failure.to_string()))) {
+            return RescueOutcome::Keep(conn);
+        }
+    }
+}
+
+/// [`open_db_or_ask`] and [`rescue_if_damaged`] with the native dialogs in `lang`; No to a
+/// database that cannot be opened quits the app.
 #[cfg(not(test))]
 pub fn open_db_at_startup(db_path: &Path, lang: &str) -> Connection {
     use crate::error_dialogs;
     let folder = db_path.parent().unwrap_or(Path::new("."));
     let stamp = local_timestamp();
-    let conn = open_db_or_ask(db_path, &stamp, &mut |dialog| {
-        let text = match dialog {
-            DbDialog::Damaged { kept_name } => error_dialogs::db_damaged(lang, kept_name, folder),
-            DbDialog::CannotOpen(failure) => error_dialogs::db_cannot_open(lang, failure, folder),
-        };
-        error_dialogs::ask_yes_no(&text)
-    });
-    match conn {
-        Some(conn) => conn,
-        None => std::process::exit(0),
+    loop {
+        let conn = open_db_or_ask(db_path, &stamp, &mut |dialog| {
+            let text = match dialog {
+                DbDialog::Damaged { kept_name } => error_dialogs::db_damaged(lang, kept_name, folder),
+                DbDialog::CannotOpen(failure) => error_dialogs::db_cannot_open(lang, failure, folder),
+            };
+            error_dialogs::ask_yes_no(&text)
+        });
+        let Some(conn) = conn else { std::process::exit(0) };
+        let outcome = rescue_if_damaged(db_path, conn, &stamp, &mut |dialog| {
+            let text = match dialog {
+                RescueDialog::Offer { rescue, kept_name } => {
+                    error_dialogs::db_damaged_inside(lang, rescue, kept_name, folder)
+                }
+                RescueDialog::Failed(failure) => error_dialogs::db_rescue_failed(lang, failure, folder),
+            };
+            error_dialogs::ask_yes_no(&text)
+        });
+        match outcome {
+            RescueOutcome::Keep(conn) => return conn,
+            RescueOutcome::Reopen => continue,
+        }
     }
 }
 
@@ -348,23 +742,63 @@ pub fn touch_last_used(conn: &Connection, id: i64) -> Result<()> {
 // Search list
 // ---------------------------------------------------------------------------
 
-pub fn list_snippets_for_search(conn: &Connection) -> Vec<(i64, String, bool)> {
-    let mut stmt = match conn.prepare(
-        "SELECT id, title, is_encrypted FROM snippets ORDER BY updated_at DESC",
-    ) {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
+/// The snippets a list shows (id, title, encrypted), and whether damage cut it short.
+#[derive(Debug, Default)]
+pub struct Listing {
+    pub rows: Vec<(i64, String, bool)>,
+    /// Damage stopped the reading or left a snippet out: the list is not complete.
+    pub damaged: bool,
+}
 
-    stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)? != 0,
-        ))
-    })
-    .map(|rows| rows.filter_map(|r| r.ok()).collect())
-    .unwrap_or_default()
+/// Reads `sql` (id, title, is_encrypted) as far as it goes. SQLite stops at the first damaged
+/// page, so the rows after it are missing; a row that cannot be read is left out. Both mark the
+/// list as damaged. Any other error (a locked database) ends the list as before, unmarked.
+fn read_listing(conn: &Connection, sql: &str) -> Listing {
+    let mut listing = Listing::default();
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            listing.damaged = damage_of(&e).is_some();
+            return listing;
+        }
+    };
+    let mut rows = match stmt.query([]) {
+        Ok(r) => r,
+        Err(e) => {
+            listing.damaged = damage_of(&e).is_some();
+            return listing;
+        }
+    };
+    loop {
+        match rows.next() {
+            Ok(Some(row)) => {
+                let read = (|| {
+                    Ok::<_, rusqlite::Error>((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)? != 0,
+                    ))
+                })();
+                match read {
+                    Ok(r) => listing.rows.push(r),
+                    Err(e) => listing.damaged |= damage_of(&e).is_some(),
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                listing.damaged |= damage_of(&e).is_some();
+                break;
+            }
+        }
+    }
+    listing
+}
+
+pub fn list_snippets_for_search(conn: &Connection) -> Listing {
+    read_listing(
+        conn,
+        "SELECT id, title, is_encrypted FROM snippets ORDER BY updated_at DESC",
+    )
 }
 
 /// List all snippets sorted by the given mode and direction.
@@ -373,7 +807,7 @@ pub fn list_snippets_sorted(
     conn: &Connection,
     sort_mode: &str,
     sort_direction: &str,
-) -> Vec<(i64, String, bool)> {
+) -> Listing {
     let dir = match sort_direction {
         "asc" => "ASC",
         "desc" => "DESC",
@@ -391,21 +825,82 @@ pub fn list_snippets_sorted(
     let sql = format!(
         "SELECT id, title, is_encrypted FROM snippets ORDER BY {order_clause}"
     );
+    read_listing(conn, &sql)
+}
 
-    let mut stmt = match conn.prepare(&sql) {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
+// ---------------------------------------------------------------------------
+// Test databases damaged on purpose (also used by the tests of commands.rs)
+// ---------------------------------------------------------------------------
 
-    stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)? != 0,
-        ))
-    })
-    .map(|rows| rows.filter_map(|r| r.ok()).collect())
-    .unwrap_or_default()
+#[cfg(test)]
+pub(crate) mod test_damage {
+    use super::*;
+
+    pub fn title_of(i: i64) -> String {
+        format!("Сніпет {i:03} тест")
+    }
+
+    pub fn content_of(i: i64) -> String {
+        format!("Вміст сніпета {i:03}. ").repeat(12)
+    }
+
+    /// `snippets.db` in `dir` with `count` plain snippets of about 300 bytes (eight to a page of
+    /// 4096 bytes), saved the way the app saves them, in one transaction.
+    pub fn build_db(dir: &Path, count: i64) -> PathBuf {
+        let path = dir.join("snippets.db");
+        let conn = open_and_init_db(&path).unwrap();
+        conn.execute_batch("BEGIN").unwrap();
+        for i in 1..=count {
+            create_snippet(&conn, &title_of(i), content_of(i).into_bytes(), false).unwrap();
+        }
+        conn.execute_batch("COMMIT").unwrap();
+        path
+    }
+
+    /// The pages of a table or index (`name`) of a kind ("leaf", "internal", "overflow"), from
+    /// SQLite's dbstat table.
+    pub fn pages_of(path: &Path, name: &str, kind: &str) -> Vec<i64> {
+        let conn = Connection::open(path).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT pageno FROM dbstat WHERE name = ?1 AND pagetype = ?2 ORDER BY pageno")
+            .unwrap();
+        let pages = stmt
+            .query_map(params![name, kind], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        pages
+    }
+
+    /// Fills page `page` of the file with 0xA5, as a damaged disk sector or a broken copy can.
+    pub fn damage_page(path: &Path, page: i64) {
+        let mut bytes = std::fs::read(path).unwrap();
+        let start = (page as usize - 1) * 4096;
+        bytes[start..start + 4096].fill(0xA5);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    /// Damages the middle page of snippets of a database made by [`build_db`] and returns the ids
+    /// that can no longer be read.
+    pub fn damage_middle_leaf(path: &Path, count: i64) -> Vec<i64> {
+        let leaves = pages_of(path, "snippets", "leaf");
+        damage_page(path, leaves[leaves.len() / 2]);
+        let conn = Connection::open(path).unwrap();
+        (1..=count).filter(|&id| get_snippet_by_id(&conn, id).is_err()).collect()
+    }
+
+    /// Overwrites `bytes.len()` bytes of the file, `skip` bytes after the first (or, with `in_page`,
+    /// the first one inside that page) place that holds `needle`, and returns the page.
+    pub fn overwrite_after(path: &Path, needle: &[u8], in_page: Option<&[i64]>, skip: usize, bytes: &[u8]) -> i64 {
+        let mut file = std::fs::read(path).unwrap();
+        let at = (0..=file.len() - needle.len())
+            .filter(|&i| &file[i..i + needle.len()] == needle)
+            .find(|&i| in_page.is_none_or(|pages| pages.contains(&((i / 4096) as i64 + 1))))
+            .expect("the bytes are in the file");
+        file[at + skip..at + skip + bytes.len()].copy_from_slice(bytes);
+        std::fs::write(path, file).unwrap();
+        (at / 4096) as i64 + 1
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +909,7 @@ pub fn list_snippets_sorted(
 
 #[cfg(test)]
 mod tests {
+    use super::test_damage::*;
     use super::*;
     use rusqlite::Connection;
 
@@ -709,7 +1205,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         let id_c = create_snippet(&conn, "CCC snippet", b"c".to_vec(), false).unwrap();
 
-        let list = list_snippets_for_search(&conn);
+        let list = list_snippets_for_search(&conn).rows;
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].0, id_c);
         assert_eq!(list[1].0, id_b);
@@ -720,7 +1216,7 @@ mod tests {
     fn test_list_snippets_returns_id_title_encrypted() {
         let conn = setup_test_db();
         let id = create_snippet(&conn, "My snippet", b"data".to_vec(), true).unwrap();
-        let list = list_snippets_for_search(&conn);
+        let list = list_snippets_for_search(&conn).rows;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].0, id);
         assert_eq!(list[0].1, "My snippet");
@@ -730,7 +1226,7 @@ mod tests {
     #[test]
     fn test_list_snippets_empty_db() {
         let conn = setup_test_db();
-        let list = list_snippets_for_search(&conn);
+        let list = list_snippets_for_search(&conn).rows;
         assert!(list.is_empty());
     }
 
@@ -913,7 +1409,7 @@ mod tests {
 
         // Second open — must succeed and data must still be there
         let conn2 = open_and_init_db(&db_path).unwrap();
-        let list = list_snippets_for_search(&conn2);
+        let list = list_snippets_for_search(&conn2).rows;
         assert_eq!(list.len(), 1, "existing snippet must survive re-open");
         assert_eq!(list[0].1, "Persist me");
     }
@@ -968,7 +1464,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
 
-        let list = list_snippets_sorted(&conn, "alphabetical", "asc");
+        let list = list_snippets_sorted(&conn, "alphabetical", "asc").rows;
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].1, "Alpha");
         assert_eq!(list[1].1, "Bravo");
@@ -982,7 +1478,7 @@ mod tests {
         create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
         create_snippet(&conn, "Charlie", b"c".to_vec(), false).unwrap();
 
-        let list = list_snippets_sorted(&conn, "alphabetical", "desc");
+        let list = list_snippets_sorted(&conn, "alphabetical", "desc").rows;
         assert_eq!(list[0].1, "Charlie");
         assert_eq!(list[1].1, "Bravo");
         assert_eq!(list[2].1, "Alpha");
@@ -995,7 +1491,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         let id_b = create_snippet(&conn, "BBB second", b"b".to_vec(), false).unwrap();
 
-        let list = list_snippets_sorted(&conn, "created", "desc");
+        let list = list_snippets_sorted(&conn, "created", "desc").rows;
         assert_eq!(list[0].0, id_b);
         assert_eq!(list[1].0, id_a);
     }
@@ -1007,7 +1503,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         let id_b = create_snippet(&conn, "BBB second", b"b".to_vec(), false).unwrap();
 
-        let list = list_snippets_sorted(&conn, "created", "asc");
+        let list = list_snippets_sorted(&conn, "created", "asc").rows;
         assert_eq!(list[0].0, id_a);
         assert_eq!(list[1].0, id_b);
     }
@@ -1020,7 +1516,7 @@ mod tests {
         let id_b = create_snippet(&conn, "Used once", b"b".to_vec(), false).unwrap();
         touch_last_used(&conn, id_b).unwrap();
 
-        let list = list_snippets_sorted(&conn, "last_used", "desc");
+        let list = list_snippets_sorted(&conn, "last_used", "desc").rows;
         assert_eq!(list[0].0, id_b, "used snippet should be first");
         assert_eq!(list[1].0, id_a, "never-used snippet should be last");
     }
@@ -1036,7 +1532,7 @@ mod tests {
         let id_c = create_snippet(&conn, "Used second", b"c".to_vec(), false).unwrap();
         touch_last_used(&conn, id_c).unwrap();
 
-        let list = list_snippets_sorted(&conn, "last_used", "asc");
+        let list = list_snippets_sorted(&conn, "last_used", "asc").rows;
         assert_eq!(list[0].0, id_b, "oldest usage first");
         assert_eq!(list[1].0, id_c, "newest usage second");
         assert_eq!(list[2].0, id_a, "never-used last");
@@ -1050,7 +1546,7 @@ mod tests {
         let id_b = create_snippet(&conn, "BBB second", b"b".to_vec(), false).unwrap();
 
         // Unknown mode should fall back to "modified" desc
-        let list = list_snippets_sorted(&conn, "unknown", "xyz");
+        let list = list_snippets_sorted(&conn, "unknown", "xyz").rows;
         assert_eq!(list[0].0, id_b);
         assert_eq!(list[1].0, id_a);
     }
@@ -1394,5 +1890,461 @@ mod tests {
         );
         assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
         assert_eq!(std::fs::read(&db_path).unwrap(), GARBAGE);
+    }
+
+    // --- damage inside a database that opens (TASK-33) ---
+
+    const COUNT: i64 = 90;
+
+    fn all_rows(conn: &Connection) -> Vec<(i64, String, Vec<u8>, i64, String, String, Option<String>)> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, content, is_encrypted, created_at, updated_at, last_used_at
+                 FROM snippets ORDER BY id",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?))
+            })
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        rows
+    }
+
+    #[test]
+    fn test_check_health_of_a_healthy_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let conn = open_and_init_db(&path).unwrap();
+        assert_eq!(check_health(&conn), Health::Healthy);
+    }
+
+    /// Opening does not notice a damaged page of snippets (the start-up of 0.3.5 went on without a
+    /// word); the quick check does, and changes nothing.
+    #[test]
+    fn test_check_health_finds_a_damaged_page_of_snippets_and_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_middle_leaf(&path, COUNT);
+        let before = std::fs::read(&path).unwrap();
+
+        let conn = open_and_init_db(&path).expect("damage after the schema does not stop the open");
+        assert!(matches!(check_health(&conn), Health::Damaged(_)));
+        drop(conn);
+        assert_eq!(std::fs::read(&path).unwrap(), before, "the check must not change the file");
+    }
+
+    #[test]
+    fn test_check_health_finds_a_damaged_index_and_overflow_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_page(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0]);
+        let conn = open_and_init_db(&path).unwrap();
+        assert!(matches!(check_health(&conn), Health::Damaged(_)), "index");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 3);
+        {
+            let conn = open_and_init_db(&path).unwrap();
+            create_snippet(&conn, "Long one", "довгий текст ".repeat(2000).into_bytes(), false).unwrap();
+        }
+        let overflow = pages_of(&path, "snippets", "overflow");
+        damage_page(&path, overflow[overflow.len() / 2]);
+        let conn = open_and_init_db(&path).unwrap();
+        assert!(matches!(check_health(&conn), Health::Damaged(_)), "overflow page");
+    }
+
+    /// The limit of the quick check: bytes changed inside a text break no structure, and SQLite
+    /// keeps no checksums. Such a snippet shows up only when it is read (SNIPPET_DAMAGED).
+    #[test]
+    fn test_check_health_does_not_see_damaged_bytes_inside_a_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        overwrite_after(&path, content_of(40).as_bytes(), None, 10, &[0xFF, 0xFF]);
+        let conn = open_and_init_db(&path).unwrap();
+        assert_eq!(check_health(&conn), Health::Healthy);
+    }
+
+    #[test]
+    fn test_listing_of_a_healthy_database_is_not_damaged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let conn = open_and_init_db(&path).unwrap();
+        for mode in ["modified", "created", "alphabetical", "last_used"] {
+            let listing = list_snippets_sorted(&conn, mode, "desc");
+            assert_eq!(listing.rows.len() as i64, COUNT, "{mode}");
+            assert!(!listing.damaged, "{mode}");
+        }
+        assert!(!list_snippets_for_search(&conn).damaged);
+    }
+
+    /// Up to 0.3.5 the list ended silently at a damaged page, and the orders that sort every row
+    /// first came out empty: the window said "No snippets yet".
+    #[test]
+    fn test_listing_says_when_a_damaged_page_cuts_it_short() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let unreadable = damage_middle_leaf(&path, COUNT);
+        let conn = open_and_init_db(&path).unwrap();
+
+        let modified = list_snippets_sorted(&conn, "modified", "desc");
+        assert!(modified.damaged);
+        assert!(!modified.rows.is_empty() && (modified.rows.len() as i64) < COUNT - unreadable.len() as i64);
+        let alphabetical = list_snippets_sorted(&conn, "alphabetical", "asc");
+        assert!(alphabetical.damaged);
+        assert!(alphabetical.rows.is_empty(), "sorting reads every row first");
+        let search = list_snippets_for_search(&conn);
+        assert!(search.damaged);
+        assert_eq!(search.rows.len(), modified.rows.len());
+    }
+
+    /// A title that is not UTF-8 left its snippet out of the list without a word.
+    #[test]
+    fn test_listing_says_when_it_leaves_out_a_damaged_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        overwrite_after(&path, title_of(41).as_bytes(), Some(&leaves), 2, &[0xFF, 0xFE]);
+        let conn = open_and_init_db(&path).unwrap();
+
+        let listing = list_snippets_sorted(&conn, "modified", "desc");
+        assert!(listing.damaged);
+        assert_eq!(listing.rows.len() as i64, COUNT - 1);
+        assert!(!listing.rows.iter().any(|r| r.0 == 41));
+    }
+
+    /// A database that another connection holds is no damage: the list ends as before, unmarked.
+    #[test]
+    fn test_listing_of_a_locked_database_is_not_damage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 5);
+        let holder = Connection::open(&path).unwrap();
+        holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        let conn = Connection::open(&path).unwrap();
+        conn.busy_timeout(std::time::Duration::ZERO).unwrap();
+
+        let listing = list_snippets_sorted(&conn, "modified", "desc");
+        assert!(listing.rows.is_empty());
+        assert!(!listing.damaged);
+    }
+
+    #[test]
+    fn test_damage_of_classifies_errors() {
+        assert_eq!(damage_of(&sqlite_failure(11)), Some(Damage::Database)); // SQLITE_CORRUPT
+        assert_eq!(damage_of(&sqlite_failure(26)), Some(Damage::Database)); // SQLITE_NOTADB
+        assert_eq!(damage_of(&sqlite_failure(5)), None); // SQLITE_BUSY
+        assert_eq!(damage_of(&sqlite_failure(13)), None); // SQLITE_FULL
+        assert_eq!(damage_of(&rusqlite::Error::QueryReturnedNoRows), None);
+
+        // A title that is not UTF-8, as SQLite returns it.
+        let conn = setup_test_db();
+        conn.execute(
+            "INSERT INTO snippets (title, content, created_at, updated_at) VALUES (CAST(X'41FF4243' AS TEXT), X'00', 'a', 'b')",
+            [],
+        )
+        .unwrap();
+        let err = get_snippet_by_id(&conn, 1).err().expect("the title is not UTF-8");
+        assert_eq!(damage_of(&err), Some(Damage::Snippet), "{err}");
+    }
+
+    #[test]
+    fn test_copy_readable_snippets_copies_a_healthy_database_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 20);
+        {
+            let conn = open_and_init_db(&path).unwrap();
+            // An encrypted snippet keeps its bytes, also those that are not UTF-8.
+            create_snippet(&conn, "Encrypted one", vec![0x76, 0x32, 0x3A, 0xFF, 0x00, 0x80], true).unwrap();
+            touch_last_used(&conn, 3).unwrap();
+            delete_snippet(&conn, 7).unwrap();
+        }
+        let src = open_and_init_db(&path).unwrap();
+        let dst_path = dir.path().join("copy.db");
+
+        let rescue = copy_readable_snippets(&src, &dst_path).unwrap();
+
+        assert_eq!(rescue, Rescue { saved: 20, lost_titles: vec![], lost_untitled: 0 });
+        let dst = open_and_init_db(&dst_path).unwrap();
+        assert_eq!(all_rows(&dst), all_rows(&src), "every value byte for byte");
+        assert_eq!(check_health(&dst), Health::Healthy);
+        let version: i32 = dst.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, 1);
+        // New snippets come after every id the old database used.
+        let id = create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap();
+        assert_eq!(id, 22);
+    }
+
+    #[test]
+    fn test_copy_readable_snippets_loses_only_the_damaged_page_and_names_its_snippets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let unreadable = damage_middle_leaf(&path, COUNT);
+        assert!(!unreadable.is_empty());
+        let before = std::fs::read(&path).unwrap();
+        let src = open_and_init_db(&path).unwrap();
+        let dst_path = dir.path().join("copy.db");
+
+        let rescue = copy_readable_snippets(&src, &dst_path).unwrap();
+
+        assert_eq!(rescue.saved as i64, COUNT - unreadable.len() as i64);
+        let expected: Vec<String> = unreadable.iter().map(|&i| title_of(i)).collect();
+        assert_eq!(rescue.lost_titles, expected);
+        assert_eq!(rescue.lost_untitled, 0);
+        let dst = open_and_init_db(&dst_path).unwrap();
+        let listing = list_snippets_sorted(&dst, "alphabetical", "asc");
+        assert!(!listing.damaged);
+        assert_eq!(listing.rows.len(), rescue.saved);
+        assert_eq!(get_snippet_by_id(&dst, 1).unwrap().content, content_of(1).into_bytes());
+        drop(src);
+        assert_eq!(std::fs::read(&path).unwrap(), before, "the damaged file must stay as it was");
+    }
+
+    /// When the newest snippets are lost, new ones still get ids after theirs, and the id counter
+    /// keeps one row.
+    #[test]
+    fn test_copy_readable_snippets_keeps_counting_after_lost_snippets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_page(&path, *pages_of(&path, "snippets", "leaf").last().unwrap());
+        let src = open_and_init_db(&path).unwrap();
+        assert!(get_snippet_by_id(&src, COUNT).is_err(), "the newest snippet is lost");
+
+        let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+        assert!(rescue.lost() > 0);
+
+        let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
+        let counters: i64 = dst
+            .query_row("SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'snippets'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(counters, 1);
+        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+
+        // Nothing could be copied: the counter row is added.
+        let empty = Connection::open_in_memory().unwrap();
+        init_db(&empty).unwrap();
+        let dst2 = dir.path().join("copy2.db");
+        copy_readable_snippets(&empty, &dst2).unwrap();
+        let dst2 = open_and_init_db(&dst2).unwrap();
+        assert_eq!(create_snippet(&dst2, "First one", b"x".to_vec(), false).unwrap(), 1);
+    }
+
+    /// With the table's root page damaged no snippet can be read, but the title index still names
+    /// every one.
+    #[test]
+    fn test_copy_readable_snippets_with_a_damaged_root_page_names_every_snippet() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_page(&path, pages_of(&path, "snippets", "internal")[0]);
+        let src = open_and_init_db(&path).unwrap();
+
+        let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+
+        assert_eq!(rescue.saved, 0);
+        assert_eq!(rescue.lost_titles, (1..=COUNT).map(title_of).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_copy_readable_snippets_with_a_damaged_index_saves_every_snippet() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_page(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0]);
+        let src = open_and_init_db(&path).unwrap();
+        assert!(list_snippets_sorted(&src, "modified", "desc").rows.is_empty());
+
+        let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+
+        assert_eq!(rescue.saved as i64, COUNT);
+        assert_eq!(rescue.lost(), 0);
+        let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
+        let listing = list_snippets_sorted(&dst, "modified", "desc");
+        assert_eq!(listing.rows.len() as i64, COUNT, "the index is built anew");
+        assert!(!listing.damaged);
+    }
+
+    /// A title or a plain text that is no longer UTF-8 is repaired in the copy, so that the snippet
+    /// is listed and can be opened; the damaged file keeps its bytes.
+    #[test]
+    fn test_copy_readable_snippets_repairs_text_that_is_not_utf8_in_the_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        overwrite_after(&path, title_of(41).as_bytes(), Some(&leaves), 2, &[0xFF, 0xFE]);
+        overwrite_after(&path, content_of(40).as_bytes(), None, 10, &[0xFF, 0xFF]);
+        // Some structural damage too, so that the start-up would offer the rescue.
+        damage_page(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0]);
+        let src = open_and_init_db(&path).unwrap();
+
+        let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+
+        assert_eq!(rescue.saved as i64, COUNT);
+        let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
+        let title = get_snippet_by_id(&dst, 41).unwrap().title;
+        assert!(title.contains('\u{FFFD}') && title.ends_with("1 тест"), "{title}");
+        let text = String::from_utf8(get_snippet_by_id(&dst, 40).unwrap().content).expect("UTF-8 now");
+        assert!(text.contains('\u{FFFD}'), "{text}");
+        assert_eq!(list_snippets_sorted(&dst, "modified", "desc").rows.len() as i64, COUNT);
+    }
+
+    /// The rescue's own new file sits next to the damaged database.
+    fn rescue_path(dir: &Path) -> PathBuf {
+        dir.join(RESCUE_FILE_NAME)
+    }
+
+    #[test]
+    fn test_rescue_if_damaged_asks_nothing_for_a_healthy_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 5);
+        let conn = open_and_init_db(&path).unwrap();
+        let mut asked = Vec::new();
+
+        let outcome = rescue_if_damaged(&path, conn, STAMP, &mut |d| {
+            asked.push(d.clone());
+            true
+        });
+
+        assert!(matches!(outcome, RescueOutcome::Keep(_)));
+        assert!(asked.is_empty(), "{asked:?}");
+        assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+    }
+
+    /// No keeps working with the damaged file: nothing renamed, nothing changed, no file left.
+    #[test]
+    fn test_rescue_if_damaged_no_keeps_the_damaged_file_as_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let unreadable = damage_middle_leaf(&path, COUNT);
+        let before = std::fs::read(&path).unwrap();
+        let conn = open_and_init_db(&path).unwrap();
+        let mut asked = Vec::new();
+
+        let outcome = rescue_if_damaged(&path, conn, STAMP, &mut |d| {
+            asked.push(d.clone());
+            false
+        });
+
+        let RescueOutcome::Keep(conn) = outcome else { panic!("No must keep the connection") };
+        assert_eq!(
+            asked,
+            vec![RescueDialog::Offer {
+                rescue: Rescue {
+                    saved: (COUNT as usize) - unreadable.len(),
+                    lost_titles: unreadable.iter().map(|&i| title_of(i)).collect(),
+                    lost_untitled: 0,
+                },
+                kept_name: "snippets-damaged-2026-11-20-14-35.db".to_string(),
+            }]
+        );
+        assert!(get_snippet_by_id(&conn, 1).is_ok(), "the app works with the damaged file");
+        drop(conn);
+        assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    /// Yes: the damaged file stays next to the new database under the name the dialog showed,
+    /// byte for byte, and the new database holds every snippet that could be read.
+    #[test]
+    fn test_rescue_if_damaged_yes_moves_the_readable_snippets_and_keeps_the_damaged_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let unreadable = damage_middle_leaf(&path, COUNT);
+        let damaged = std::fs::read(&path).unwrap();
+        let conn = open_and_init_db(&path).unwrap();
+
+        let outcome = rescue_if_damaged(&path, conn, STAMP, &mut |_| true);
+
+        assert!(matches!(outcome, RescueOutcome::Reopen));
+        assert_eq!(
+            file_names(dir.path()),
+            vec!["snippets-damaged-2026-11-20-14-35.db", "snippets.db"]
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("snippets-damaged-2026-11-20-14-35.db")).unwrap(),
+            damaged,
+            "the damaged file must be kept unchanged"
+        );
+        let conn = open_and_init_db(&path).unwrap();
+        assert_eq!(check_health(&conn), Health::Healthy);
+        assert_eq!(snippet_count(&conn), COUNT - unreadable.len() as i64);
+        for id in unreadable {
+            assert!(get_snippet_by_id(&conn, id).is_err());
+        }
+    }
+
+    /// The damaged file cannot be renamed: the user is told so, nothing changes, and No keeps
+    /// working with the damaged file.
+    #[cfg(windows)]
+    #[test]
+    fn test_rescue_if_damaged_rename_failure_changes_nothing() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 0x1;
+        const FILE_SHARE_WRITE: u32 = 0x2;
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_middle_leaf(&path, COUNT);
+        let before = std::fs::read(&path).unwrap();
+        let conn = open_and_init_db(&path).unwrap();
+        // SQLite can still read and write the file, but it cannot be renamed.
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&path)
+            .unwrap();
+        let mut asked = Vec::new();
+
+        let outcome = rescue_if_damaged(&path, conn, STAMP, &mut |d| {
+            asked.push(d.clone());
+            matches!(d, RescueDialog::Offer { .. })
+        });
+        drop(holder);
+
+        assert!(matches!(outcome, RescueOutcome::Keep(_)));
+        assert_eq!(asked.len(), 2, "{asked:?}");
+        assert!(matches!(asked[1], RescueDialog::Failed(RescueFailure::KeepFailed(_))), "{asked:?}");
+        drop(outcome);
+        assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    /// The new database cannot be written (here a folder has its name): the user is told so,
+    /// nothing changes, and the folder is not touched.
+    #[test]
+    fn test_rescue_if_damaged_copy_failure_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_middle_leaf(&path, COUNT);
+        let before = std::fs::read(&path).unwrap();
+        std::fs::create_dir(rescue_path(dir.path())).unwrap();
+        let conn = open_and_init_db(&path).unwrap();
+        let mut asked = Vec::new();
+
+        let outcome = rescue_if_damaged(&path, conn, STAMP, &mut |d| {
+            asked.push(d.clone());
+            false
+        });
+
+        assert!(matches!(outcome, RescueOutcome::Keep(_)));
+        assert!(matches!(asked[..], [RescueDialog::Failed(RescueFailure::CopyFailed(_))]), "{asked:?}");
+        drop(outcome);
+        assert!(rescue_path(dir.path()).is_dir(), "a folder of that name stays");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    /// A file left by an interrupted rescue is written over, never used as it is.
+    #[test]
+    fn test_rescue_if_damaged_replaces_a_leftover_rescue_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let unreadable = damage_middle_leaf(&path, COUNT);
+        std::fs::write(rescue_path(dir.path()), GARBAGE).unwrap();
+        let conn = open_and_init_db(&path).unwrap();
+
+        let outcome = rescue_if_damaged(&path, conn, STAMP, &mut |_| true);
+
+        assert!(matches!(outcome, RescueOutcome::Reopen));
+        assert!(!rescue_path(dir.path()).exists());
+        let conn = open_and_init_db(&path).unwrap();
+        assert_eq!(snippet_count(&conn), COUNT - unreadable.len() as i64);
     }
 }

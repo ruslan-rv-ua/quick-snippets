@@ -10,6 +10,14 @@ export interface SnippetListProps {
   query: string;
   /** The query `snippets` was loaded for (see useSearchLogic). */
   listQuery: string;
+  /** Damage of the snippet database cut `snippets` short (see useSearchLogic). */
+  damaged?: boolean;
+  /**
+   * Counts the times the window was shown. The notice about a damaged database is read once
+   * after each show: a list loaded while the window is hidden is not read, and lists loaded
+   * again while it stays open (every search) do not repeat it.
+   */
+  shownCount?: number;
   onActiveIndexChange: (index: number) => void;
   onActivate: (snippet: SearchResult) => void;
 }
@@ -19,12 +27,18 @@ export function SnippetList({
   activeIndex,
   query,
   listQuery,
+  damaged = false,
+  shownCount = 0,
   onActiveIndexChange,
   onActivate,
 }: SnippetListProps): React.ReactElement {
   const { t, tf } = useLanguage();
   const listRef = useRef<HTMLDivElement>(null);
   const [liveText, setLiveText] = useState('');
+  // The notice about a damaged database, as read by screen readers (a live region of its own).
+  const [damageLiveText, setDamageLiveText] = useState('');
+  const damageAnnouncedRef = useRef(false);
+  const damageTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const prevQueryRef = useRef(query);
   const prevSnippetsRef = useRef(snippets);
   // Results for a changed query have not arrived yet.
@@ -79,8 +93,9 @@ export function SnippetList({
 
     let text = '';
     if (snippets.length === 0) {
-      // An empty query with no list is the reset when the window hides, not a search.
-      if (query.trim() !== '') text = t('noResults');
+      // An empty query with no list is the reset when the window hides, not a search. With a
+      // damaged database the snippet looked for may be among those that could not be read.
+      if (query.trim() !== '') text = damaged ? t('listDamaged') : t('noResults');
     } else if (!selectionChangedRef.current) {
       text = tf.snippetLabel(snippets[0].title, snippets[0].is_encrypted);
     }
@@ -89,9 +104,40 @@ export function SnippetList({
       // Results that arrive while the window is hidden (the reset on blur) are not announced.
       if (document.hasFocus()) setLiveText(text);
     }, 200);
-  }, [snippets, query, listQuery, activeId, t, tf]);
+  }, [snippets, query, listQuery, activeId, damaged, t, tf]);
 
-  useEffect(() => () => clearTimeout(announceTimerRef.current), []);
+  // The window was shown again: its next damaged list is read again.
+  useEffect(() => {
+    damageAnnouncedRef.current = false;
+    clearTimeout(damageTimerRef.current);
+    setDamageLiveText('');
+  }, [shownCount]);
+
+  // A damaged list is read once after each show, when it arrives with the window on screen.
+  // A complete list ends the notice, so that damage met later is read again.
+  useEffect(() => {
+    if (!damaged) {
+      damageAnnouncedRef.current = false;
+      clearTimeout(damageTimerRef.current);
+      setDamageLiveText('');
+      return;
+    }
+    if (damageAnnouncedRef.current) return;
+    clearTimeout(damageTimerRef.current);
+    damageTimerRef.current = setTimeout(() => {
+      if (damageAnnouncedRef.current || !document.hasFocus()) return;
+      damageAnnouncedRef.current = true;
+      setDamageLiveText(t('listDamaged'));
+    }, 200);
+  }, [snippets, damaged, shownCount, t]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(announceTimerRef.current);
+      clearTimeout(damageTimerRef.current);
+    },
+    [],
+  );
 
   const isEmpty = snippets.length === 0;
 
@@ -101,6 +147,15 @@ export function SnippetList({
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {liveText}
       </div>
+      <div aria-live="polite" aria-atomic="true" className="sr-only" data-testid="damage-live">
+        {damageLiveText}
+      </div>
+
+      {damaged && (
+        <p id="list-damaged" className="list-notice">
+          {t('listDamaged')}
+        </p>
+      )}
 
       <div
         ref={listRef}
@@ -108,10 +163,10 @@ export function SnippetList({
         role="listbox"
         className="snippet-list"
       >
-        {isEmpty && query === '' && (
+        {isEmpty && !damaged && query === '' && (
           <div className="empty-state">{t('noSnippets')}</div>
         )}
-        {isEmpty && query !== '' && (
+        {isEmpty && !damaged && query !== '' && (
           <div className="empty-state">{t('noResults')}</div>
         )}
         {snippets.map((s, idx) => (

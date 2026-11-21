@@ -273,4 +273,126 @@ describe('SnippetList', () => {
       vi.useRealTimers();
     });
   });
+  // TASK-33: damage of the snippet database cut the list short.
+  describe('a list cut short by a damaged database', () => {
+    const damageLive = () => screen.getByTestId('damage-live').textContent ?? '';
+    const resultsLive = () => document.querySelector('[aria-live="polite"]')?.textContent ?? '';
+
+    function damagedList(snippets: SearchResult[], damaged: boolean, shownCount: number, query = '') {
+      return (
+        <LanguageProvider>
+          <SnippetList
+            snippets={snippets}
+            activeIndex={-1}
+            query={query}
+            listQuery={query}
+            damaged={damaged}
+            shownCount={shownCount}
+            onActiveIndexChange={vi.fn()}
+            onActivate={vi.fn()}
+          />
+        </LanguageProvider>
+      );
+    }
+
+    it('says so above the list, not that there are no snippets yet', () => {
+      renderList({ snippets: [], damaged: true });
+      expect(screen.getByText(/Not all snippets are shown: the snippet database is damaged\. Restart QuickSnippets/)).toBeInTheDocument();
+      expect(screen.queryByText(/no snippets yet/i)).not.toBeInTheDocument();
+    });
+
+    it('says so instead of "no results" for a search', () => {
+      renderList({ snippets: [], query: 'xyz', listQuery: 'xyz', damaged: true });
+      expect(document.getElementById('list-damaged')).toBeInTheDocument();
+      expect(screen.queryByText(/no results found/i)).not.toBeInTheDocument();
+    });
+
+    it('keeps the snippets it could read, under the notice', () => {
+      renderList({ damaged: true });
+      expect(screen.getByText('Alpha')).toBeInTheDocument();
+      expect(document.getElementById('list-damaged')).toBeInTheDocument();
+    });
+
+    it('shows no notice for a complete list', () => {
+      renderList({ damaged: false });
+      expect(document.getElementById('list-damaged')).not.toBeInTheDocument();
+    });
+
+    it('is read once after a show, not again for the next lists', () => {
+      vi.useFakeTimers();
+      const view = render(damagedList(mockSnippets, true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(damageLive()).toMatch(/^Not all snippets are shown/);
+      // The list loaded again (a search, the keyboard back): no second announcement.
+      view.rerender(damagedList([...mockSnippets], true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(damageLive()).toMatch(/^Not all snippets are shown/);
+      vi.useRealTimers();
+    });
+
+    it('is read again after the window was shown again', () => {
+      vi.useFakeTimers();
+      const view = render(damagedList(mockSnippets, true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      view.rerender(damagedList(mockSnippets, true, 2));
+      expect(damageLive()).toBe('');
+      view.rerender(damagedList([...mockSnippets], true, 2));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(damageLive()).toMatch(/^Not all snippets are shown/);
+      vi.useRealTimers();
+    });
+
+    it('is not read while the window is hidden (the list loaded at start-up)', () => {
+      vi.useFakeTimers();
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      const view = render(damagedList(mockSnippets, true, 0));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(damageLive()).toBe('');
+      // The first show loads the list again: now it is read.
+      hasFocus.mockReturnValue(true);
+      view.rerender(damagedList(mockSnippets, true, 1));
+      view.rerender(damagedList([...mockSnippets], true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(damageLive()).toMatch(/^Not all snippets are shown/);
+      hasFocus.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('ends when a complete list arrives, and is read again for damage met later', () => {
+      vi.useFakeTimers();
+      const view = render(damagedList(mockSnippets, true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      view.rerender(damagedList([...mockSnippets], false, 1));
+      expect(damageLive()).toBe('');
+      expect(document.getElementById('list-damaged')).not.toBeInTheDocument();
+      view.rerender(damagedList([...mockSnippets], true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(damageLive()).toMatch(/^Not all snippets are shown/);
+      vi.useRealTimers();
+    });
+
+    it('answers an empty search with the notice instead of "no results"', () => {
+      vi.useFakeTimers();
+      const view = render(damagedList(mockSnippets, true, 1));
+      act(() => { vi.advanceTimersByTime(200); });
+      view.rerender(damagedList(mockSnippets, true, 1, 'zz'));
+      view.rerender(
+        <LanguageProvider>
+          <SnippetList
+            snippets={[]}
+            activeIndex={-1}
+            query="zz"
+            listQuery="zz"
+            damaged
+            shownCount={1}
+            onActiveIndexChange={vi.fn()}
+            onActivate={vi.fn()}
+          />
+        </LanguageProvider>,
+      );
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(resultsLive()).toMatch(/^Not all snippets are shown/);
+      vi.useRealTimers();
+    });
+  });
 });

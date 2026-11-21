@@ -5,6 +5,7 @@
 // The buttons are the standard Windows Yes and No: Windows labels them in its
 // own display language, so every text ends with what Yes and No will do.
 
+use crate::db::Rescue;
 use std::path::Path;
 
 /// Why the snippet database could not be opened, in the terms a user can act on.
@@ -195,6 +196,196 @@ pub fn db_cannot_open(lang: &str, failure: &OpenFailure, folder: &Path) -> Dialo
     DialogText { title: title(lang), message }
 }
 
+/// Why the snippets that can still be read were not moved into a new database. Nothing was
+/// changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RescueFailure {
+    /// They could not be copied into the new database (for example the disk is full).
+    CopyFailed(String),
+    /// The damaged file could not be renamed (for example another program holds it).
+    KeepFailed(String),
+}
+
+/// Most titles of unreadable snippets a dialog names; the others are only counted.
+pub const MAX_LOST_TITLES: usize = 10;
+
+/// "N of them: «A», «B» and 3 more", in the quotes of the language; empty when no title is
+/// known.
+fn lost_titles_text(lang: &str, rescue: &Rescue) -> String {
+    if rescue.lost_titles.is_empty() {
+        return String::new();
+    }
+    let (open, close) = match lang {
+        "uk" => ("«", "»"),
+        "de" => ("„", "“"),
+        _ => ("\u{201C}", "\u{201D}"),
+    };
+    let shown: Vec<String> = rescue
+        .lost_titles
+        .iter()
+        .take(MAX_LOST_TITLES)
+        .map(|t| format!("{open}{t}{close}"))
+        .collect();
+    let more = rescue.lost() - shown.len();
+    let mut text = format!(": {}", shown.join(", "));
+    if more > 0 {
+        text.push_str(&match lang {
+            "uk" => format!(" і ще {more}"),
+            "de" => format!(" und {more} weitere"),
+            _ => format!(" and {more} more"),
+        });
+    }
+    text
+}
+
+/// snippets.db opened, but the quick check at start-up found it damaged inside. Yes moves the
+/// snippets that can be read into a new database and renames the damaged file to `kept_name`
+/// in `folder`; No keeps working with the damaged file.
+pub fn db_damaged_inside(lang: &str, rescue: &Rescue, kept_name: &str, folder: &Path) -> DialogText {
+    let folder = folder.display();
+    let (total, saved, lost) = (rescue.total(), rescue.saved, rescue.lost());
+    let names = lost_titles_text(lang, rescue);
+    let message = match lang {
+        "uk" => {
+            let counts = if total == 0 {
+                "Сніпетів у ній не вдається знайти.".to_string()
+            } else if lost == 0 {
+                format!("Сніпетів у базі: {total}. Усі вдається прочитати.")
+            } else {
+                format!(
+                    "Сніпетів у базі: {total}. Вдається прочитати: {saved}. \
+                     Не вдається прочитати: {lost}{names}."
+                )
+            };
+            let yes = if saved == 0 {
+                "Так: QuickSnippets почне роботу з порожньою базою.".to_string()
+            } else {
+                format!("Так: нова база snippets.db міститиме сніпети, які вдається прочитати ({saved}).")
+            };
+            format!(
+                "База сніпетів snippets.db пошкоджена.\n\n\
+                 {counts}\n\n\
+                 Перенести сніпети, які вдається прочитати, у нову базу?\n\n\
+                 {yes} Пошкоджений файл отримає назву {kept_name} і залишиться в теці {folder} без змін.\n\
+                 Ні: QuickSnippets працюватиме з пошкодженою базою як є: деяких сніпетів може не бути \
+                 в списку, а зберегти зміни може не вдатися. Під час наступного запуску програма запитає знову."
+            )
+        }
+        "de" => {
+            let counts = if total == 0 {
+                "Darin lassen sich keine Snippets finden.".to_string()
+            } else if lost == 0 {
+                format!("Snippets in der Datenbank: {total}. Alle lassen sich lesen.")
+            } else {
+                format!(
+                    "Snippets in der Datenbank: {total}. Lesbar: {saved}. Nicht lesbar: {lost}{names}."
+                )
+            };
+            let yes = if saved == 0 {
+                "Ja: QuickSnippets startet mit einer leeren Datenbank.".to_string()
+            } else {
+                format!("Ja: Die neue snippets.db enthält die lesbaren Snippets ({saved}).")
+            };
+            format!(
+                "Die Snippet-Datenbank snippets.db ist beschädigt.\n\n\
+                 {counts}\n\n\
+                 Die lesbaren Snippets in eine neue Datenbank übernehmen?\n\n\
+                 {yes} Die beschädigte Datei wird in {kept_name} umbenannt und bleibt unverändert im \
+                 Ordner {folder}.\n\
+                 Nein: QuickSnippets arbeitet mit der beschädigten Datenbank weiter, wie sie ist: Einige \
+                 Snippets fehlen womöglich in der Liste, und Speichern kann fehlschlagen. Beim nächsten \
+                 Start fragt QuickSnippets erneut."
+            )
+        }
+        _ => {
+            let counts = if total == 0 {
+                "No snippets can be found in it.".to_string()
+            } else if lost == 0 {
+                format!("Snippets in the database: {total}. All of them can be read.")
+            } else {
+                format!(
+                    "Snippets in the database: {total}. Can be read: {saved}. \
+                     Cannot be read: {lost}{names}."
+                )
+            };
+            let yes = if saved == 0 {
+                "Yes: QuickSnippets starts with an empty database.".to_string()
+            } else {
+                format!("Yes: the new snippets.db holds the snippets that can be read ({saved}).")
+            };
+            format!(
+                "The snippet database snippets.db is damaged.\n\n\
+                 {counts}\n\n\
+                 Move the snippets that can be read into a new database?\n\n\
+                 {yes} The damaged file is renamed to {kept_name} and stays in the folder {folder}, \
+                 unchanged.\n\
+                 No: QuickSnippets works with the damaged database as it is: some snippets may be \
+                 missing from the list, and saving may fail. QuickSnippets asks again at the next start."
+            )
+        }
+    };
+    DialogText { title: title(lang), message }
+}
+
+/// The rescue of a damaged snippets.db failed and changed nothing. Yes tries again, No keeps
+/// working with the damaged file.
+pub fn db_rescue_failed(lang: &str, failure: &RescueFailure, folder: &Path) -> DialogText {
+    let folder = folder.display();
+    let message = match lang {
+        "uk" => {
+            let (what, e) = match failure {
+                RescueFailure::CopyFailed(e) => {
+                    ("сніпети, які вдається прочитати, не вдалося перенести в нову базу", e)
+                }
+                RescueFailure::KeepFailed(e) => ("пошкоджений файл не вдалося перейменувати", e),
+            };
+            format!(
+                "База сніпетів snippets.db у теці {folder} пошкоджена, і {what}. Нічого не змінено.\n\n\
+                 Подробиці: {e}\n\n\
+                 Спробувати ще раз?\n\n\
+                 Так: QuickSnippets спробує ще раз.\n\
+                 Ні: QuickSnippets працюватиме з пошкодженою базою як є: деяких сніпетів може не бути \
+                 в списку, а зберегти зміни може не вдатися."
+            )
+        }
+        "de" => {
+            let (what, e) = match failure {
+                RescueFailure::CopyFailed(e) => {
+                    ("die lesbaren Snippets ließen sich nicht in eine neue Datenbank übernehmen", e)
+                }
+                RescueFailure::KeepFailed(e) => ("die beschädigte Datei ließ sich nicht umbenennen", e),
+            };
+            format!(
+                "Die Snippet-Datenbank snippets.db im Ordner {folder} ist beschädigt, und {what}. \
+                 Es wurde nichts geändert.\n\n\
+                 Einzelheiten: {e}\n\n\
+                 Erneut versuchen?\n\n\
+                 Ja: QuickSnippets versucht es erneut.\n\
+                 Nein: QuickSnippets arbeitet mit der beschädigten Datenbank weiter, wie sie ist: Einige \
+                 Snippets fehlen womöglich in der Liste, und Speichern kann fehlschlagen."
+            )
+        }
+        _ => {
+            let (what, e) = match failure {
+                RescueFailure::CopyFailed(e) => {
+                    ("the snippets that can be read could not be copied into a new database", e)
+                }
+                RescueFailure::KeepFailed(e) => ("the damaged file could not be renamed", e),
+            };
+            format!(
+                "The snippet database snippets.db in the folder {folder} is damaged, and {what}. \
+                 Nothing was changed.\n\n\
+                 Details: {e}\n\n\
+                 Try again?\n\n\
+                 Yes: QuickSnippets tries again.\n\
+                 No: QuickSnippets works with the damaged database as it is: some snippets may be \
+                 missing from the list, and saving may fail."
+            )
+        }
+    };
+    DialogText { title: title(lang), message }
+}
+
 /// Show `text` as a native warning with the standard Yes and No buttons.
 /// Returns true for Yes.
 #[cfg(not(test))]
@@ -380,6 +571,136 @@ mod tests {
             let other = db_cannot_open(lang, &OpenFailure::Other("disk I/O error".into()), &folder());
             assert!(other.message.contains("disk I/O error"), "{lang}");
             assert!(other.message.contains(r"quick-snippets-data"), "{lang}: folder missing");
+        }
+    }
+
+    // --- damage inside a database that opens (TASK-33) ---
+
+    const KEPT: &str = "snippets-damaged-2026-11-21-03-10.db";
+
+    fn rescue(saved: usize, lost: &[&str], untitled: usize) -> Rescue {
+        Rescue {
+            saved,
+            lost_titles: lost.iter().map(|t| t.to_string()).collect(),
+            lost_untitled: untitled,
+        }
+    }
+
+    #[test]
+    fn test_damaged_inside_dialog_gives_counts_titles_file_and_folder_in_three_languages() {
+        let r = rescue(85, &["Сніпет 049 тест", "Пароль до пошти"], 0);
+        let en = db_damaged_inside("en", &r, KEPT, &folder()).message;
+        assert!(en.contains("The snippet database snippets.db is damaged."));
+        assert!(en.contains("Snippets in the database: 87. Can be read: 85. Cannot be read: 2: \u{201C}Сніпет 049 тест\u{201D}, \u{201C}Пароль до пошти\u{201D}."));
+        assert!(en.contains("Move the snippets that can be read into a new database?"));
+        assert!(en.contains("Yes: the new snippets.db holds the snippets that can be read (85)."));
+        assert!(en.contains("No: QuickSnippets works with the damaged database as it is"));
+
+        let uk = db_damaged_inside("uk", &r, KEPT, &folder()).message;
+        assert!(uk.contains("База сніпетів snippets.db пошкоджена."));
+        assert!(uk.contains("Сніпетів у базі: 87. Вдається прочитати: 85. Не вдається прочитати: 2: «Сніпет 049 тест», «Пароль до пошти»."));
+        assert!(uk.contains("Перенести сніпети, які вдається прочитати, у нову базу?"));
+        assert!(uk.contains("Так: нова база snippets.db міститиме сніпети, які вдається прочитати (85)."));
+        assert!(uk.contains("Ні: QuickSnippets працюватиме з пошкодженою базою як є"));
+        assert!(uk.contains("Під час наступного запуску програма запитає знову."));
+
+        let de = db_damaged_inside("de", &r, KEPT, &folder()).message;
+        assert!(de.contains("Die Snippet-Datenbank snippets.db ist beschädigt."));
+        assert!(de.contains("Snippets in der Datenbank: 87. Lesbar: 85. Nicht lesbar: 2: „Сніпет 049 тест“, „Пароль до пошти“."));
+        assert!(de.contains("Die lesbaren Snippets in eine neue Datenbank übernehmen?"));
+        assert!(de.contains("Nein: QuickSnippets arbeitet mit der beschädigten Datenbank weiter"));
+
+        for lang in LANGS {
+            let text = db_damaged_inside(lang, &r, KEPT, &folder());
+            assert!(text.message.contains(KEPT), "{lang}: kept file name missing");
+            assert!(text.message.contains(r"C:\Apps\QuickSnippets\quick-snippets-data"), "{lang}: folder missing");
+            assert_eq!(text.title, db_damaged(lang, KEPT, &folder()).title, "{lang}");
+        }
+        assert_eq!(
+            db_damaged_inside("fr", &r, KEPT, &folder()),
+            db_damaged_inside("en", &r, KEPT, &folder())
+        );
+    }
+
+    #[test]
+    fn test_damaged_inside_dialog_names_at_most_ten_titles() {
+        let titles: Vec<String> = (1..=13).map(|i| format!("Title {i:02}")).collect();
+        let refs: Vec<&str> = titles.iter().map(String::as_str).collect();
+        let r = rescue(5, &refs, 2);
+        let en = db_damaged_inside("en", &r, KEPT, &folder()).message;
+        assert!(en.contains("Cannot be read: 15: "), "{en}");
+        assert!(en.contains("\u{201C}Title 10\u{201D} and 5 more."), "{en}");
+        assert!(!en.contains("Title 11"));
+        assert!(db_damaged_inside("uk", &r, KEPT, &folder()).message.contains("»\u{0020}і ще 5."));
+        assert!(db_damaged_inside("de", &r, KEPT, &folder()).message.contains("“ und 5 weitere."));
+    }
+
+    #[test]
+    fn test_damaged_inside_dialog_without_known_titles_only_counts() {
+        let r = rescue(10, &[], 3);
+        assert!(db_damaged_inside("en", &r, KEPT, &folder())
+            .message
+            .contains("Snippets in the database: 13. Can be read: 10. Cannot be read: 3.\n"));
+        assert!(db_damaged_inside("uk", &r, KEPT, &folder())
+            .message
+            .contains("Не вдається прочитати: 3.\n"));
+    }
+
+    /// Damage only in the parts that help SQLite find the snippets: nothing is lost.
+    #[test]
+    fn test_damaged_inside_dialog_when_every_snippet_can_be_read() {
+        let r = rescue(93, &[], 0);
+        assert!(db_damaged_inside("en", &r, KEPT, &folder())
+            .message
+            .contains("Snippets in the database: 93. All of them can be read."));
+        assert!(db_damaged_inside("uk", &r, KEPT, &folder())
+            .message
+            .contains("Сніпетів у базі: 93. Усі вдається прочитати."));
+        assert!(db_damaged_inside("de", &r, KEPT, &folder())
+            .message
+            .contains("Snippets in der Datenbank: 93. Alle lassen sich lesen."));
+    }
+
+    #[test]
+    fn test_damaged_inside_dialog_when_nothing_can_be_read_starts_empty() {
+        let r = rescue(0, &["A title"], 0);
+        assert!(db_damaged_inside("en", &r, KEPT, &folder())
+            .message
+            .contains("Yes: QuickSnippets starts with an empty database."));
+        assert!(db_damaged_inside("uk", &r, KEPT, &folder())
+            .message
+            .contains("Так: QuickSnippets почне роботу з порожньою базою."));
+        assert!(db_damaged_inside("de", &r, KEPT, &folder())
+            .message
+            .contains("Ja: QuickSnippets startet mit einer leeren Datenbank."));
+        assert!(db_damaged_inside("en", &rescue(0, &[], 0), KEPT, &folder())
+            .message
+            .contains("No snippets can be found in it."));
+    }
+
+    #[test]
+    fn test_rescue_failed_dialog_says_what_failed_and_asks_to_try_again() {
+        let copy = RescueFailure::CopyFailed("database or disk is full".into());
+        let keep = RescueFailure::KeepFailed("os error 32".into());
+        let en = db_rescue_failed("en", &copy, &folder()).message;
+        assert!(en.contains("could not be copied into a new database. Nothing was changed."));
+        assert!(en.contains("Details: database or disk is full"));
+        assert!(en.contains("Try again?") && en.contains("No: QuickSnippets works with the damaged database"));
+        let uk = db_rescue_failed("uk", &keep, &folder()).message;
+        assert!(uk.contains("пошкоджений файл не вдалося перейменувати. Нічого не змінено."));
+        assert!(uk.contains("Подробиці: os error 32") && uk.contains("Спробувати ще раз?"));
+        let de = db_rescue_failed("de", &copy, &folder()).message;
+        assert!(de.contains("Es wurde nichts geändert.") && de.contains("Erneut versuchen?"));
+        for lang in LANGS {
+            for failure in [&copy, &keep] {
+                let text = db_rescue_failed(lang, failure, &folder()).message;
+                assert!(text.contains(r"quick-snippets-data"), "{lang}: folder missing");
+            }
+            assert_ne!(
+                db_rescue_failed(lang, &copy, &folder()),
+                db_rescue_failed(lang, &keep, &folder()),
+                "{lang}"
+            );
         }
     }
 }

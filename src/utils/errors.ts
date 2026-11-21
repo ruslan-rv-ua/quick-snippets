@@ -1,3 +1,5 @@
+import type { TranslationMap } from '../i18n/translations';
+
 /**
  * Converts an unknown IPC error value to a plain string.
  * Tauri IPC errors arrive either as `string` or as objects coerced via String().
@@ -24,6 +26,49 @@ export const WRONG_PASSWORD = 'Wrong password';
  */
 export function isWrongPassword(message: string): boolean {
   return message === WRONG_PASSWORD;
+}
+
+/**
+ * `DATABASE_DAMAGED` in src-tauri/src/db.rs: change the two together. The backend gives exactly
+ * this text when SQLite finds the snippet database damaged.
+ */
+export const DATABASE_DAMAGED = 'The snippet database is damaged';
+
+/**
+ * `SNIPPET_DAMAGED` in src-tauri/src/db.rs: change the two together. One snippet holds values the
+ * app never writes (a text that is not UTF-8); the check at start-up does not see that.
+ */
+export const SNIPPET_DAMAGED = 'This snippet is damaged';
+
+/** Whether a backend error means a damaged snippet database (exact match). */
+export function isDatabaseDamaged(message: string): boolean {
+  return message === DATABASE_DAMAGED;
+}
+
+/** Whether a backend error means one damaged snippet (exact match). */
+export function isSnippetDamaged(message: string): boolean {
+  return message === SNIPPET_DAMAGED;
+}
+
+/** Either kind of damage. */
+export function isDamage(message: string): boolean {
+  return isDatabaseDamaged(message) || isSnippetDamaged(message);
+}
+
+/**
+ * The message for a failure of the backend, built with `frame` (for example
+ * `tf.snippetSaveFailed`). Damage gets its reason in the language of the app and, for a damaged
+ * database, the advice to restart, whose check at start-up offers to save what can be read; any
+ * other error keeps the backend's own text as the reason.
+ */
+export function failureMessage(
+  frame: (reason: string) => string,
+  failure: string,
+  tf: TranslationMap,
+): string {
+  if (isDatabaseDamaged(failure)) return `${frame(tf.databaseDamaged)} ${tf.restartToRepair}`;
+  if (isSnippetDamaged(failure)) return frame(tf.snippetDamaged);
+  return frame(asSentence(failure));
 }
 
 /** Content over its size limit, as the backend reports it. */

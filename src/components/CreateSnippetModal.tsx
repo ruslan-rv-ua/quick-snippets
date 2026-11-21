@@ -9,7 +9,7 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { createSnippet } from '../hooks/useIpc';
-import { asSentence, ipcErrorToString, parseContentTooLong, parseTitleLength } from '../utils/errors';
+import { failureMessage, ipcErrorToString, parseContentTooLong, parseTitleLength } from '../utils/errors';
 import { countCharacters, isTitleLengthValid } from '../utils/title';
 
 export interface CreateSnippetModalProps {
@@ -180,7 +180,7 @@ export function CreateSnippetModal({
 
       <FieldError
         id="create-error"
-        message={failure === null ? undefined : tf.snippetSaveFailed(asSentence(failure))}
+        message={failure === null ? undefined : failureMessage(tf.snippetSaveFailed, failure, tf)}
       />
 
       <div className="modal-actions">

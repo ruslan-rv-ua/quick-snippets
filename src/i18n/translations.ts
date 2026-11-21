@@ -77,6 +77,22 @@ export interface TranslationMap {
   /** The password dialog, for any failure but a wrong password. */
   snippetCopyFailed: (reason: string) => string;
   snippetAutotypeFailed: (reason: string) => string;
+  /** A notice in the main window when a snippet cannot be loaded for editing. */
+  snippetOpenFailed: (reason: string) => string;
+  /**
+   * The reason in those messages when the snippet database is damaged (the backend's
+   * DATABASE_DAMAGED), ended as a sentence; `restartToRepair` follows the whole message.
+   */
+  databaseDamaged: string;
+  /** What to do about a damaged database: the check at start-up offers to save what can be read. */
+  restartToRepair: string;
+  /** The reason when one snippet is damaged (the backend's SNIPPET_DAMAGED). */
+  snippetDamaged: string;
+  /**
+   * Above the list when damage of the database cut it short. Replaces "no snippets yet" and
+   * "no results", which would not be true.
+   */
+  listDamaged: string;
   decryptError: string;
   enterPassword: string;
 
@@ -203,6 +219,13 @@ const en: TranslationMap = {
   snippetSaveFailed: (reason) => `Could not save the snippet. Reason: ${reason} Nothing was changed.`,
   snippetDeleteFailed: (reason) => `Could not delete the snippet. Reason: ${reason}`,
   snippetCopyFailed: (reason) => `Could not copy the snippet. Reason: ${reason}`,
+  snippetOpenFailed: (reason) => `Could not open the snippet. Reason: ${reason}`,
+  databaseDamaged: 'the snippet database is damaged.',
+  restartToRepair:
+    'Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.',
+  snippetDamaged: 'this snippet is damaged and cannot be read.',
+  listDamaged:
+    'Not all snippets are shown: the snippet database is damaged. Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.',
   snippetAutotypeFailed: (reason) => `Could not type the snippet. Reason: ${reason}`,
   decryptError: 'Failed to decrypt snippet',
   enterPassword: 'Enter password to decrypt',
@@ -358,6 +381,13 @@ const uk: TranslationMap = {
   snippetSaveFailed: (reason) => `Не вдалося зберегти сніпет. Причина: ${reason} Нічого не змінено.`,
   snippetDeleteFailed: (reason) => `Не вдалося видалити сніпет. Причина: ${reason}`,
   snippetCopyFailed: (reason) => `Не вдалося скопіювати сніпет. Причина: ${reason}`,
+  snippetOpenFailed: (reason) => `Не вдалося відкрити сніпет. Причина: ${reason}`,
+  databaseDamaged: 'база сніпетів пошкоджена.',
+  restartToRepair:
+    'Перезапустіть QuickSnippets: під час запуску програма перевірить базу й запропонує зберегти сніпети, які ще вдається прочитати.',
+  snippetDamaged: 'цей сніпет пошкоджений, його не вдається прочитати.',
+  listDamaged:
+    'Показано не всі сніпети: база сніпетів пошкоджена. Перезапустіть QuickSnippets: під час запуску програма перевірить базу й запропонує зберегти сніпети, які ще вдається прочитати.',
   snippetAutotypeFailed: (reason) => `Не вдалося надрукувати сніпет. Причина: ${reason}`,
   decryptError: 'Помилка розшифрування сніпета',
   enterPassword: 'Введіть пароль для розшифрування',
@@ -508,6 +538,13 @@ const de: TranslationMap = {
   snippetSaveFailed: (reason) => `Das Snippet ließ sich nicht speichern. Grund: ${reason} Es wurde nichts geändert.`,
   snippetDeleteFailed: (reason) => `Das Snippet ließ sich nicht löschen. Grund: ${reason}`,
   snippetCopyFailed: (reason) => `Das Snippet ließ sich nicht kopieren. Grund: ${reason}`,
+  snippetOpenFailed: (reason) => `Das Snippet ließ sich nicht öffnen. Grund: ${reason}`,
+  databaseDamaged: 'Die Snippet-Datenbank ist beschädigt.',
+  restartToRepair:
+    'Starten Sie QuickSnippets neu: Beim Start prüft es die Datenbank und bietet an, die noch lesbaren Snippets zu sichern.',
+  snippetDamaged: 'Dieses Snippet ist beschädigt und kann nicht gelesen werden.',
+  listDamaged:
+    'Nicht alle Snippets werden angezeigt: Die Snippet-Datenbank ist beschädigt. Starten Sie QuickSnippets neu: Beim Start prüft es die Datenbank und bietet an, die noch lesbaren Snippets zu sichern.',
   snippetAutotypeFailed: (reason) => `Das Snippet ließ sich nicht automatisch tippen. Grund: ${reason}`,
   decryptError: 'Snippet konnte nicht entschlüsselt werden',
   enterPassword: 'Passwort zum Entschlüsseln eingeben',

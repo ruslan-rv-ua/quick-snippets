@@ -429,6 +429,16 @@ mark {
   text-align: center;
 }
 
+/* Above the list when damage of the snippet database cut it short. */
+.list-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-destructive);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════ */
 /* MODAL SYSTEM                                                                 */
 /* ════════════════════════════════════════════════════════════════════════════ */

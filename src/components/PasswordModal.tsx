@@ -9,7 +9,7 @@ import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { useModalKeyboard } from '../hooks/useModalKeyboard';
 import { activateSnippet, autotypeSnippet } from '../hooks/useIpc';
-import { asSentence, ipcErrorToString, isWrongPassword } from '../utils/errors';
+import { failureMessage, ipcErrorToString, isWrongPassword } from '../utils/errors';
 
 export interface PasswordModalProps {
   isOpen: boolean;
@@ -152,7 +152,11 @@ export function PasswordModal({
         message={
           failure === null
             ? undefined
-            : (action === 'autotype' ? tf.snippetAutotypeFailed : tf.snippetCopyFailed)(asSentence(failure))
+            : failureMessage(
+                action === 'autotype' ? tf.snippetAutotypeFailed : tf.snippetCopyFailed,
+                failure,
+                tf,
+              )
         }
       />
 
