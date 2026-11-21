@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T23:55:00Z'
-updated_date: '2026-11-21T19:11:00Z'
+updated_date: '2026-11-21T19:41:00Z'
 labels:
   - tooling
   - tests
@@ -80,6 +80,10 @@ Checks:
 Not done here: the Release workflow dry_run with the new lint (needs a push): left to the managing session and the user. No CHANGELOG entry: nothing a user can notice (test code, lint and docs only). Only test code changed in the app crate, so no release build and no copy to real_db; no focus, dialog or announcement change, so no `just smoke`.
 
 Merged into develop (4bcd67e, git flow feature finish --no-ff); not pushed.
+
+## Release dry run (2026-11-21, managing session)
+
+With the user's go-ahead ("Надіслати й перевірити (Рекомендовано)"), develop was pushed (08644b6) and the Release workflow ran with dry_run on develop, version input 0.3.7-dry (a name only): run 44940335284, https://github.com/ruslan-rv-ua/quick-snippets/actions/runs/44940335284, success at 2026-11-21T19:30:34Z. On the clean runner the lint step ran `npx tsc --noEmit && cd src-tauri && cargo clippy --all-targets -- -D warnings` and passed; the frontend tests, the Rust tests, the release build and the ZIP passed; "Create and push tag" and "Create GitHub Release" were skipped. Afterwards GitHub had no 0.3.7 tag, and v0.3.6 was still the latest release. By the user's choice "Обидва (Рекомендовано)", the ci.yml header comment now names the new command (e4afef0, comment only), and TASK-48 was created for cargo fmt. This note was added by the managing session with the user's go-ahead ("Дописати й надіслати (Рекомендовано)").
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
