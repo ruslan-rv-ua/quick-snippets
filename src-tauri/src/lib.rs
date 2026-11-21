@@ -524,6 +524,12 @@ mod tests {
 
     // === Tray icon ===
 
+    /// Index of the first byte (red) of pixel (x, y) in the icon: rows of 16 pixels from the
+    /// top, 4 bytes (RGBA) each.
+    fn pixel(x: usize, y: usize) -> usize {
+        (y * 16 + x) * 4
+    }
+
     #[test]
     fn test_generate_tray_icon_is_16x16() {
         let icon_data = generate_tray_icon_rgba();
@@ -579,18 +585,18 @@ mod tests {
         let data = generate_tray_icon_rgba();
         for x in 2usize..=13 {
             // top border row
-            let i = (1 * 16 + x) * 4;
+            let i = pixel(x, 1);
             assert_eq!(data[i + 3], 255, "top border pixel ({x},1) should be opaque");
             // bottom border row
-            let i = (14 * 16 + x) * 4;
+            let i = pixel(x, 14);
             assert_eq!(data[i + 3], 255, "bottom border pixel ({x},14) should be opaque");
         }
         for y in 2usize..=13 {
             // left border column
-            let i = (y * 16 + 2) * 4;
+            let i = pixel(2, y);
             assert_eq!(data[i + 3], 255, "left border pixel (2,{y}) should be opaque");
             // right border column
-            let i = (y * 16 + 13) * 4;
+            let i = pixel(13, y);
             assert_eq!(data[i + 3], 255, "right border pixel (13,{y}) should be opaque");
         }
     }
@@ -599,7 +605,7 @@ mod tests {
     fn test_generate_tray_icon_border_pixels_color() {
         // Border pixels should be light grey (220, 220, 220)
         let data = generate_tray_icon_rgba();
-        let i = (1 * 16 + 2) * 4; // top-left corner of border, (2,1)
+        let i = pixel(2, 1); // top-left corner of border
         assert_eq!(data[i], 220, "R should be 220");
         assert_eq!(data[i + 1], 220, "G should be 220");
         assert_eq!(data[i + 2], 220, "B should be 220");
@@ -611,7 +617,7 @@ mod tests {
         let data = generate_tray_icon_rgba();
         for y in [4usize, 6, 8] {
             for x in 4usize..=11 {
-                let i = (y * 16 + x) * 4;
+                let i = pixel(x, y);
                 assert_eq!(data[i], 170, "R at ({x},{y}) should be 170");
                 assert_eq!(data[i + 1], 170, "G at ({x},{y}) should be 170");
                 assert_eq!(data[i + 2], 170, "B at ({x},{y}) should be 170");
@@ -620,7 +626,7 @@ mod tests {
         }
         // Shorter line at y=10, x=4..8
         for x in 4usize..=8 {
-            let i = (10 * 16 + x) * 4;
+            let i = pixel(x, 10);
             assert_eq!(data[i], 170, "R at ({x},10) should be 170");
             assert_eq!(data[i + 3], 255, "A at ({x},10) should be 255");
         }
@@ -630,10 +636,11 @@ mod tests {
     fn test_generate_tray_icon_corner_transparent() {
         // Corners of the 16x16 grid (outside the document border) should be fully transparent
         let data = generate_tray_icon_rgba();
-        // Top-left absolute corner (0,0)
-        assert_eq!(data[3], 0, "pixel (0,0) should be transparent");
-        // Top-right absolute corner (15,0)
-        let i = (0 * 16 + 15) * 4;
+        // Top-left absolute corner
+        let i = pixel(0, 0);
+        assert_eq!(data[i + 3], 0, "pixel (0,0) should be transparent");
+        // Top-right absolute corner
+        let i = pixel(15, 0);
         assert_eq!(data[i + 3], 0, "pixel (15,0) should be transparent");
     }
 

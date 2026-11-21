@@ -172,8 +172,9 @@ mod tests {
 
     #[test]
     fn test_least_pause_is_past_what_was_measured_as_too_short() {
-        // 0.4 s after the page was ready was too early, 0.6 s was enough.
-        assert!(MIN_SCREEN_READER_PAUSE_MS >= 600);
+        // 0.4 s after the page was ready was too early, 0.6 s was enough. The fastest start
+        // gets the least pause.
+        assert!(pause_before_first_show_ms(true, 0) >= 600);
     }
 
     // === Gate ===

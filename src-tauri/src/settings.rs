@@ -348,9 +348,9 @@ mod tests {
     fn test_default_settings() {
         let s = Settings::default();
         assert_eq!(s.theme, "dark");
-        assert_eq!(s.start_in_tray, false);
-        assert_eq!(s.autostart, false);
-        assert_eq!(s.confirm_on_close, true);
+        assert!(!s.start_in_tray);
+        assert!(!s.autostart);
+        assert!(s.confirm_on_close);
         assert_eq!(s.language, "");
         assert_eq!(s.window_state.x, 100);
         assert_eq!(s.window_state.y, 100);
@@ -386,7 +386,7 @@ mod tests {
         assert!(result.is_ok());
         let s = result.unwrap();
         assert_eq!(s.theme, "light");
-        assert_eq!(s.start_in_tray, false);
+        assert!(!s.start_in_tray);
     }
 
     // === File operations (via tempfile) ===
@@ -443,8 +443,10 @@ mod tests {
     fn test_load_settings_valid_json() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
-        let mut s = Settings::default();
-        s.theme = "light".to_string();
+        let s = Settings {
+            theme: "light".to_string(),
+            ..Default::default()
+        };
         std::fs::write(&path, serde_json::to_string_pretty(&s).unwrap()).unwrap();
         let loaded = load_settings_from_path(&path).unwrap();
         assert_eq!(loaded.theme, "light");
@@ -481,8 +483,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("settings.json");
         save_settings_to_path(&Settings::default(), &path).unwrap();
-        let mut s = Settings::default();
-        s.theme = "light".to_string();
+        let s = Settings {
+            theme: "light".to_string(),
+            ..Default::default()
+        };
         save_settings_to_path(&s, &path).unwrap();
         let loaded = load_settings_from_path(&path).unwrap();
         assert_eq!(loaded.theme, "light");
@@ -812,9 +816,11 @@ mod tests {
 
     #[test]
     fn test_settings_roundtrip_with_sort_fields() {
-        let mut s = Settings::default();
-        s.sort_mode = "alphabetical".to_string();
-        s.sort_direction = "asc".to_string();
+        let s = Settings {
+            sort_mode: "alphabetical".to_string(),
+            sort_direction: "asc".to_string(),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         let loaded: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded.sort_mode, "alphabetical");

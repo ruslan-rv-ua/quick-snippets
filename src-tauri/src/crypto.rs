@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn test_decrypt_truncated_ciphertext() {
         // Valid base64 but too short after decoding
-        let short_data = BASE64.encode(&[1u8; 10]);
+        let short_data = BASE64.encode([1u8; 10]);
         let result = decrypt(short_data.as_bytes(), "pass");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), CryptoError::InvalidData);
