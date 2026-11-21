@@ -586,18 +586,34 @@ mod tests {
         for x in 2usize..=13 {
             // top border row
             let i = pixel(x, 1);
-            assert_eq!(data[i + 3], 255, "top border pixel ({x},1) should be opaque");
+            assert_eq!(
+                data[i + 3],
+                255,
+                "top border pixel ({x},1) should be opaque"
+            );
             // bottom border row
             let i = pixel(x, 14);
-            assert_eq!(data[i + 3], 255, "bottom border pixel ({x},14) should be opaque");
+            assert_eq!(
+                data[i + 3],
+                255,
+                "bottom border pixel ({x},14) should be opaque"
+            );
         }
         for y in 2usize..=13 {
             // left border column
             let i = pixel(2, y);
-            assert_eq!(data[i + 3], 255, "left border pixel (2,{y}) should be opaque");
+            assert_eq!(
+                data[i + 3],
+                255,
+                "left border pixel (2,{y}) should be opaque"
+            );
             // right border column
             let i = pixel(13, y);
-            assert_eq!(data[i + 3], 255, "right border pixel (13,{y}) should be opaque");
+            assert_eq!(
+                data[i + 3],
+                255,
+                "right border pixel (13,{y}) should be opaque"
+            );
         }
     }
 

@@ -208,7 +208,11 @@ mod tests {
                 restore_attempts: MAX_RESTORE_ATTEMPTS,
                 ..active(since_blur_ms)
             };
-            assert_eq!(next_blur_step(state), BlurStep::Wait, "after {since_blur_ms} ms");
+            assert_eq!(
+                next_blur_step(state),
+                BlurStep::Wait,
+                "after {since_blur_ms} ms"
+            );
         }
     }
 
@@ -226,7 +230,10 @@ mod tests {
 
     #[test]
     fn test_active_window_gets_the_keyboard_back() {
-        assert_eq!(next_blur_step(active(HIDE_DELAY_MS)), BlurStep::RestoreFocus);
+        assert_eq!(
+            next_blur_step(active(HIDE_DELAY_MS)),
+            BlurStep::RestoreFocus
+        );
     }
 
     #[test]

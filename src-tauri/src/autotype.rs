@@ -23,8 +23,7 @@ pub mod win {
         KEYEVENTF_UNICODE, VK_RETURN, VK_TAB,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, WM_CHAR, WM_KEYDOWN,
-        WM_KEYUP,
+        GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
     };
 
     /// Delay between keydown and keyup for a single key press (SendInput fallback).
@@ -56,8 +55,7 @@ pub mod win {
                 return Err("No foreground window found".to_string());
             }
 
-            let target_thread =
-                GetWindowThreadProcessId(foreground, std::ptr::null_mut());
+            let target_thread = GetWindowThreadProcessId(foreground, std::ptr::null_mut());
             let our_thread = GetCurrentThreadId();
 
             if target_thread == 0 {
@@ -65,8 +63,7 @@ pub mod win {
             }
 
             // Attach to the target thread so GetFocus() returns its focused window.
-            let attached =
-                AttachThreadInput(our_thread, target_thread, 1); // TRUE = attach
+            let attached = AttachThreadInput(our_thread, target_thread, 1); // TRUE = attach
             let focus = if attached != 0 { GetFocus() } else { 0 };
             if attached != 0 {
                 AttachThreadInput(our_thread, target_thread, 0); // detach
@@ -112,11 +109,7 @@ pub mod win {
     /// `char_delay_ms = 0` means no delay: PostMessage places messages into the
     /// target window's FIFO queue (capacity ~10 000). A non-zero value adds a
     /// sleep between characters for apps whose message loops can't keep up.
-    fn send_text_via_messages(
-        hwnd: isize,
-        text: &str,
-        char_delay_ms: u64,
-    ) -> Result<(), String> {
+    fn send_text_via_messages(hwnd: isize, text: &str, char_delay_ms: u64) -> Result<(), String> {
         let delay = if char_delay_ms > 0 {
             Some(Duration::from_millis(char_delay_ms))
         } else {
@@ -187,17 +180,14 @@ pub mod win {
     }
 
     fn send_single_input(input: &INPUT) -> Result<(), String> {
-        let sent =
-            unsafe { SendInput(1, input as *const INPUT, size_of::<INPUT>() as i32) };
+        let sent = unsafe { SendInput(1, input as *const INPUT, size_of::<INPUT>() as i32) };
         if sent == 0 {
             let last_err = io::Error::last_os_error();
             eprintln!("SendInput returned 0. GetLastError: {}", last_err);
-            return Err(
-                "Auto-type failed: no events were sent. \
+            return Err("Auto-type failed: no events were sent. \
                  This may happen if the target app runs with higher privileges \
                  (run as administrator)."
-                    .to_string(),
-            );
+                .to_string());
         }
         Ok(())
     }
@@ -211,13 +201,9 @@ pub mod win {
         Ok(())
     }
 
-    fn send_unicode_key_input(
-        code_unit: u16,
-        press_delay: Duration,
-    ) -> Result<(), String> {
+    fn send_unicode_key_input(code_unit: u16, press_delay: Duration) -> Result<(), String> {
         let down = make_unicode_input(code_unit, KEYEVENTF_UNICODE);
-        let up =
-            make_unicode_input(code_unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
+        let up = make_unicode_input(code_unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP);
         send_single_input(&down)?;
         thread::sleep(press_delay);
         send_single_input(&up)?;
@@ -228,8 +214,7 @@ pub mod win {
     /// Enforces a minimum 50ms inter-character delay for screen reader compatibility.
     fn send_text_via_sendinput(text: &str, char_delay_ms: u64) -> Result<(), String> {
         let press_delay = Duration::from_millis(KEY_PRESS_DELAY_MS);
-        let char_delay =
-            Duration::from_millis(std::cmp::max(char_delay_ms, INTER_CHAR_DELAY_MS));
+        let char_delay = Duration::from_millis(std::cmp::max(char_delay_ms, INTER_CHAR_DELAY_MS));
 
         let mut chars = text.chars().peekable();
         while let Some(ch) = chars.next() {

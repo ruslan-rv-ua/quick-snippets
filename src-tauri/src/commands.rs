@@ -50,12 +50,16 @@ impl AppState {
 
     /// Consume and return the pending notification (returns `None` on second call).
     pub fn take_pending_notification(&self) -> Option<String> {
-        self.pending_notification.lock().ok().and_then(|mut n| n.take())
+        self.pending_notification
+            .lock()
+            .ok()
+            .and_then(|mut n| n.take())
     }
 
     /// Mark that exit-confirmation dialog is visible (blur must not hide).
     pub fn set_close_pending(&self, pending: bool) {
-        self.close_confirmation_pending.store(pending, Ordering::SeqCst);
+        self.close_confirmation_pending
+            .store(pending, Ordering::SeqCst);
     }
 
     /// Check whether exit-confirmation dialog is visible.
@@ -118,7 +122,11 @@ pub fn search_snippets_inner(conn: &Connection, query: &str) -> Result<SnippetLi
 /// The create and edit dialogs recognise this text and show a translated message with both
 /// numbers instead (`parseContentTooLong` in src/utils/errors.ts): change the two together.
 fn content_too_long(size: usize, max: usize, encrypted: bool) -> String {
-    let kind = if encrypted { " for an encrypted snippet" } else { "" };
+    let kind = if encrypted {
+        " for an encrypted snippet"
+    } else {
+        ""
+    };
     format!("Content too long{kind} ({size} bytes, max {max} bytes)")
 }
 
@@ -184,7 +192,11 @@ pub fn create_snippet_inner(
     // CHECK error.
     let content_bytes = content.as_bytes();
     let encrypted = !password.is_empty();
-    let max = if encrypted { MAX_ENCRYPTED_CONTENT_LENGTH } else { MAX_CONTENT_LENGTH };
+    let max = if encrypted {
+        MAX_ENCRYPTED_CONTENT_LENGTH
+    } else {
+        MAX_CONTENT_LENGTH
+    };
     if content_bytes.len() > max {
         return Err(content_too_long(content_bytes.len(), max, encrypted));
     }
@@ -271,7 +283,11 @@ pub fn update_snippet_inner(
 
     let content_bytes = content.as_bytes();
     if content_bytes.len() > MAX_CONTENT_LENGTH {
-        return Err(content_too_long(content_bytes.len(), MAX_CONTENT_LENGTH, false));
+        return Err(content_too_long(
+            content_bytes.len(),
+            MAX_CONTENT_LENGTH,
+            false,
+        ));
     }
 
     let blob = content_bytes.to_vec();
@@ -483,7 +499,10 @@ pub mod tauri_commands {
         // plaintext is already Zeroizing<Vec<u8>>, so it will be securely erased on drop.
         // Create a new Zeroizing<String> for clipboard write to ensure proper cleanup.
         let text = plaintext_to_string(&plaintext)?;
-        let result = app.clipboard().write_text(text.as_str()).map_err(|e| e.to_string());
+        let result = app
+            .clipboard()
+            .write_text(text.as_str())
+            .map_err(|e| e.to_string());
         result?;
         // Both plaintext and text are Zeroizing; automatically zeroed on drop at end of scope
         Ok(()) // IPC response is Ok(()) — no content
@@ -780,8 +799,7 @@ mod tests {
     #[test]
     fn test_activate_unencrypted_returns_content_bytes() {
         let conn = setup();
-        let id =
-            db::create_snippet(&conn, "test snip", b"clipboard text".to_vec(), false).unwrap();
+        let id = db::create_snippet(&conn, "test snip", b"clipboard text".to_vec(), false).unwrap();
         let content = activate_snippet_get_content(&conn, id, "").unwrap();
         assert_eq!(*content, b"clipboard text");
     }
@@ -808,7 +826,8 @@ mod tests {
     #[test]
     fn test_activate_damaged_encrypted_content_is_not_a_wrong_password() {
         let conn = setup();
-        let id = db::create_snippet(&conn, "damaged", b"v2:not base64 at all".to_vec(), true).unwrap();
+        let id =
+            db::create_snippet(&conn, "damaged", b"v2:not base64 at all".to_vec(), true).unwrap();
         let err = activate_snippet_get_content(&conn, id, "mypass").unwrap_err();
         assert_eq!(err, "Invalid data");
         assert_ne!(err, crypto::WRONG_PASSWORD);
@@ -840,7 +859,10 @@ mod tests {
     #[test]
     fn test_locked_database_fails_delete_create_and_update_with_the_reason() {
         let (_dir, conn, _other, plain, _) = locked_database();
-        assert_eq!(delete_snippet_inner(&conn, plain).unwrap_err(), "database is locked");
+        assert_eq!(
+            delete_snippet_inner(&conn, plain).unwrap_err(),
+            "database is locked"
+        );
         assert_eq!(
             create_snippet_inner(&conn, "new one", "text", "").unwrap_err(),
             "database is locked"
@@ -896,7 +918,10 @@ mod tests {
 
         let row = db::get_snippet_by_id(&conn, id).unwrap();
         assert!(row.is_encrypted);
-        assert_ne!(row.content, LEGACY_BLOB, "the stored blob must have been replaced");
+        assert_ne!(
+            row.content, LEGACY_BLOB,
+            "the stored blob must have been replaced"
+        );
         assert!(crypto::is_current_format(&row.content));
         let decrypted = crypto::decrypt(&row.content, LEGACY_PASSWORD).unwrap();
         assert_eq!(decrypted, LEGACY_PLAINTEXT.as_bytes());
@@ -913,7 +938,10 @@ mod tests {
         let after_second = db::get_snippet_by_id(&conn, id).unwrap().content;
 
         assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
-        assert_eq!(after_first, after_second, "a current-format blob is not rewritten");
+        assert_eq!(
+            after_first, after_second,
+            "a current-format blob is not rewritten"
+        );
     }
 
     #[test]
@@ -924,7 +952,10 @@ mod tests {
         let result = activate_snippet_get_content(&conn, id, "wrong password");
 
         assert_eq!(result.unwrap_err(), "Wrong password");
-        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, LEGACY_BLOB);
+        assert_eq!(
+            db::get_snippet_by_id(&conn, id).unwrap().content,
+            LEGACY_BLOB
+        );
         // The right password still works afterwards.
         let content = activate_snippet_get_content(&conn, id, LEGACY_PASSWORD).unwrap();
         assert_eq!(*content, LEGACY_PLAINTEXT.as_bytes());
@@ -948,10 +979,16 @@ mod tests {
         let after = db::get_snippet_by_id(&conn, id).unwrap();
         assert_eq!(after.title, before.title);
         assert_eq!(after.created_at, before.created_at);
-        assert_eq!(after.updated_at, before.updated_at, "re-encryption is not an edit");
+        assert_eq!(
+            after.updated_at, before.updated_at,
+            "re-encryption is not an edit"
+        );
         assert!(after.is_encrypted);
         // Only the activated snippet is re-encrypted.
-        assert_eq!(db::get_snippet_by_id(&conn, other).unwrap().content, LEGACY_BLOB);
+        assert_eq!(
+            db::get_snippet_by_id(&conn, other).unwrap().content,
+            LEGACY_BLOB
+        );
     }
 
     #[test]
@@ -1039,7 +1076,10 @@ mod tests {
         );
 
         assert!(!replaced);
-        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, LEGACY_BLOB);
+        assert_eq!(
+            db::get_snippet_by_id(&conn, id).unwrap().content,
+            LEGACY_BLOB
+        );
     }
 
     #[test]
@@ -1058,7 +1098,10 @@ mod tests {
                 LEGACY_PASSWORD,
             );
             assert!(!replaced);
-            assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, LEGACY_BLOB);
+            assert_eq!(
+                db::get_snippet_by_id(&conn, id).unwrap().content,
+                LEGACY_BLOB
+            );
         }
     }
 
@@ -1196,8 +1239,14 @@ mod tests {
         let conn = setup();
         let oversized = "x".repeat(MAX_CONTENT_LENGTH + 1);
         let result = create_snippet_inner(&conn, "title", &oversized, "");
-        assert_eq!(result.unwrap_err(), "Content too long (65537 bytes, max 65536 bytes)");
-        assert!(search_snippets_inner(&conn, "").unwrap().items.is_empty(), "nothing is stored");
+        assert_eq!(
+            result.unwrap_err(),
+            "Content too long (65537 bytes, max 65536 bytes)"
+        );
+        assert!(
+            search_snippets_inner(&conn, "").unwrap().items.is_empty(),
+            "nothing is stored"
+        );
     }
 
     #[test]
@@ -1214,11 +1263,17 @@ mod tests {
         let conn = setup();
         let largest = cyrillic_content(MAX_CONTENT_LENGTH);
         let id = create_snippet_inner(&conn, "largest plain", &largest, "").unwrap();
-        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, largest.as_bytes());
+        assert_eq!(
+            db::get_snippet_by_id(&conn, id).unwrap().content,
+            largest.as_bytes()
+        );
 
         // One letter more is 65,538 bytes.
         let result = create_snippet_inner(&conn, "too large", &"я".repeat(32_769), "");
-        assert_eq!(result.unwrap_err(), "Content too long (65538 bytes, max 65536 bytes)");
+        assert_eq!(
+            result.unwrap_err(),
+            "Content too long (65538 bytes, max 65536 bytes)"
+        );
     }
 
     #[test]
@@ -1230,7 +1285,11 @@ mod tests {
 
         let row = db::get_snippet_by_id(&conn, id).unwrap();
         assert!(row.is_encrypted);
-        assert_eq!(row.content.len(), 65_535, "the v2 blob just fits the content column");
+        assert_eq!(
+            row.content.len(),
+            65_535,
+            "the v2 blob just fits the content column"
+        );
         let content = activate_snippet_get_content(&conn, id, "pass").unwrap();
         assert_eq!(*content, largest.as_bytes());
     }
@@ -1246,7 +1305,10 @@ mod tests {
             result.unwrap_err(),
             "Content too long for an encrypted snippet (49106 bytes, max 49105 bytes)"
         );
-        assert!(search_snippets_inner(&conn, "").unwrap().items.is_empty(), "nothing is stored");
+        assert!(
+            search_snippets_inner(&conn, "").unwrap().items.is_empty(),
+            "nothing is stored"
+        );
     }
 
     #[test]
@@ -1283,8 +1345,14 @@ mod tests {
         let id = db::create_snippet(&conn, "title", b"old content".to_vec(), false).unwrap();
         let oversized = cyrillic_content(MAX_CONTENT_LENGTH + 1);
         let result = update_snippet_inner(&conn, id, "title", &oversized);
-        assert_eq!(result.unwrap_err(), "Content too long (65537 bytes, max 65536 bytes)");
-        assert_eq!(db::get_snippet_by_id(&conn, id).unwrap().content, b"old content");
+        assert_eq!(
+            result.unwrap_err(),
+            "Content too long (65537 bytes, max 65536 bytes)"
+        );
+        assert_eq!(
+            db::get_snippet_by_id(&conn, id).unwrap().content,
+            b"old content"
+        );
     }
 
     #[test]
@@ -1329,8 +1397,14 @@ mod tests {
         for title in [cyrillic_title(51), emoji_title(51)] {
             let conn = setup();
             let result = create_snippet_inner(&conn, &title, "content", "");
-            assert_eq!(result.unwrap_err(), "Title must be 3 to 50 characters (51 characters)");
-            assert!(search_snippets_inner(&conn, "").unwrap().items.is_empty(), "nothing is stored");
+            assert_eq!(
+                result.unwrap_err(),
+                "Title must be 3 to 50 characters (51 characters)"
+            );
+            assert!(
+                search_snippets_inner(&conn, "").unwrap().items.is_empty(),
+                "nothing is stored"
+            );
         }
     }
 
@@ -1339,7 +1413,10 @@ mod tests {
         // 8 bytes, 4 UTF-16 units, but 2 characters for the database.
         let conn = setup();
         let result = create_snippet_inner(&conn, &emoji_title(2), "content", "");
-        assert_eq!(result.unwrap_err(), "Title must be 3 to 50 characters (2 characters)");
+        assert_eq!(
+            result.unwrap_err(),
+            "Title must be 3 to 50 characters (2 characters)"
+        );
     }
 
     #[test]
@@ -1364,7 +1441,10 @@ mod tests {
             let conn = setup();
             let id = db::create_snippet(&conn, "old title", b"content".to_vec(), false).unwrap();
             let result = update_snippet_inner(&conn, id, &title, "new content");
-            assert_eq!(result.unwrap_err(), "Title must be 3 to 50 characters (51 characters)");
+            assert_eq!(
+                result.unwrap_err(),
+                "Title must be 3 to 50 characters (51 characters)"
+            );
             let row = db::get_snippet_by_id(&conn, id).unwrap();
             assert_eq!(row.title, "old title", "the old title stays");
             assert_eq!(row.content, b"content", "the old content stays");
@@ -1376,7 +1456,10 @@ mod tests {
         let conn = setup();
         let id = db::create_snippet(&conn, "old title", b"content".to_vec(), false).unwrap();
         let result = update_snippet_inner(&conn, id, &emoji_title(2), "content");
-        assert_eq!(result.unwrap_err(), "Title must be 3 to 50 characters (2 characters)");
+        assert_eq!(
+            result.unwrap_err(),
+            "Title must be 3 to 50 characters (2 characters)"
+        );
     }
 
     #[test]
@@ -1384,7 +1467,10 @@ mod tests {
         let conn = setup();
         let id = create_snippet_inner(&conn, "secret", "data", "pass").unwrap();
         let result = update_snippet_inner(&conn, id, &emoji_title(51), "");
-        assert_eq!(result.unwrap_err(), "Title must be 3 to 50 characters (51 characters)");
+        assert_eq!(
+            result.unwrap_err(),
+            "Title must be 3 to 50 characters (51 characters)"
+        );
     }
 
     #[test]
@@ -1394,7 +1480,10 @@ mod tests {
         assert_eq!((TITLE_MIN_CHARS, TITLE_MAX_CHARS), (3, 50));
         let conn = setup();
         for title in [emoji_title(3), emoji_title(50), cyrillic_title(50)] {
-            assert!(db::create_snippet(&conn, &title, b"c".to_vec(), false).is_ok(), "{title}");
+            assert!(
+                db::create_snippet(&conn, &title, b"c".to_vec(), false).is_ok(),
+                "{title}"
+            );
         }
         for title in [emoji_title(2), emoji_title(51), cyrillic_title(51)] {
             let err = db::create_snippet(&conn, &title, b"c".to_vec(), false).unwrap_err();
@@ -1433,7 +1522,9 @@ mod tests {
         db::create_snippet(&conn, "Alpha", b"a".to_vec(), false).unwrap();
         db::create_snippet(&conn, "Bravo", b"b".to_vec(), false).unwrap();
 
-        let results = get_sorted_snippets_inner(&conn, "alphabetical", "asc").unwrap().items;
+        let results = get_sorted_snippets_inner(&conn, "alphabetical", "asc")
+            .unwrap()
+            .items;
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].title, "Alpha");
         assert_eq!(results[1].title, "Bravo");
@@ -1447,7 +1538,9 @@ mod tests {
         let conn = setup();
         db::create_snippet(&conn, "Test item", b"data".to_vec(), true).unwrap();
 
-        let results = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap().items;
+        let results = get_sorted_snippets_inner(&conn, "modified", "desc")
+            .unwrap()
+            .items;
         assert_eq!(results.len(), 1);
         assert!(results[0].is_encrypted);
         assert_eq!(results[0].score, 0);
@@ -1557,7 +1650,8 @@ mod tests {
         let current = Mutex::new(saved);
         let registry = crate::autostart::RefusingRegistry;
 
-        let outcome = save_settings_inner(changed, &current, &path, &registry, NAME, exe()).unwrap();
+        let outcome =
+            save_settings_inner(changed, &current, &path, &registry, NAME, exe()).unwrap();
 
         assert_eq!(outcome.autostart_error, Some(AutostartError::CannotTurnOn));
         assert!(!load_settings_from_path(&path).unwrap().autostart);
@@ -1657,7 +1751,9 @@ mod tests {
 
     // === damage met while the app works (TASK-33) ===
 
-    use crate::db::test_damage::{build_db, content_of, damage_middle_leaf, damage_page, overwrite_after, pages_of};
+    use crate::db::test_damage::{
+        build_db, content_of, damage_middle_leaf, damage_page, overwrite_after, pages_of,
+    };
 
     const COUNT: i64 = 90;
 
@@ -1666,7 +1762,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), COUNT);
         let healthy = db::open_and_init_db(&path).unwrap();
-        assert!(!get_sorted_snippets_inner(&healthy, "modified", "desc").unwrap().damaged);
+        assert!(
+            !get_sorted_snippets_inner(&healthy, "modified", "desc")
+                .unwrap()
+                .damaged
+        );
         assert!(!search_snippets_inner(&healthy, "сніпет").unwrap().damaged);
         drop(healthy);
 
@@ -1674,8 +1774,15 @@ mod tests {
         let conn = db::open_and_init_db(&path).unwrap();
         let sorted = get_sorted_snippets_inner(&conn, "modified", "desc").unwrap();
         assert!(sorted.damaged);
-        assert!(!sorted.items.is_empty(), "the snippets before the damaged page are still listed");
-        assert!(get_sorted_snippets_inner(&conn, "alphabetical", "asc").unwrap().damaged);
+        assert!(
+            !sorted.items.is_empty(),
+            "the snippets before the damaged page are still listed"
+        );
+        assert!(
+            get_sorted_snippets_inner(&conn, "alphabetical", "asc")
+                .unwrap()
+                .damaged
+        );
         let found = search_snippets_inner(&conn, "сніпет").unwrap();
         assert!(found.damaged);
         assert_eq!(found.items.len(), sorted.items.len());
@@ -1684,7 +1791,10 @@ mod tests {
     /// The list reaches the frontend as { items, damaged } (src/types/index.ts reads these names).
     #[test]
     fn test_snippet_list_view_names_for_the_frontend() {
-        let view = SnippetListView { items: vec![], damaged: true };
+        let view = SnippetListView {
+            items: vec![],
+            damaged: true,
+        };
         assert_eq!(
             serde_json::to_value(view).unwrap(),
             serde_json::json!({ "items": [], "damaged": true })
@@ -1700,10 +1810,22 @@ mod tests {
         let id = unreadable[0];
         let conn = db::open_and_init_db(&path).unwrap();
 
-        assert_eq!(get_snippet_by_id_inner(&conn, id).err().unwrap(), db::DATABASE_DAMAGED);
-        assert_eq!(activate_snippet_get_content(&conn, id, "").err().unwrap(), db::DATABASE_DAMAGED);
-        assert_eq!(update_snippet_inner(&conn, id, "New title", "x").unwrap_err(), db::DATABASE_DAMAGED);
-        assert_eq!(delete_snippet_inner(&conn, id).unwrap_err(), db::DATABASE_DAMAGED);
+        assert_eq!(
+            get_snippet_by_id_inner(&conn, id).err().unwrap(),
+            db::DATABASE_DAMAGED
+        );
+        assert_eq!(
+            activate_snippet_get_content(&conn, id, "").err().unwrap(),
+            db::DATABASE_DAMAGED
+        );
+        assert_eq!(
+            update_snippet_inner(&conn, id, "New title", "x").unwrap_err(),
+            db::DATABASE_DAMAGED
+        );
+        assert_eq!(
+            delete_snippet_inner(&conn, id).unwrap_err(),
+            db::DATABASE_DAMAGED
+        );
     }
 
     /// Damage in an index stops every change of the table, also of snippets that read fine.
@@ -1714,12 +1836,18 @@ mod tests {
         damage_page(&path, pages_of(&path, "idx_snippets_title", "leaf")[0]);
         let conn = db::open_and_init_db(&path).unwrap();
 
-        assert_eq!(create_snippet_inner(&conn, "Brand new", "text", "").unwrap_err(), db::DATABASE_DAMAGED);
+        assert_eq!(
+            create_snippet_inner(&conn, "Brand new", "text", "").unwrap_err(),
+            db::DATABASE_DAMAGED
+        );
         assert_eq!(
             create_snippet_inner(&conn, "Brand new secret", "text", "pass").unwrap_err(),
             db::DATABASE_DAMAGED
         );
-        assert_eq!(update_snippet_inner(&conn, 1, "Renamed", "x").unwrap_err(), db::DATABASE_DAMAGED);
+        assert_eq!(
+            update_snippet_inner(&conn, 1, "Renamed", "x").unwrap_err(),
+            db::DATABASE_DAMAGED
+        );
     }
 
     /// A plain snippet whose text is no longer UTF-8: SNIPPET_DAMAGED, never any of its bytes
@@ -1731,16 +1859,25 @@ mod tests {
         overwrite_after(&path, content_of(40).as_bytes(), None, 10, &[0xFF, 0xFF]);
         let conn = db::open_and_init_db(&path).unwrap();
 
-        assert_eq!(get_snippet_by_id_inner(&conn, 40).err().unwrap(), db::SNIPPET_DAMAGED);
+        assert_eq!(
+            get_snippet_by_id_inner(&conn, 40).err().unwrap(),
+            db::SNIPPET_DAMAGED
+        );
         let bytes = activate_snippet_get_content(&conn, 40, "").unwrap();
         let err = plaintext_to_string(&bytes).unwrap_err();
         assert_eq!(err, db::SNIPPET_DAMAGED);
-        assert!(get_snippet_by_id_inner(&conn, 41).is_ok(), "the other snippets are fine");
+        assert!(
+            get_snippet_by_id_inner(&conn, 41).is_ok(),
+            "the other snippets are fine"
+        );
     }
 
     #[test]
     fn test_plaintext_to_string_keeps_text_and_never_shows_bytes() {
-        assert_eq!(plaintext_to_string("Привіт".as_bytes()).unwrap().as_str(), "Привіт");
+        assert_eq!(
+            plaintext_to_string("Привіт".as_bytes()).unwrap().as_str(),
+            "Привіт"
+        );
         let err = plaintext_to_string(&[b's', b'e', 0xFF, b'c']).unwrap_err();
         assert_eq!(err, db::SNIPPET_DAMAGED);
         assert!(!err.contains("se"), "{err}");
@@ -1753,12 +1890,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = build_db(dir.path(), COUNT);
         let leaves = pages_of(&path, "snippets", "leaf");
-        overwrite_after(&path, crate::db::test_damage::title_of(41).as_bytes(), Some(&leaves), 2, &[0xFF, 0xFE]);
+        overwrite_after(
+            &path,
+            crate::db::test_damage::title_of(41).as_bytes(),
+            Some(&leaves),
+            2,
+            &[0xFF, 0xFE],
+        );
         let conn = db::open_and_init_db(&path).unwrap();
 
-        assert_eq!(get_snippet_by_id_inner(&conn, 41).err().unwrap(), db::SNIPPET_DAMAGED);
+        assert_eq!(
+            get_snippet_by_id_inner(&conn, 41).err().unwrap(),
+            db::SNIPPET_DAMAGED
+        );
         let deleted = delete_snippet_inner(&conn, 41).unwrap_err();
-        assert!(deleted == db::DATABASE_DAMAGED || deleted == db::SNIPPET_DAMAGED, "{deleted}");
+        assert!(
+            deleted == db::DATABASE_DAMAGED || deleted == db::SNIPPET_DAMAGED,
+            "{deleted}"
+        );
     }
 
     // ── Auto-type: the window hides first; a failure after that plays the error sound (TASK-42) ──
@@ -1786,12 +1935,14 @@ mod tests {
     }
 
     /// One of the errors of the typing itself (autotype.rs), after the window has hidden.
-    const TYPING_FAILED: &str = "PostMessageW(WM_CHAR) failed: Invalid window handle. (os error 1400)";
+    const TYPING_FAILED: &str =
+        "PostMessageW(WM_CHAR) failed: Invalid window handle. (os error 1400)";
 
     #[test]
     fn test_autotype_hides_the_window_then_types_without_a_sound() {
         let state = AppState::new_for_test();
-        let id = create_snippet_inner(&state.conn.lock().unwrap(), "Привітання", "Привіт", "").unwrap();
+        let id =
+            create_snippet_inner(&state.conn.lock().unwrap(), "Привітання", "Привіт", "").unwrap();
         let (result, steps) = run_autotype(&state, id, "", Ok(()));
         assert_eq!(result, Ok(()));
         assert_eq!(steps, ["hide", "type:Привіт"]);
@@ -1800,9 +1951,14 @@ mod tests {
     #[test]
     fn test_autotype_typing_failure_after_hiding_plays_the_error_sound_once() {
         let state = AppState::new_for_test();
-        let id = create_snippet_inner(&state.conn.lock().unwrap(), "Привітання", "Привіт", "").unwrap();
+        let id =
+            create_snippet_inner(&state.conn.lock().unwrap(), "Привітання", "Привіт", "").unwrap();
         let (result, steps) = run_autotype(&state, id, "", Err(TYPING_FAILED.to_string()));
-        assert_eq!(result.unwrap_err(), TYPING_FAILED, "the error goes to the frontend as it is");
+        assert_eq!(
+            result.unwrap_err(),
+            TYPING_FAILED,
+            "the error goes to the frontend as it is"
+        );
         assert_eq!(steps, ["hide", "type:Привіт", "alert"]);
     }
 
@@ -1811,7 +1967,13 @@ mod tests {
     #[test]
     fn test_autotype_of_an_encrypted_snippet() {
         let state = AppState::new_for_test();
-        let id = create_snippet_inner(&state.conn.lock().unwrap(), "Таємниця", "секрет 456", "pass-42").unwrap();
+        let id = create_snippet_inner(
+            &state.conn.lock().unwrap(),
+            "Таємниця",
+            "секрет 456",
+            "pass-42",
+        )
+        .unwrap();
         let (result, steps) = run_autotype(&state, id, "pass-42", Ok(()));
         assert_eq!(result, Ok(()));
         assert_eq!(steps, ["hide", "type:секрет 456"]);
@@ -1832,7 +1994,8 @@ mod tests {
             let plain = create_snippet_inner(&conn, "Привітання", "Привіт", "").unwrap();
             let secret = create_snippet_inner(&conn, "Таємниця", "секрет 456", "pass-42").unwrap();
             // A text the app never writes: not UTF-8.
-            let damaged = db::create_snippet(&conn, "Пошкоджений", vec![b's', 0xFF, 0xFE], false).unwrap();
+            let damaged =
+                db::create_snippet(&conn, "Пошкоджений", vec![b's', 0xFF, 0xFE], false).unwrap();
             (plain, secret, damaged)
         };
 
