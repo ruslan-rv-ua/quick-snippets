@@ -74,6 +74,28 @@ export function failureMessage(
   return frame(asSentence(failure));
 }
 
+/** A toast: its text and how long it stays (`undefined`: as long as any toast). */
+export interface FailureToast {
+  message: string;
+  duration?: number;
+}
+
+/**
+ * The toast for an action of the main window that failed (copying, typing, opening a snippet for
+ * editing): what failed in the language of the app, and the reason as `failureMessage` gives it.
+ * It stays as long as any toast; a notice about damage stays longer, as it holds advice.
+ */
+export function failureToast(
+  frame: (reason: string) => string,
+  failure: string,
+  tf: TranslationMap,
+): FailureToast {
+  return {
+    message: failureMessage(frame, failure, tf),
+    duration: isDamage(failure) ? DAMAGE_TOAST_MS : undefined,
+  };
+}
+
 /** Content over its size limit, as the backend reports it. */
 export interface ContentTooLong {
   /** Size of the text in bytes of UTF-8. */

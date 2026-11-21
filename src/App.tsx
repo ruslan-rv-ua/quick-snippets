@@ -32,7 +32,7 @@ import { KeyboardHelpModal } from './components/KeyboardHelpModal';
 import { ToastContainer } from './components/ToastContainer';
 
 import type { SearchResult } from './types';
-import { DAMAGE_TOAST_MS, failureMessage, ipcErrorToString, isDamage } from './utils/errors';
+import { asSentence, failureToast, ipcErrorToString } from './utils/errors';
 import './styles/theme.css';
 
 function getSortLabelKey(mode: string, direction: string): string {
@@ -192,13 +192,14 @@ function AppInner(): React.ReactElement {
     },
   });
 
-  // A failure of copying or typing a plain snippet. Damage is said in the language of the app;
-  // any other error is still shown as the backend gives it (TASK-42).
+  // A failure of copying or typing a plain snippet: what failed, in the language of the app, and
+  // the reason the database or Windows gives, as it is (damage in words of the app). A typing
+  // failure after the backend has hidden the window lands in the hidden window: the backend then
+  // plays the Windows error sound (TASK-42).
   const showActionError = useCallback(
     (err: unknown, frame: (reason: string) => string) => {
-      const msg = ipcErrorToString(err);
-      if (isDamage(msg)) addToast(failureMessage(frame, msg, tf), 'error', DAMAGE_TOAST_MS);
-      else addToast(msg, 'error');
+      const { message, duration } = failureToast(frame, ipcErrorToString(err), tf);
+      addToast(message, 'error', duration);
     },
     [addToast, tf],
   );
@@ -375,7 +376,7 @@ function AppInner(): React.ReactElement {
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        onError={(msg) => addToast(msg, 'error')}
+        onError={(msg) => addToast(tf.settingsOpenFailed(asSentence(msg)), 'error')}
       />
 
       <KeyboardHelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />

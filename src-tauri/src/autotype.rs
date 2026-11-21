@@ -284,6 +284,19 @@ pub mod win {
         send_text_via_sendinput(text, char_delay_ms)
     }
 
+    /// Plays the Windows error sound (the sound scheme's "Critical Stop") and returns at once.
+    ///
+    /// Typing starts after the app window has hidden, so a message about a typing failure would be
+    /// in a hidden window, neither seen nor read by a screen reader: the sound tells the user that
+    /// typing failed (TASK-42). Nothing is heard when the sound scheme has no sound for it.
+    pub fn error_sound() {
+        use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
+        use windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONERROR;
+        unsafe {
+            MessageBeep(MB_ICONERROR);
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     // Test helpers
     // ════════════════════════════════════════════════════════════════════════

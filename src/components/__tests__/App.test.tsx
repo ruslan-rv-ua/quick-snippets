@@ -910,11 +910,166 @@ describe('App: a damaged snippet database', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('any other failure of copying is still shown as the backend gives it (TASK-42)', async () => {
-    failure = 'database is locked';
+  it('a notice about damage stays 8 s, as it holds advice', async () => {
     const search = await openApp();
     fireEvent.keyDown(search, { key: 'Enter' });
-    expect(await screen.findByText('database is locked')).toBeInTheDocument();
+    const toast = await screen.findByText(`Could not copy the snippet. Reason: the snippet database is damaged. ${RESTART}`);
+    // Toast fades out 300 ms before it goes (see Toast).
+    expect(toast.style.animationDelay).toBe('7700ms');
+  });
+});
+
+// TASK-42: copying or typing a snippet without a password, opening a snippet for editing and
+// reading the settings as the settings dialog opens. Up to 0.3.6 a failure was a toast with the
+// backend's own text only, in English. Now the toast says what failed, in the language of the app,
+// with the reason the database or Windows gives, as it is (the user's choice), for 2 s as before.
+describe('App: a failed copy, auto-type, opening for editing or reading of the settings', () => {
+  type Item = { id: number; title: string; score: number; matched_positions: number[]; is_encrypted: boolean };
+  const item = (id: number, title: string): Item => ({ id, title, score: 0, matched_positions: [], is_encrypted: false });
+  let language: string;
+  let failure: string;
+  let settingsBroken: boolean;
+
+  beforeEach(() => {
+    language = 'en';
+    failure = 'database is locked';
+    settingsBroken = false;
+    mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => void 0);
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      switch (cmd) {
+        case 'get_settings':
+          if (settingsBroken) throw 'poisoned lock: another task failed inside';
+          return {
+            theme: 'dark',
+            start_in_tray: false,
+            autostart: false,
+            confirm_on_close: false,
+            language,
+            window_state: { x: 0, y: 0, width: 680, height: 520 },
+            autotype_delay_ms: 1,
+            sort_mode: 'modified',
+            sort_direction: 'desc',
+          };
+        case 'search_snippets':
+        case 'get_sorted_snippets':
+          return { items: [item(1, 'Greeting'), item(2, 'Goodbye')], damaged: false };
+        case 'activate_snippet':
+        case 'autotype_snippet':
+        case 'get_snippet_by_id':
+          throw failure;
+        default:
+          return null;
+      }
+    });
+  });
+
+  /** The app shown, in its language, with the first snippet selected. */
+  async function openApp(placeholder = 'Search'): Promise<HTMLInputElement> {
+    renderShownApp();
+    const search = (await screen.findByPlaceholderText(placeholder)) as HTMLInputElement;
+    search.focus();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Greeting' })).toHaveAttribute('aria-selected', 'true'));
+    return search;
+  }
+
+  const copy = (search: HTMLElement) => fireEvent.keyDown(search, { key: 'Enter' });
+  const autotype = (search: HTMLElement) => fireEvent.keyDown(search, { key: 'Enter', shiftKey: true });
+  const openEdit = (search: HTMLElement) => fireEvent.keyDown(search, { key: 'e', code: 'KeyE', ctrlKey: true });
+  const openSettings = (search: HTMLElement) => fireEvent.keyDown(search, { key: ',', code: 'Comma', ctrlKey: true });
+
+  it('copying: says that the copy failed, with the reason as the database gives it, for 2 s', async () => {
+    const search = await openApp();
+    copy(search);
+    const toast = await screen.findByText('Could not copy the snippet. Reason: database is locked.');
+    // Toast fades out 300 ms before it goes: 2 s, as every toast.
+    expect(toast.style.animationDelay).toBe('1700ms');
+    // Said once, as one message: the bare reason is nowhere on its own.
+    expect(screen.queryByText('database is locked')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/database is locked/)).toHaveLength(1);
+  });
+
+  it('copying with the clipboard held by another program: the reason as Windows gives it', async () => {
+    failure = 'The native clipboard is not accessible due to being held by another party.';
+    const search = await openApp();
+    copy(search);
+    expect(
+      await screen.findByText(
+        'Could not copy the snippet. Reason: The native clipboard is not accessible due to being held by another party.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('copying a snippet that is no longer in the database', async () => {
+    failure = 'Query returned no rows';
+    const search = await openApp();
+    copy(search);
+    expect(await screen.findByText('Could not copy the snippet. Reason: Query returned no rows.')).toBeInTheDocument();
+  });
+
+  it('auto-type: says that typing failed, with the reason as Windows gives it, for 2 s', async () => {
+    failure = 'PostMessageW(WM_CHAR) failed: Access is denied. (os error 5)';
+    const search = await openApp();
+    autotype(search);
+    const toast = await screen.findByText(
+      'Could not type the snippet. Reason: PostMessageW(WM_CHAR) failed: Access is denied. (os error 5).',
+    );
+    expect(toast.style.animationDelay).toBe('1700ms');
+  });
+
+  it('opening a snippet for editing: says so, and the dialog does not open', async () => {
+    failure = 'Query returned no rows';
+    const search = await openApp();
+    openEdit(search);
+    const toast = await screen.findByText('Could not open the snippet. Reason: Query returned no rows.');
+    expect(toast.style.animationDelay).toBe('1700ms');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('reading the settings: says that the settings could not be opened, and the dialog does not open', async () => {
+    const search = await openApp();
+    settingsBroken = true;
+    openSettings(search);
+    const toast = await screen.findByText(
+      'Could not open the settings. Reason: poisoned lock: another task failed inside.',
+    );
+    expect(toast.style.animationDelay).toBe('1700ms');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('in Ukrainian', async () => {
+    language = 'uk';
+    const search = await openApp('Пошук');
+    copy(search);
+    expect(await screen.findByText('Не вдалося скопіювати сніпет. Причина: database is locked.')).toBeInTheDocument();
+    autotype(search);
+    expect(await screen.findByText('Не вдалося надрукувати сніпет. Причина: database is locked.')).toBeInTheDocument();
+    openEdit(search);
+    expect(await screen.findByText('Не вдалося відкрити сніпет. Причина: database is locked.')).toBeInTheDocument();
+    settingsBroken = true;
+    openSettings(search);
+    expect(
+      await screen.findByText('Не вдалося відкрити налаштування. Причина: poisoned lock: another task failed inside.'),
+    ).toBeInTheDocument();
+  });
+
+  it('in German', async () => {
+    language = 'de';
+    const search = await openApp('Suchen');
+    copy(search);
+    expect(await screen.findByText('Das Snippet ließ sich nicht kopieren. Grund: database is locked.')).toBeInTheDocument();
+    autotype(search);
+    expect(
+      await screen.findByText('Das Snippet ließ sich nicht automatisch tippen. Grund: database is locked.'),
+    ).toBeInTheDocument();
+    openEdit(search);
+    expect(await screen.findByText('Das Snippet ließ sich nicht öffnen. Grund: database is locked.')).toBeInTheDocument();
+    settingsBroken = true;
+    openSettings(search);
+    expect(
+      await screen.findByText('Die Einstellungen ließen sich nicht öffnen. Grund: poisoned lock: another task failed inside.'),
+    ).toBeInTheDocument();
   });
 });
 

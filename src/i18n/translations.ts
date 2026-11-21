@@ -74,10 +74,13 @@ export interface TranslationMap {
    */
   snippetSaveFailed: (reason: string) => string;
   snippetDeleteFailed: (reason: string) => string;
-  /** The password dialog, for any failure but a wrong password. */
+  /**
+   * Copying or typing a snippet failed: in the password dialog for any failure but a wrong
+   * password, and as a toast in the main window for a snippet without a password.
+   */
   snippetCopyFailed: (reason: string) => string;
   snippetAutotypeFailed: (reason: string) => string;
-  /** A notice in the main window when a snippet cannot be loaded for editing. */
+  /** A toast in the main window when a snippet cannot be loaded for editing. */
   snippetOpenFailed: (reason: string) => string;
   /**
    * The reason in those messages when the snippet database is damaged (the backend's
@@ -133,6 +136,11 @@ export interface TranslationMap {
    * Nothing was saved.
    */
   settingsSaveFailed: (reason: string) => string;
+  /**
+   * A toast in the main window when the settings could not be read as the settings dialog opens;
+   * the dialog then does not open. `reason` is the backend's error, ended as a sentence.
+   */
+  settingsOpenFailed: (reason: string) => string;
   darkTheme: string;
   lightTheme: string;
   autoLanguage: string;
@@ -259,6 +267,7 @@ const en: TranslationMap = {
     'Could not turn off "Start with Windows": the change was blocked, for example by a policy or security software. QuickSnippets will still start with Windows. The other settings are saved.',
   settingsSaveFailed: (reason) =>
     `Could not save the settings: the file settings.json in the quick-snippets-data folder next to the program cannot be written. Reason: ${reason} Nothing was changed.`,
+  settingsOpenFailed: (reason) => `Could not open the settings. Reason: ${reason}`,
   darkTheme: 'Dark',
   lightTheme: 'Light',
   autoLanguage: 'Same as Windows',
@@ -421,6 +430,7 @@ const uk: TranslationMap = {
     'Не вдалося вимкнути «Запускати разом з Windows»: зміну заблоковано, наприклад політикою чи захисною програмою. QuickSnippets і далі запускатиметься разом з Windows. Інші налаштування збережено.',
   settingsSaveFailed: (reason) =>
     `Не вдалося зберегти налаштування: файл settings.json у теці quick-snippets-data поруч із програмою не записується. Причина: ${reason} Нічого не змінено.`,
+  settingsOpenFailed: (reason) => `Не вдалося відкрити налаштування. Причина: ${reason}`,
   darkTheme: 'Темна',
   lightTheme: 'Світла',
   autoLanguage: 'Як у Windows',
@@ -578,6 +588,7 @@ const de: TranslationMap = {
     '„Mit Windows starten“ ließ sich nicht ausschalten: Die Änderung wurde blockiert, zum Beispiel durch eine Richtlinie oder Sicherheitssoftware. QuickSnippets startet weiterhin mit Windows. Die anderen Einstellungen sind gespeichert.',
   settingsSaveFailed: (reason) =>
     `Die Einstellungen ließen sich nicht speichern: Die Datei settings.json im Ordner quick-snippets-data neben dem Programm kann nicht geschrieben werden. Grund: ${reason} Es wurde nichts geändert.`,
+  settingsOpenFailed: (reason) => `Die Einstellungen ließen sich nicht öffnen. Grund: ${reason}`,
   darkTheme: 'Dunkel',
   lightTheme: 'Hell',
   autoLanguage: 'Wie in Windows',
