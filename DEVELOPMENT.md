@@ -72,8 +72,10 @@ Release workflow його не перевіряють (у workflow Rust став
 
 Коміти, які лише форматують код, записано в `.git-blame-ignore-revs`. GitHub пропускає їх у blame
 сам; щоб і локальний `git blame` їх пропускав, один раз виконайте
-`git config blame.ignoreRevsFile .git-blame-ignore-revs`. Новий такий коміт додавайте у файл
-окремим комітом, повним хешем.
+`git config blame.ignoreRevsFile ":(optional).git-blame-ignore-revs"`. Позначка `:(optional)`
+потрібна: без неї `git blame` падає з «could not open object name list» там, де файлу ще немає
+(на main до наступного випуску, у старих версіях); перевірено з Git 2.56. Новий такий коміт
+додавайте у файл окремим комітом, повним хешем.
 
 ## Перевірка з NVDA (smoke)
 
