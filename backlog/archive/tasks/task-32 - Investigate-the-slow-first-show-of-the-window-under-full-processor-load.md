@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-19T23:24:00Z'
-updated_date: '2026-11-21T21:46:00Z'
+updated_date: '2026-11-21T21:54:00Z'
 labels:
   - investigation
   - performance
@@ -197,6 +197,17 @@ So the change is not part of the product. develop stays at 91d923f plus this tas
 - AC #2: "Where the time goes" and "Findings": the creation of the browser's view (its page process starved at the lowest priority) and the app's 4 s pause; the app can shorten it with one browser argument without the wrong reading for a default start.
 - AC #3: does not apply in the end. The user first chose the change and then, after the check of the final build, had it rolled back («Ні, відкотити зміну»). Measured on the branch before that: a default start under the same load 1.9 to 2.7 s instead of 9 to 14 s, complete, read correctly 3 of 3 (6 of 6 with the measuring build). just smoke and just smoke-tray were not run («Ні, не зараз»).
 - DoD #1 and #2: pass on develop after the rollback. #3: no user-visible change, nothing to add. #4: no new strings. #5: nothing in develop changed; the release exe was rebuilt from develop.
+
+## After the task (managing session, 2026-11-21)
+
+The user's choices in the managing session (question dialog), verbatim: for clearing up after the task «Видалити гілку», «Заархівувати задачі й сесії» and «Файли TASK-48 у C:\Temp»; for pushing develop «Так, надіслати (Рекомендовано)»; for tasks about the two problems under "Noticed" (the wrong reading of the first show by Ctrl+Alt+Space and the window without the keyboard, both only under full load) «Жодної».
+
+- develop with this task's record (9f3cc0f) pushed to origin.
+- The local branch feature/page-process-priority deleted (it was at b4e2001). Its commits d7df175, 2a6143a and b4e2001 are on no branch any more. What the change was stays described under "Fix" (one more argument in the browser arguments), and the measuring tool stays in the managing session's notes folder (task-32-measuring-tool).
+- No tasks created for the problems under "Noticed".
+- This task archived together with TASK-34, TASK-42, TASK-46 and TASK-48.
+
+This note was added by the managing session with the user's go-ahead (the choices above).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
