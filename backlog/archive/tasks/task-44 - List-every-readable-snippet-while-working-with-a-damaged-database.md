@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T08:45:00Z'
-updated_date: '2026-11-21T10:47:00Z'
+updated_date: '2026-11-21T10:50:00Z'
 labels:
   - bug
   - backend
@@ -118,6 +118,14 @@ Nothing in the app: no code, no texts, CHANGELOG.md and CLAUDE.md unchanged (the
 
 1. If a fuller list is ever wanted: the simplest way is `read_snippets_one_by_one` plus a sort in Rust, as in the probe; a snippet with a damaged date would best sort last rather than first, and the notice "Not all snippets are shown" would need another text, since with only an index damaged every snippet is shown.
 2. Today the notice depends on the sort order: with only the date of change index damaged, sorting by title shows every snippet and no notice; with only the title index damaged there is no notice at all, although saving fails (TASK-33 saw this too). Left as it is by the user's choice.
+
+## Check by the managing session (2026-11-21)
+
+- git: develop 0e8ed22 changes only this task's file (git diff 1efae94 0e8ed22); a Backlog-only change needs no feature branch; the working tree is clean.
+- The app's code is unchanged since 1efae94. On the same code `npm run test` (612), `npm run test:rust` (379, 1 ignored) and `npm run lint` passed in the managing session's check of TASK-43, and again in this task's own checks.
+- No new build: src-tauri\target\release\quick-snippets.exe is still TASK-43's build (3,896,320 bytes); real_db unchanged, its newest file quick-snippets-TASK-43-b13702e.exe.
+- The user's autostart values unchanged (entry absent, mark 02 00 00 00 00 00 00 00 00 00 00 00); no copy of the app running; no test folder in %TEMP%; the handover note task-44-damaged-list-handover.md is in the shared notes folder.
+- The user's answers (question dialog, verbatim): archive the task and its session "Так, обидві (Рекомендовано)"; push develop "Так, надіслати (Рекомендовано)"; add the hint of "Noticed" item 1 (a snippet with a damaged date sorts best last) to TASK-45 "Так, дописати (Рекомендовано)"; next "TASK-45" (the recommendation was a release of 0.3.6).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

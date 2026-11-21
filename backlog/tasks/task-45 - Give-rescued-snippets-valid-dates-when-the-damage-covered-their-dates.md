@@ -4,6 +4,7 @@ title: Give rescued snippets valid dates when the damage covered their dates
 status: To Do
 assignee: []
 created_date: '2026-11-21T10:13:00Z'
+updated_date: '2026-11-21T10:50:00Z'
 labels:
   - bug
   - backend
@@ -42,3 +43,11 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 - [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
 - [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Added by the managing session (2026-11-21), from TASK-44
+
+The description suggests filling a damaged date the way a missing one is filled today, for example with the time of the rescue. A snippet whose dates are both damaged (snippet 056 in TASK-43's test database with a sector of 0xA5) would then get the time of the rescue as its date of change, become the newest snippet and again come first in the list sorted by date of change, which acceptance criterion #1 rules out. TASK-44's session, which built a prototype of a fuller list, found that a snippet with a damaged date sorts best last rather than first (its archived notes, "Noticed, no task created", item 1). So look for a filling that does not make such a snippet the newest, for example one that puts it at the end of the default order (newest first) or next to its intact neighbours by id, and show the user the options through the question dialog. The user asked for this note: "Так, дописати (Рекомендовано)".
+<!-- SECTION:NOTES:END -->
