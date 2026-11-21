@@ -128,7 +128,10 @@ mod tests {
     use super::*;
 
     fn snippets(items: &[(i64, &str, bool)]) -> Vec<(i64, String, bool)> {
-        items.iter().map(|(id, t, e)| (*id, t.to_string(), *e)).collect()
+        items
+            .iter()
+            .map(|(id, t, e)| (*id, t.to_string(), *e))
+            .collect()
     }
 
     // === fuzzy_match_single_term ===
