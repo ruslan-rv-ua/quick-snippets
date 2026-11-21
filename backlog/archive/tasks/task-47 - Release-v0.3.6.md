@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T11:45:00Z'
-updated_date: '2026-11-21T12:49:00Z'
+updated_date: '2026-11-21T12:59:00Z'
 labels:
   - release
   - model-sonnet
@@ -91,6 +91,18 @@ Release:
 - The manifest still showed 0.3.5 (the scheduled Excavator runs at 04:20 UTC). The user's answer before running it by hand: «Так, запускай (Рекомендовано)». Excavator run 44905536139 in scoop-bucket passed: commit 0bfe802 "quick-snippets: Update to version 0.3.6"; bucket/quick-snippets.json shows 0.3.6, the v0.3.6 URL and the same hash.
 - The user's answer before the Scoop update: «Так, оновлюй (Рекомендовано)». The data folder was first copied to C:\scoop\persist\quick-snippets\quick-snippets-data-backup-0.3.5-2026-11-21 (SHA-256 of both files identical). scoop update quick-snippets updated Scoop and its buckets, then went 0.3.5 -> 0.3.6 with the hash check OK; current points to 0.3.6, its exe is the one from the release ZIP, quick-snippets-data is still the junction to the persist folder, and the SHA-256 of both data files is the same before and after (settings.json 150E6556C0F72994E90FB39ED17A89BF366E638FF041C42C4EA2586090068412, snippets.db C7C88CB957CCB910CC61A943FC0AB7470D7D105D669E383CD382CFB64305C428). The app was not running and was not started. The 0.3.5 folder stays, so scoop reset quick-snippets@0.3.5 can go back.
 - real_db has the local release build from 4328a9b; f7a453e has the same code (the merge only).
+
+## Check by the managing session (2026-11-21)
+
+- git: main = origin/main = f7a453e (the release merge commit, parents 963ea66 and 4328a9b) with tag v0.3.6, created by the Release workflow; develop = origin/develop = 61450a6; main and develop have the same tree apart from backlog/. Version 0.3.6 in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json on main; CHANGELOG on main: an empty [Unreleased], then "v0.3.6 - 2026-11-21".
+- The last Backlog commit 61450a6 was pushed at 14:52, right after a question to the user; these notes do not quote that answer.
+- Release workflow run 44904993086 on main f7a453e: success.
+- GitHub release v0.3.6: Latest, not a draft or a pre-release; quick-snippets-0.3.6-windows-x64.zip (2,022,555 bytes, GitHub digest sha256:92f875ce0e8382d3dcfabb2804c7ebc70e02730ff29bec28a08b126009fce3ba) and its .sha256; the release notes are exactly the v0.3.6 CHANGELOG section on main without its heading line.
+- scoop-bucket: commit 0bfe802 "quick-snippets: Update to version 0.3.6"; bucket/quick-snippets.json shows 0.3.6, the v0.3.6 URL and the hash 92f875ce...e3ba, the ZIP's digest; Excavator runs 44905536139 and 44905685110 succeeded.
+- The user's Scoop copy: current points to 0.3.6; quick-snippets.exe has file version 0.3.6 and the SHA-256 of the exe in the ZIP (43037E38BE710230A40C8DF89FF180AB9094A1A63141085DD2352AAD4901BA9B); Scoop's cached download of 0.3.6 has the release's SHA-256; quick-snippets-data is still the junction to the persist folder; settings.json and snippets.db have the same SHA-256 as in quick-snippets-data-backup-0.3.5-2026-11-21 (hashes only, nothing opened); the 0.3.5 folder stays for scoop reset.
+- real_db\quick-snippets-TASK-47-4328a9b.exe: SHA-256 147BC2D5F69EE7749F5677F9E7AD60F8F0DB696FB9994AC1F50B1D6C8D79645D, 3,900,416 bytes, file version 0.3.6, the same as src-tauri\target\release\quick-snippets.exe; f7a453e has the same app code as 4328a9b.
+- The user's autostart values unchanged (entry absent, mark 02 00 00 00 00 00 00 00 00 00 00 00); no copy of the app running; no test folder in %TEMP%; the handover note task-47-release-0.3.6-handover.md is in the shared notes folder.
+- The user's answers (question dialog, verbatim): archive the task, its session and the milestone v0.3.6 "Так, усе (Рекомендовано)"; push this note "Так, надіслати (Рекомендовано)"; the five lines with «сповіщення» hidden in the smoke reports (perhaps Claude's own notifications at the end of a session's turn during a run) "Нічого не міняти"; next "TASK-42 (Рекомендовано)".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
