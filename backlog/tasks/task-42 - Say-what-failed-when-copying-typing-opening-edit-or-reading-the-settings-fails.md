@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T00:00:00Z'
-updated_date: '2026-11-21T17:11:00Z'
+updated_date: '2026-11-21T17:31:00Z'
 labels:
   - bug
   - frontend
@@ -140,6 +140,10 @@ So "Query returned no rows" (the note from TASK-33 above) gets the frame of the 
 2. Even a successful copy takes 5 s when another program only writes into the database: `touch_last_used` waits SQLite's busy timeout before the clipboard is written.
 3. The probes of TASK-40 and of this task first held the clipboard with OpenClipboard(NULL), which blocks no other program; a test needs a window of its own, as the verification did.
 4. A typing failure still adds its toast (2 s) to the hidden window; harmless, as nobody sees it.
+
+## The error sound by ear (2026-11-21, managing session)
+
+MessageBeep(MB_ICONERROR), the call `error_sound` makes, played once from a separate PowerShell process with the user's permission ("Так, програти (Рекомендовано)"); the user's sound scheme has C:\WINDOWS\media\Windows Foreground.wav for it. Asked "Чи почули ви звук?", the user answered "Так, почув".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
