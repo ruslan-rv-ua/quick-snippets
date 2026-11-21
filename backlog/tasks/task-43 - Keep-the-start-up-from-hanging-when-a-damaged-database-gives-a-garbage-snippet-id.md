@@ -111,6 +111,10 @@ The other options offered: "Лише названі номери" (only named id
 
 1. The rescue copies a readable snippet with whatever is left of its values. In the 0xA5 test database the sector also covered the text and both dates of snippet 056 (its title is intact): the copy holds them with U+FFFD (TASK-33's repair), and since U+FFFD sorts above any date, snippet 056 comes first in the default list after Yes. A date that is no longer a date could be filled like a missing one (the other date, or the time of the rescue). Not about ids; left for review.
 2. Not tested: a real disk read error (SQLITE_IOERR) during the rescue. `keep_reading` begins the read transaction again after such an error, so the reads stay fast, but no test can make SQLite fail a read.
+
+## Merge (2026-11-21)
+
+Merged into develop with git flow feature finish --no-ff: feature/rescue-garbage-ids (merge 4df96b1; code b13702e, Backlog aec05ca). The tree of develop after the merge is the tree that was tested (git diff aec05ca 4df96b1 is empty). Nothing pushed, no tag, version unchanged; not archived: left to the managing session.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
