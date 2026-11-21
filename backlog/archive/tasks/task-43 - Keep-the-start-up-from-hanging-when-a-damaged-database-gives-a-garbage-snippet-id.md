@@ -7,12 +7,13 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T08:45:00Z'
-updated_date: '2026-11-21T10:13:00Z'
+updated_date: '2026-11-21T11:54:00Z'
 labels:
   - bug
   - backend
   - model-sonnet
   - effort-high
+milestone: m-8
 dependencies: []
 references:
   - src-tauri/src/db.rs

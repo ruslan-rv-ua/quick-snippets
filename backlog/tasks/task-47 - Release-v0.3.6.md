@@ -4,10 +4,12 @@ title: Release v0.3.6
 status: To Do
 assignee: []
 created_date: '2026-11-21T11:45:00Z'
+updated_date: '2026-11-21T11:54:00Z'
 labels:
   - release
   - model-sonnet
   - effort-medium
+milestone: m-8
 dependencies: []
 references:
   - DEVELOPMENT.md
