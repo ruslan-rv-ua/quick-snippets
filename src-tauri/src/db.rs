@@ -338,6 +338,43 @@ fn text_lossy(value: ValueRef<'_>) -> Option<String> {
     }
 }
 
+/// Whether `value` is a date as QuickSnippets writes it: `strftime('%Y-%m-%dT%H:%M:%f', 'now')` in
+/// SQLite, the one format of every version so far, for example `2026-11-21T10:13:05.123`, on a day
+/// the calendar has. Damage can leave anything else in place of a date: U+FFFD, zero bytes,
+/// letters, spaces (TASK-45). A date in this format is a date, even one that lies in the future.
+fn is_app_date(value: &str) -> bool {
+    let b = value.as_bytes();
+    let separators = [(4, b'-'), (7, b'-'), (10, b'T'), (13, b':'), (16, b':'), (19, b'.')];
+    if b.len() != 23 || separators.iter().any(|&(at, separator)| b[at] != separator) {
+        return false;
+    }
+    let number = |from: usize, to: usize| -> Option<u32> {
+        b[from..to]
+            .iter()
+            .try_fold(0, |n, &digit| digit.is_ascii_digit().then(|| n * 10 + u32::from(digit - b'0')))
+    };
+    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second), Some(_)) = (
+        number(0, 4),
+        number(5, 7),
+        number(8, 10),
+        number(11, 13),
+        number(14, 16),
+        number(17, 19),
+        number(20, 23),
+    ) else {
+        return false;
+    };
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    (1..=days).contains(&day) && hour < 24 && minute < 60 && second < 60
+}
+
 /// Adds the ids (and the titles, where the query gives them) that `sql` returns until SQLite
 /// stops at damage.
 fn collect_ids(conn: &Connection, sql: &str, known: &mut BTreeMap<i64, Option<String>>) {
@@ -374,6 +411,8 @@ enum RowRead {
 /// Reads one snippet by its id, the way that still works when other pages are damaged. A title
 /// or the text of a plain snippet that is no longer UTF-8 is repaired with U+FFFD, so that the
 /// snippet can be listed, opened and copied; an encrypted snippet keeps its bytes as they are.
+/// The dates are read as text the same way; [`copy_readable_snippets`] keeps only those that are
+/// still dates.
 fn read_for_rescue(conn: &Connection, id: i64) -> RowRead {
     let read = || -> Result<RowRead> {
         let mut stmt = conn.prepare_cached(
@@ -526,9 +565,39 @@ fn read_snippets_one_by_one(conn: &Connection, keep: &mut dyn FnMut(i64, Rescued
     }
 }
 
+/// Gives the snippets in `undated`, which [`copy_readable_snippets`] stored with '' for a date of
+/// creation or change that damage had overwritten or emptied, the oldest intact date of creation or
+/// change of the snippets copied (`oldest`), by the user's choice in TASK-45. Such a snippet goes to
+/// the end of the lists sorted newest first (by date of change, the default, and by date of
+/// creation), next to the snippet that has that date, and to the start of those sorted oldest first,
+/// instead of to the top. Only when no snippet has an intact date, the time of the rescue. Intact
+/// dates stay as they are.
+fn fill_damaged_dates(conn: &Connection, undated: &[i64], oldest: Option<String>) -> Result<()> {
+    if undated.is_empty() {
+        return Ok(());
+    }
+    let date: String = match oldest {
+        Some(date) => date,
+        None => conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| r.get(0))?,
+    };
+    let mut update = conn.prepare(
+        "UPDATE snippets SET created_at = CASE created_at WHEN '' THEN ?1 ELSE created_at END,
+                             updated_at = CASE updated_at WHEN '' THEN ?1 ELSE updated_at END
+         WHERE id = ?2",
+    )?;
+    for id in undated {
+        update.execute(params![date, id])?;
+    }
+    eprintln!("The rescue filled the damaged dates of {} snippets with {date}", undated.len());
+    Ok(())
+}
+
 /// Copies every snippet of `src` that can still be read into a new database at `dst_path`, with
-/// the same schema (see [`init_db`]), ids, titles, texts and dates; encrypted snippets stay
-/// encrypted, byte for byte. Reads `src` only, one snippet at a time (see
+/// the same schema (see [`init_db`]), ids, titles and texts; encrypted snippets stay encrypted, byte
+/// for byte. Intact dates are copied as they are. A date that damage overwrote or emptied (it is no
+/// longer a date, see [`is_app_date`]) does not come along: a date of creation or change gets the
+/// oldest intact date of the new database (see [`fill_damaged_dates`]), a date of last use is left
+/// empty, as for a snippet never used. Reads `src` only, one snippet at a time (see
 /// [`read_snippets_one_by_one`]): a damaged page loses only the snippets on it, and garbage ids from
 /// it neither count as lost snippets nor make the work longer. The new database's id counter is the
 /// ceiling (see [`snippet_ceiling`]): new snippets get ids after every id the damaged database
@@ -539,15 +608,18 @@ pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescu
     init_db(&dst)?;
     let tx = dst.transaction()?;
     let mut saved = 0;
+    // The oldest intact date of creation or change copied, and the snippets copied with a damaged one.
+    let mut oldest: Option<String> = None;
+    let mut undated = Vec::new();
     let reading = {
+        // A damaged date of creation or change is stored as '' until `fill_damaged_dates` below.
         let mut insert = tx.prepare(
             "INSERT INTO snippets (id, title, content, is_encrypted, created_at, updated_at, last_used_at)
-             VALUES (?1, ?2, ?3, ?4,
-                     COALESCE(?5, ?6, strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-                     COALESCE(?6, ?5, strftime('%Y-%m-%dT%H:%M:%f', 'now')),
-                     ?7)",
+             VALUES (?1, ?2, ?3, ?4, COALESCE(?5, ''), COALESCE(?6, ''), ?7)",
         )?;
+        let date = |value: Option<String>| value.filter(|d| is_app_date(d));
         read_snippets_one_by_one(src, &mut |id, row| {
+            let (created, updated) = (date(row.created_at), date(row.updated_at));
             // A value the schema refuses (a title of a wrong length after damage) loses the snippet.
             let inserted = insert
                 .execute(params![
@@ -555,15 +627,23 @@ pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescu
                     row.title,
                     row.content,
                     row.is_encrypted as i64,
-                    row.created_at,
-                    row.updated_at,
-                    row.last_used_at
+                    created,
+                    updated,
+                    date(row.last_used_at)
                 ])
                 .is_ok();
-            saved += inserted as usize;
+            if inserted {
+                saved += 1;
+                if created.is_none() || updated.is_none() {
+                    undated.push(id);
+                }
+                // Dates in the app's one format sort as text in the order of their times.
+                oldest = [oldest.take(), created, updated].into_iter().flatten().min();
+            }
             inserted
         })
     };
+    fill_damaged_dates(&tx, &undated, oldest)?;
     if !reading.garbage.is_empty() {
         let shown = &reading.garbage[..reading.garbage.len().min(5)];
         eprintln!("The rescue left out ids that name no snippet ({} in all): {shown:?}", reading.garbage.len());
@@ -2552,6 +2632,276 @@ mod tests {
         copy_readable_snippets(&src, &dir.path().join("copy2.db")).unwrap();
         assert!(!src.is_autocommit(), "the caller's transaction is still open");
         src.execute_batch("COMMIT").unwrap();
+    }
+
+    // --- dates that damage overwrote (TASK-45) ---
+
+    /// The dates of a snippet: creation, change, last use.
+    type Dates = (Option<String>, Option<String>, Option<String>);
+
+    /// The dates of every snippet the rescue can read from the database at `path`, as it reads them
+    /// (bytes that are no longer UTF-8 as U+FFFD).
+    fn rescued_dates(path: &Path) -> BTreeMap<i64, Dates> {
+        let conn = open_and_init_db(path).unwrap();
+        let mut dates = BTreeMap::new();
+        read_snippets_one_by_one(&conn, &mut |id, row| {
+            dates.insert(id, (row.created_at, row.updated_at, row.last_used_at));
+            true
+        });
+        dates
+    }
+
+    /// The dates of every snippet of a database.
+    fn dates_of(conn: &Connection) -> BTreeMap<i64, Dates> {
+        all_rows(conn).into_iter().map(|r| (r.0, (Some(r.4), Some(r.5), r.6))).collect()
+    }
+
+    /// The ids of a list in the order the window shows it.
+    fn order_of(conn: &Connection, mode: &str, direction: &str) -> Vec<i64> {
+        list_snippets_sorted(conn, mode, direction).rows.iter().map(|r| r.0).collect()
+    }
+
+    /// `is_app_date` agrees with SQLite itself, which writes every date of the app: a value is such a
+    /// date when strftime gives it back unchanged.
+    #[test]
+    fn test_is_app_date_agrees_with_sqlite() {
+        let conn = Connection::open_in_memory().unwrap();
+        let sqlite_says = |value: &str| -> bool {
+            conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', ?1) IS ?1", params![value], |r| r.get(0))
+                .unwrap()
+        };
+        let now: String = conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| r.get(0)).unwrap();
+        let dates = [
+            now.as_str(),
+            "2026-11-21T10:13:05.123",
+            "2026-04-30T23:59:59.999",
+            "2024-02-29T00:00:00.000",
+            "2000-02-29T12:00:00.500",
+            "0000-01-01T00:00:00.000",
+            "9999-12-31T23:59:59.999",
+            // Damage that turned the year 2026 into 9926 still leaves a date, in the future.
+            "9926-11-07T10:00:00.000",
+        ];
+        let filled = |piece: &str| piece.repeat(23);
+        let not_dates = [
+            String::new(),
+            filled("\u{FFFD}"),
+            filled("\0"),
+            filled("p"),
+            filled("0"),
+            filled("9"),
+            filled(" "),
+            filled("\u{7F}"),
+            format!("2026-11-07T1{}", "\0".repeat(11)),
+            "2026-11-07T100000000000".into(),
+            "2023-02-29T00:00:00.000".into(),
+            "2100-02-29T00:00:00.000".into(),
+            "2026-04-31T00:00:00.000".into(),
+            "2026-00-10T00:00:00.000".into(),
+            "2026-13-10T00:00:00.000".into(),
+            "2026-01-00T00:00:00.000".into(),
+            "2026-01-32T00:00:00.000".into(),
+            "2026-11-21T23:60:00.000".into(),
+            "2026-11-21T23:59:60.000".into(),
+            "2026-11-21 10:13:05.123".into(),
+            "2026-11-21T10:13:05.123Z".into(),
+            "2026-11-21T10:13:05.12".into(),
+            "2026-11-21T10:13:05.1234".into(),
+            "2026-11-21T10:13:05".into(),
+            "2026-11-21".into(),
+            "+026-11-21T10:13:05.123".into(),
+            "2026-11-21T10:13:05.12\u{FFFD}".into(),
+            "\u{FF12}\u{FF10}\u{FF12}\u{FF16}-11-21T10:13:05.123".into(),
+            "1732012345".into(),
+        ];
+        for value in dates {
+            assert!(is_app_date(value), "{value:?}");
+            assert!(sqlite_says(value), "{value:?}");
+        }
+        for value in &not_dates {
+            assert!(!is_app_date(value), "{value:?}");
+            assert!(!sqlite_says(value), "{value:?}");
+        }
+        // SQLite gives the hour 24 back as it is, but the app never writes it: only damage does.
+        assert!(sqlite_says("2026-11-21T24:00:00.000"));
+        assert!(!is_app_date("2026-11-21T24:00:00.000"));
+    }
+
+    /// TASK-43's test database, a sector of 0xA5 in the middle page of snippets, still gives snippet
+    /// 056 with its title, but its text and both dates are U+FFFD. The copy kept those dates up to
+    /// TASK-45, and U+FFFD sorts above every date: after Yes the snippet came first by date of change,
+    /// the default order, and by date of creation. Now both get the oldest intact date of the new
+    /// database: the snippet is last in these lists, and every other date stays as it was.
+    #[test]
+    fn test_copy_readable_snippets_gives_overwritten_dates_the_oldest_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        damage_sector(&path, leaves[leaves.len() / 2], 1, 0xA5);
+        let read = rescued_dates(&path);
+        let is_date = |d: &Option<String>| d.as_deref().is_some_and(is_app_date);
+        let overwritten: Vec<i64> =
+            read.iter().filter(|(_, (c, u, _))| !is_date(c) || !is_date(u)).map(|(&id, _)| id).collect();
+        assert_eq!(overwritten, vec![56], "the sector covers the dates of snippet 056");
+        assert!(read[&56].0.as_deref().is_some_and(|d| d.starts_with('\u{FFFD}')), "{:?}", read[&56]);
+        let oldest = read
+            .iter()
+            .filter(|(id, _)| **id != 56)
+            .flat_map(|(_, (c, u, _))| [c.clone(), u.clone()])
+            .min()
+            .flatten();
+        assert!(oldest.as_deref().is_some_and(is_app_date), "{oldest:?}");
+        let dst_path = dir.path().join("copy.db");
+
+        copy_within(&path, &dst_path, Duration::from_secs(1)).unwrap();
+
+        let dst = open_and_init_db(&dst_path).unwrap();
+        let mut expected = read.clone();
+        expected.insert(56, (oldest.clone(), oldest.clone(), None));
+        assert_eq!(dates_of(&dst), expected, "056 gets the oldest date; every other date byte for byte");
+        let by_change = order_of(&dst, "modified", "desc");
+        assert_eq!(by_change.first(), Some(&COUNT), "the newest snippet comes first again");
+        assert_eq!(by_change.last(), Some(&56));
+        assert_eq!(order_of(&dst, "modified", "asc").first(), Some(&56));
+        // 056 now shares its date of creation with the oldest snippet: equal dates may come either way.
+        let by_creation = order_of(&dst, "created", "desc");
+        assert!(by_creation[by_creation.len() - 2..].contains(&56), "{by_creation:?}");
+        let search: Vec<i64> = list_snippets_for_search(&dst).rows.iter().map(|r| r.0).collect();
+        assert_eq!(search.last(), Some(&56), "equally good search matches keep the order by date of change");
+    }
+
+    /// Damage of a few bytes can hit a single date. A damaged date of creation or change gets the
+    /// oldest intact date, a damaged date of last use is left empty, as for a snippet never used; the
+    /// snippet's other dates, and the dates of every other snippet, stay as they were. A value that is
+    /// still a date in the app's format stays as it is, even one that damage moved into the future.
+    #[test]
+    fn test_copy_readable_snippets_fills_each_overwritten_date_on_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "UPDATE snippets SET last_used_at = strftime('%Y-%m-%dT%H:%M:%f', 'now', '-' || (5000 - id) || ' minutes')
+                 WHERE id IN (45, 47, 60)",
+            )
+            .unwrap();
+        let before = rescued_dates(&path);
+        let text = |date: &Option<String>| date.clone().unwrap().into_bytes();
+        let leaves = pages_of(&path, "snippets", "leaf");
+        overwrite_after(&path, &text(&before[&45].0), Some(&leaves), 0, &[0xA5; 23]);
+        overwrite_after(&path, &text(&before[&46].1), Some(&leaves), 0, &[0; 23]);
+        overwrite_after(&path, &text(&before[&47].2), Some(&leaves), 0, &[b'p'; 23]);
+        overwrite_after(&path, &text(&before[&60].0), Some(&leaves), 0, b"99");
+        let src = open_and_init_db(&path).unwrap();
+        let dst_path = dir.path().join("copy.db");
+
+        copy_readable_snippets(&src, &dst_path).unwrap();
+
+        let dst = open_and_init_db(&dst_path).unwrap();
+        // build_db gives the oldest date to the creation of snippet 001.
+        let oldest = before[&1].0.clone();
+        let mut expected = before.clone();
+        expected.get_mut(&45).unwrap().0 = oldest.clone();
+        expected.get_mut(&46).unwrap().1 = oldest;
+        expected.get_mut(&47).unwrap().2 = None;
+        let future = format!("99{}", &before[&60].0.as_deref().unwrap()[2..]);
+        assert!(is_app_date(&future), "{future}");
+        expected.get_mut(&60).unwrap().0 = Some(future);
+        assert_eq!(dates_of(&dst), expected);
+        assert_eq!(order_of(&dst, "modified", "desc").last(), Some(&46));
+    }
+
+    /// A date of creation or change that comes out of the damaged database empty (NULL: damage can
+    /// change what a row says about its values) is filled like an overwritten one. Up to TASK-45 the
+    /// rescue gave it the snippet's other date, or, when both were empty, the time of the rescue, and
+    /// the snippet became the newest one. Only with no intact date in the whole database is the time
+    /// of the rescue all there is.
+    #[test]
+    fn test_copy_readable_snippets_fills_empty_dates_like_overwritten_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        // The app's table without NOT NULL, so that the test can store what damage can leave.
+        let table = "CREATE TABLE snippets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content BLOB,
+                         is_encrypted INTEGER, created_at TEXT, updated_at TEXT, last_used_at TEXT);
+                     CREATE INDEX idx_snippets_updated_at ON snippets (updated_at DESC);
+                     CREATE UNIQUE INDEX idx_snippets_title ON snippets (title);";
+        let src = Connection::open_in_memory().unwrap();
+        src.execute_batch(&format!(
+            "{table}
+             INSERT INTO snippets VALUES
+                 (1, 'First', X'61', 0, '2026-01-01T10:00:00.000', '2026-01-05T10:00:00.000', NULL),
+                 (2, 'Second', X'62', 0, NULL, NULL, NULL),
+                 (3, 'Third', X'63', 0, NULL, '2026-03-01T10:00:00.000', '2026-03-02T10:00:00.000'),
+                 (4, 'Fourth', X'64', 0, '2026-02-01T10:00:00.000', NULL, NULL);"
+        ))
+        .unwrap();
+        let dst_path = dir.path().join("copy.db");
+
+        copy_readable_snippets(&src, &dst_path).unwrap();
+
+        let dst = open_and_init_db(&dst_path).unwrap();
+        let date = |d: &str| Some(d.to_string());
+        let oldest = date("2026-01-01T10:00:00.000");
+        assert_eq!(
+            dates_of(&dst),
+            BTreeMap::from([
+                (1, (oldest.clone(), date("2026-01-05T10:00:00.000"), None)),
+                (2, (oldest.clone(), oldest.clone(), None)),
+                (3, (oldest.clone(), date("2026-03-01T10:00:00.000"), date("2026-03-02T10:00:00.000"))),
+                (4, (date("2026-02-01T10:00:00.000"), oldest, None)),
+            ])
+        );
+        assert_eq!(order_of(&dst, "modified", "desc"), vec![3, 1, 2, 4]);
+
+        // No intact date in the whole database: the time of the rescue.
+        let src = Connection::open_in_memory().unwrap();
+        src.execute_batch(&format!(
+            "{table} INSERT INTO snippets VALUES (1, 'Only one', X'61', 0, NULL, 'not a date', NULL);"
+        ))
+        .unwrap();
+        let now = || -> String {
+            src.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%f', 'now')", [], |r| r.get(0)).unwrap()
+        };
+        let started = now();
+        let dst_path = dir.path().join("copy2.db");
+        copy_readable_snippets(&src, &dst_path).unwrap();
+        let ended = now();
+        let (created, updated, used) = dates_of(&open_and_init_db(&dst_path).unwrap())[&1].clone();
+        assert_eq!(created, updated);
+        let created = created.unwrap();
+        assert!(is_app_date(&created) && started <= created && created <= ended, "{started} {created} {ended}");
+        assert_eq!(used, None);
+    }
+
+    /// The whole start-up path with TASK-43's database and Yes: the list by date of change, newest
+    /// first, the default order, starts with the newest snippet again and ends with snippet 056,
+    /// whose dates the sector overwrote. Up to TASK-45 056 came first.
+    #[test]
+    fn test_rescue_if_damaged_yes_puts_a_snippet_with_overwritten_dates_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        damage_sector(&path, leaves[leaves.len() / 2], 1, 0xA5);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let db_path = path.clone();
+        std::thread::spawn(move || {
+            let conn = open_and_init_db(&db_path).unwrap();
+            let mut asked = Vec::new();
+            let outcome = rescue_if_damaged(&db_path, conn, STAMP, &mut |d| {
+                asked.push(d.clone());
+                true
+            });
+            tx.send((asked, matches!(outcome, RescueOutcome::Reopen))).ok();
+        });
+        let (asked, reopened) = rx.recv_timeout(Duration::from_secs(1)).expect("the rescue ends within a second");
+
+        let [RescueDialog::Offer { rescue, .. }] = asked.as_slice() else { panic!("{asked:?}") };
+        assert!(reopened, "Yes opens the new database");
+        let conn = open_and_init_db(&path).unwrap();
+        assert_eq!(check_health(&conn), Health::Healthy);
+        let by_change = order_of(&conn, "modified", "desc");
+        assert_eq!(by_change.len(), rescue.saved);
+        assert_eq!(by_change.first(), Some(&COUNT));
+        assert_eq!(by_change.last(), Some(&56));
     }
 
     /// The rescue's own new file sits next to the damaged database.
