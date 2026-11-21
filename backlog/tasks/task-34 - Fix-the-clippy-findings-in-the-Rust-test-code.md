@@ -78,6 +78,8 @@ Checks:
 - Locally clippy with test code took about 0.5 s longer than without (incremental build); not measured on a clean CI runner.
 
 Not done here: the Release workflow dry_run with the new lint (needs a push): left to the managing session and the user. No CHANGELOG entry: nothing a user can notice (test code, lint and docs only). Only test code changed in the app crate, so no release build and no copy to real_db; no focus, dialog or announcement change, so no `just smoke`.
+
+Merged into develop (4bcd67e, git flow feature finish --no-ff); not pushed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
