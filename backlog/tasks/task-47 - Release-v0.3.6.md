@@ -1,11 +1,11 @@
 ---
 id: TASK-47
 title: Release v0.3.6
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T11:45:00Z'
-updated_date: '2026-11-21T12:01:00Z'
+updated_date: '2026-11-21T12:49:00Z'
 labels:
   - release
   - model-sonnet
@@ -32,21 +32,21 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Version 0.3.6 in src-tauri/Cargo.toml, src-tauri/tauri.conf.json and package.json; `just final-checks` passes
-- [ ] #2 CHANGELOG.md has a v0.3.6 section with user-facing notes only, and the GitHub release notes are that section
-- [ ] #3 `just smoke` and `just smoke-tray` pass on the release build (run only with the user's permission)
-- [ ] #4 git flow release finished with --no-ff: main and develop contain the release and main has a release merge commit; tag v0.3.6 created by the Release workflow
-- [ ] #5 The GitHub release has the ZIP and its .sha256, and the Scoop manifest shows 0.3.6 after Excavator runs
-- [ ] #6 The release build is copied to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-47-<short commit>.exe
+- [x] #1 Version 0.3.6 in src-tauri/Cargo.toml, src-tauri/tauri.conf.json and package.json; `just final-checks` passes
+- [x] #2 CHANGELOG.md has a v0.3.6 section with user-facing notes only, and the GitHub release notes are that section
+- [x] #3 `just smoke` and `just smoke-tray` pass on the release build (run only with the user's permission)
+- [x] #4 git flow release finished with --no-ff: main and develop contain the release and main has a release merge commit; tag v0.3.6 created by the Release workflow
+- [x] #5 The GitHub release has the ZIP and its .sha256, and the Scoop manifest shows 0.3.6 after Excavator runs
+- [x] #6 The release build is copied to C:\5-quicksnippets\real_db\ as quick-snippets-TASK-47-<short commit>.exe
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 `npm run test:all` passes
-- [ ] #2 `npm run lint` passes
-- [ ] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
-- [ ] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
-- [ ] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
+- [x] #1 `npm run test:all` passes
+- [x] #2 `npm run lint` passes
+- [x] #3 CHANGELOG.md [Unreleased] updated for user-visible changes only (no tooling, test, CI or build details)
+- [x] #4 New user-facing strings exist in en, uk and de (src/i18n/translations.ts)
+- [x] #5 After changes to focus, dialogs or screen reader announcements: release exe rebuilt and `just smoke` passes (ask the user before running it)
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -62,3 +62,39 @@ Recommended setup: Claude Sonnet 5.5 (`/model sonnet`), effort medium (`/effort 
 8. Excavator in scoop-bucket; manifest shows 0.3.6 and the same hash. Back up C:\scoop\persist\quick-snippets\quick-snippets-data with checksums, scoop update quick-snippets (with the user's go-ahead), checksums after match; the app is not started.
 9. Notes, acceptance criteria, final summary, status Done (not archived); hand-over note task-47-release-0.3.6-handover.md.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checks before the release:
+- CHANGELOG [Unreleased] held only user-visible changes: Added (1: the start-up check of the database and the rescue, with the TASK-45 sentence about dates) and Fixed (3: the notice about a damaged list, the damage errors, the dialog errors of TASK-40). No tooling, test, CI or build details.
+- Formats unchanged since v0.3.5 (963ea66): init_db (table, indexes, user_version 1) is untouched; the everyday writes to snippets.db are the same statements; the rescue builds its new database with the same init_db and copies the same columns, dates only in the app's format; settings.rs is untouched, so settings.json is the same; crypto.rs only names the existing "Wrong password" text as a constant, the blob formats are unchanged. So 0.3.6 stays a patch release and going back to 0.3.5 stays safe; no new question about the version.
+
+Checks on release/0.3.6 (version bump 4328a9b):
+- npm run test:all: 612 Vitest tests in 26 files and 384 Rust tests (1 ignored), all pass. npm run lint: pass.
+- just final-checks: versions match (0.3.6), all automated checks pass; exe 3.7 MB.
+- npx tauri build --no-bundle: OK, exe 3,900,416 bytes, file version 0.3.6, SHA-256 147BC2D5F69EE7749F5677F9E7AD60F8F0DB696FB9994AC1F50B1D6C8D79645D.
+- The user's answer before just smoke: «Так, запускай (Рекомендовано)».
+- just smoke on that release exe: 91 of 91 steps OK, NVDA checks 356 of 356, 3 min 22 s. The settings dialog reads "QuickSnippets версія 0.3.6". The NVDA log had 1 error, the known script_caret_newLine of NVDA itself (Enter in a text field). Three lines of captured speech (steps 10, 22 and 39) held the word «сповіщення», which no string of the app has: probably notifications of other programs. They were not read and were replaced with a "hidden" mark in the run log and in %TEMP%\quick-snippets-smoke-report.txt.
+- The user's answer before just smoke-tray: «Так, запускай (Рекомендовано)».
+- just smoke-tray on the same exe, about nine minutes later: 92 of 92 steps OK, NVDA checks 355 of 355, 3 min 30 s. The window did not appear during the start in the tray (step 1), and NVDA read the first Ctrl+Alt+Space properly (step 2); version 0.3.6. The NVDA log had 1 error, the same known script_caret_newLine. Two lines of captured speech (steps 7 and 21) with «сповіщення» were hidden unread in the same way.
+- The user's autostart values were the same before the runs and after each of them (no Run entry; the old StartupApproved mark Binary 02 00 00 00 00 00 00 00 00 00 00 00), according to the reports and a separate read-only check, also at the end of the task. No app process and no quick-snippets* folder in %TEMP% after each run.
+- No new user-facing strings in this task.
+- The release build is copied to C:\5-quicksnippets\real_db\quick-snippets-TASK-47-4328a9b.exe (same SHA-256 as the build).
+
+Release:
+- git flow release finish 0.3.6 --no-ff --notag --no-push: main got the release merge commit f7a453e "Merge branch 'release/0.3.6'" (parents 963ea66 and 4328a9b); develop got merge 543956d. main and develop have the same tree, and no local tag was created.
+- The user's answer before the push: «Так, надсилай (Рекомендовано)». Pushed main and develop (no tags); CI did not start on the push.
+- The user's answer before the Release workflow: «Так, запускай (Рекомендовано)». Release workflow run 44904993086 on main f7a453e passed in about 4 min: build, lint, Vitest and Rust tests, Tauri build, ZIP, tag push and the release step all succeeded. Tag v0.3.6 is on f7a453e.
+- Release https://github.com/ruslan-rv-ua/quick-snippets/releases/tag/v0.3.6 (Latest, not a pre-release) has quick-snippets-0.3.6-windows-x64.zip (2,022,555 bytes) and its .sha256; the checksum 92f875ce0e8382d3dcfabb2804c7ebc70e02730ff29bec28a08b126009fce3ba matches the downloaded ZIP and the digest GitHub shows. The ZIP holds quick-snippets.exe (file version 0.3.6, 3,885,568 bytes, SHA-256 43037E38BE710230A40C8DF89FF180AB9094A1A63141085DD2352AAD4901BA9B), LICENSE and README.md.
+- The user's answer before replacing the notes: «Так, замінюй (Рекомендовано)». The generated notes ("Full Changelog" link only) were replaced with the v0.3.6 CHANGELOG section without its heading line, as for 0.3.5; checked to be identical to that section on main.
+- The manifest still showed 0.3.5 (the scheduled Excavator runs at 04:20 UTC). The user's answer before running it by hand: «Так, запускай (Рекомендовано)». Excavator run 44905536139 in scoop-bucket passed: commit 0bfe802 "quick-snippets: Update to version 0.3.6"; bucket/quick-snippets.json shows 0.3.6, the v0.3.6 URL and the same hash.
+- The user's answer before the Scoop update: «Так, оновлюй (Рекомендовано)». The data folder was first copied to C:\scoop\persist\quick-snippets\quick-snippets-data-backup-0.3.5-2026-11-21 (SHA-256 of both files identical). scoop update quick-snippets updated Scoop and its buckets, then went 0.3.5 -> 0.3.6 with the hash check OK; current points to 0.3.6, its exe is the one from the release ZIP, quick-snippets-data is still the junction to the persist folder, and the SHA-256 of both data files is the same before and after (settings.json 150E6556C0F72994E90FB39ED17A89BF366E638FF041C42C4EA2586090068412, snippets.db C7C88CB957CCB910CC61A943FC0AB7470D7D105D669E383CD382CFB64305C428). The app was not running and was not started. The 0.3.5 folder stays, so scoop reset quick-snippets@0.3.5 can go back.
+- real_db has the local release build from 4328a9b; f7a453e has the same code (the merge only).
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Released v0.3.6, a patch release with the changes made after 0.3.5: QuickSnippets checks the snippet database at every start and, when it is damaged inside, offers to move every snippet that can still be read into a new database and keeps the damaged file (TASK-33), without hanging on garbage ids from a damaged page (TASK-43) and with usable dates for moved snippets whose dates the damage destroyed (TASK-45); the list says when damage cut it short and damage errors are named as such (TASK-33); and a delete, save, copy or type that fails is shown inside its dialog (TASK-40). TASK-44 changed nothing. The database and settings formats are unchanged, so going back to 0.3.5 stays safe. Version bumped in the three files and both lock files, [Unreleased] turned into the v0.3.6 CHANGELOG section, git flow release finished with --no-ff so main has the release merge commit f7a453e. The Release workflow passed, created tag v0.3.6 and published the ZIP and .sha256; the release notes are the changelog section, and Excavator (run by hand with the user's go-ahead) updated the Scoop manifest to 0.3.6 with the matching hash. Verified with npm run test:all (612 Vitest, 384 Rust), npm run lint, just final-checks, just smoke (91/91 steps, 356/356 NVDA checks), just smoke-tray (92/92, 355/355) and the published checksum. Both runs captured a few lines of speech that were probably notifications of other programs; they were hidden unread. The user's Scoop copy is updated to 0.3.6 after a backup of its data folder; the data checksums match before and after. Follow-up for the user: one real Windows sign-in with Start with Windows on, since the quoted entry used since 0.3.5 was only checked by the smoke test, not by a real sign-in.
+<!-- SECTION:FINAL_SUMMARY:END -->
