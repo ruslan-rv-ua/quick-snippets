@@ -98,6 +98,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - Tauri APIs (`invoke`, `listen`, `emit`, `getCurrentWindow`) are mocked globally in setup.
 - TypeScript strict mode with `noUnusedLocals` and `noUnusedParameters` enforced.
 - Test files follow pattern: `src/**/__tests__/*.test.{ts,tsx}`.
+- A key press or a focus check after something the mocked backend answers (rendering the app, opening a dialog, Save) comes after `await settle()` ([src/test/settle.ts](src/test/settle.ts)), called right after that action, not after `waitFor`/`findBy…`: key handlers (`useModalKeyboard`, `useKeyboard`) and a dialog's first focus are set in effects, React 19 runs effects in a later step than the screen update, and on a busy computer the key reached the handler from before the answer (TASK-46). Do not put the action itself inside an async `act`: a click there no longer renders at once, and its update can merge with the answer's.
 
 ### Release & CI
 
