@@ -32,11 +32,8 @@ import { KeyboardHelpModal } from './components/KeyboardHelpModal';
 import { ToastContainer } from './components/ToastContainer';
 
 import type { SearchResult } from './types';
-import { failureMessage, ipcErrorToString, isDamage } from './utils/errors';
+import { DAMAGE_TOAST_MS, failureMessage, ipcErrorToString, isDamage } from './utils/errors';
 import './styles/theme.css';
-
-/** A notice about damage holds a sentence of advice: it stays long enough to be read. */
-export const DAMAGE_TOAST_MS = 8000;
 
 function getSortLabelKey(mode: string, direction: string): string {
   const map: Record<string, string> = {

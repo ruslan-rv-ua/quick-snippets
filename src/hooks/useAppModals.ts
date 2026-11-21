@@ -3,10 +3,7 @@ import type { SearchResult } from '../types';
 import { getSnippetById } from './useIpc';
 import { useLanguage } from './useLanguage';
 import { useModalState, type ModalState } from './useModalState';
-import { failureMessage, ipcErrorToString, isDamage } from '../utils/errors';
-
-/** A notice about damage holds a sentence of advice: it stays long enough to be read. */
-const DAMAGE_TOAST_MS = 8000;
+import { DAMAGE_TOAST_MS, failureMessage, ipcErrorToString, isDamage } from '../utils/errors';
 
 /**
  * Options for useAppModals hook.

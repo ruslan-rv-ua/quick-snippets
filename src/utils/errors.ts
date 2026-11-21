@@ -50,6 +50,9 @@ export function isSnippetDamaged(message: string): boolean {
   return message === SNIPPET_DAMAGED;
 }
 
+/** How long a notice about damage stays: it holds a sentence of advice to be read. */
+export const DAMAGE_TOAST_MS = 8000;
+
 /** Either kind of damage. */
 export function isDamage(message: string): boolean {
   return isDatabaseDamaged(message) || isSnippetDamaged(message);

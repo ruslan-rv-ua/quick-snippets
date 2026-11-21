@@ -295,10 +295,13 @@ describe('SnippetList', () => {
       );
     }
 
-    it('says so above the list, not that there are no snippets yet', () => {
+    it('says so where "no snippets yet" stood, inside the empty list', () => {
       renderList({ snippets: [], damaged: true });
-      expect(screen.getByText(/Not all snippets are shown: the snippet database is damaged\. Restart QuickSnippets/)).toBeInTheDocument();
+      const notice = screen.getByText(/Not all snippets are shown: the snippet database is damaged\. Restart QuickSnippets/);
       expect(screen.queryByText(/no snippets yet/i)).not.toBeInTheDocument();
+      // The list keeps a child: a list that empties under the selection made NVDA say
+      // "unknown, application" when it had none.
+      expect(document.getElementById('snippet-list')).toContainElement(notice);
     });
 
     it('says so instead of "no results" for a search', () => {
@@ -310,7 +313,9 @@ describe('SnippetList', () => {
     it('keeps the snippets it could read, under the notice', () => {
       renderList({ damaged: true });
       expect(screen.getByText('Alpha')).toBeInTheDocument();
-      expect(document.getElementById('list-damaged')).toBeInTheDocument();
+      const notice = document.getElementById('list-damaged');
+      expect(notice).toBeInTheDocument();
+      expect(document.getElementById('snippet-list')).not.toContainElement(notice);
     });
 
     it('shows no notice for a complete list', () => {

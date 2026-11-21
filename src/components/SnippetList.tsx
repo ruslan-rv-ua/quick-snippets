@@ -151,7 +151,7 @@ export function SnippetList({
         {damageLiveText}
       </div>
 
-      {damaged && (
+      {damaged && !isEmpty && (
         <p id="list-damaged" className="list-notice">
           {t('listDamaged')}
         </p>
@@ -163,6 +163,11 @@ export function SnippetList({
         role="listbox"
         className="snippet-list"
       >
+        {/* An empty list keeps its one child where "no snippets yet" stands: a list that empties
+            under the selection (a sort) left NVDA on "unknown, application" when it had none. */}
+        {isEmpty && damaged && (
+          <div id="list-damaged" className="empty-state">{t('listDamaged')}</div>
+        )}
         {isEmpty && !damaged && query === '' && (
           <div className="empty-state">{t('noSnippets')}</div>
         )}
