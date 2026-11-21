@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T08:45:00Z'
-updated_date: '2026-11-21T10:01:00Z'
+updated_date: '2026-11-21T10:13:00Z'
 labels:
   - bug
   - backend
@@ -115,6 +115,16 @@ The other options offered: "Лише названі номери" (only named id
 ## Merge (2026-11-21)
 
 Merged into develop with git flow feature finish --no-ff: feature/rescue-garbage-ids (merge 4df96b1; code b13702e, Backlog aec05ca). The tree of develop after the merge is the tree that was tested (git diff aec05ca 4df96b1 is empty). Nothing pushed, no tag, version unchanged; not archived: left to the managing session.
+
+## Check by the managing session (2026-11-21)
+
+- git: develop 1841dd8 = merge 4df96b1 of feature/rescue-garbage-ids (code b13702e, Backlog aec05ca) plus the Backlog commit; the feature branch is gone; the app code at b13702e is the same as on develop (only backlog/ differs).
+- `npm run test` 612 passed, `npm run test:rust` 379 passed (1 ignored: the crypto timing report, as before), `npm run lint` passes.
+- Code review of db.rs: every loop is bounded (named ids up to 2^53-1, the walk up to the ceiling and at most 1,000,000 ids); the new counter is the ceiling, never below an id copied; no arithmetic on ids from the file can overflow; the read transaction on the damaged file is ended in every path, so No goes on with a connection outside any transaction (a test covers it); the doc of copy_readable_snippets now says rightly that rescue_if_damaged removes an old rescue file first.
+- My own probe (the app's db.rs compiled into a small program, rusqlite 0.32.1 / SQLite 3.46.0, opt-level "z"), test databases only: the database that hung TASK-33's code (0xA5 in sector 1 of the page holding snippet 050) now 27.7 ms, 87 saved, 3 lost, 90 in all, new counter 90, the garbage id 5374248273442940325 only in the log. A sweep of 520 damaged copies of a 90-snippet database (every page but the first, every sector, fills 00, 7F, A5, FF and random bytes): slowest 137 ms; none counted more than 90 snippets; none left out a snippet that Python's SQLite 3.50.4 could read by id; the new counter was 90 every time.
+- real_db\quick-snippets-TASK-43-b13702e.exe: SHA-256 0117F005994015C9F4F254F8CCC9530C2731F1017D1633F9B56BF23C2169D0F5, 3,896,320 bytes, the same as src-tauri\target\release\quick-snippets.exe.
+- The user's autostart values unchanged (entry absent, mark 02 00 00 00 00 00 00 00 00 00 00 00); no copy of the app running; no test folder left in %TEMP%; the handover note task-43-rescue-hang-handover.md is in the shared notes folder.
+- The user's answers (question dialog, verbatim): archive the task and its session "Так, обидві (Рекомендовано)"; push develop "Так, надіслати (Рекомендовано)"; the damaged dates noticed by the session "Нова задача на потім (Рекомендовано)", now TASK-45 (low, Later); next "TASK-44 (Рекомендовано)".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
