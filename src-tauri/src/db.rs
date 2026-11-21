@@ -408,35 +408,138 @@ fn read_for_rescue(conn: &Connection, id: i64) -> RowRead {
     read().unwrap_or(RowRead::Unreadable)
 }
 
-/// Copies every snippet of `src` that can still be read into a new database at `dst_path`, with
-/// the same schema (see [`init_db`]), ids, titles, texts and dates; encrypted snippets stay
-/// encrypted, byte for byte. Reads `src` only.
+/// The highest id a snippet can have. The window gets ids as JavaScript numbers, which hold whole
+/// numbers exactly only up to 2^53 - 1, so QuickSnippets never had a snippet with a higher id: in
+/// a damaged file such an id is garbage. This also keeps the ids of new snippets within reach.
+const MAX_SNIPPET_ID: i64 = (1 << 53) - 1;
+
+/// How far above the highest id that could be read the id counter of a damaged database, or an
+/// id its title index names, is still trusted (see [`snippet_ceiling`]).
+const ID_MARGIN: i64 = 100_000;
+
+/// The most ids that no scan or index named which [`read_snippets_one_by_one`] tries: about half a
+/// second, whatever the damaged file says.
+const MAX_TRIED_IDS: i64 = 1_000_000;
+
+/// The highest id a real snippet of a damaged database can have. QuickSnippets gives ids one by
+/// one and never gives an id twice (AUTOINCREMENT), so the id counter of the database is this
+/// ceiling, as long as it agrees with what could be read: not below the highest id that could be
+/// read (`top`) and at most [`ID_MARGIN`] above it. Otherwise the counter is damaged too, and the
+/// ceiling is `top`, or the highest id that the title index names (`titled`) up to ID_MARGIN above
+/// it. Ids from a damaged page that lie above the ceiling cannot raise it: a sector of 0xA5 gives a
+/// scan the id 5374248273442940325.
+fn snippet_ceiling(top: i64, counter: Option<i64>, titled: impl Iterator<Item = i64>) -> i64 {
+    let limit = top.saturating_add(ID_MARGIN).min(MAX_SNIPPET_ID);
+    match counter {
+        Some(seq) if (top..=limit).contains(&seq) => seq,
+        _ => titled.filter(|&id| id <= limit).fold(top, i64::max),
+    }
+}
+
+/// Keeps `conn` in a read transaction, and begins it again when an error (a failed read) has ended
+/// it. Inside one, SQLite takes the lock of the file once instead of at every statement: a snippet
+/// read by its id takes 0.4-0.85 µs instead of about 27 µs. Reading changes nothing in the file.
+fn keep_reading(conn: &Connection) {
+    if conn.is_autocommit() {
+        conn.execute_batch("BEGIN").ok();
+    }
+}
+
+/// What [`read_snippets_one_by_one`] found besides the snippets it handed over.
+struct Reading {
+    /// The highest id a real snippet of the database can have (see [`snippet_ceiling`]).
+    ceiling: i64,
+    /// The snippets that exist but cannot be read, or that the caller could not keep, in the order
+    /// of their ids, with their titles where they are known.
+    lost: Vec<Option<String>>,
+    /// Ids that a scan or an index named but that are no snippet: above the ceiling, 0 or below.
+    /// Pieces of a damaged page; only for the log.
+    garbage: Vec<i64>,
+}
+
+/// Reads every snippet of a damaged database that can still be read, one by one by its id, and
+/// gives each to `keep`, which returns whether it kept it. A damaged page can give a scan any id,
+/// so the work is bounded whatever the file holds:
 ///
-/// The ids come from a scan of the table in both directions and from both indexes, each up to
-/// the first damaged page, and every id up to the highest one is then read on its own: a
-/// damaged page loses only the snippets on it. The titles of the lost ones come from the title
-/// index. A file at `dst_path` is written over; an error leaves it half written.
-pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescue> {
-    let mut known: BTreeMap<i64, Option<String>> = BTreeMap::new();
-    collect_ids(src, "SELECT id, title FROM snippets INDEXED BY idx_snippets_title", &mut known);
-    collect_ids(src, "SELECT id, NULL FROM snippets INDEXED BY idx_snippets_updated_at", &mut known);
-    collect_ids(src, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id", &mut known);
-    collect_ids(src, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id DESC", &mut known);
-    let known_max = known.keys().next_back().copied().unwrap_or(0);
-    // The id counter may name ids that no scan reached; it is trusted only so far.
-    let counter: Option<i64> = src
+/// 1. The ids come from a scan of the table in both directions and from both indexes, each up to
+///    the first damaged page; the title index also gives the titles. Every named id from 1 to
+///    [`MAX_SNIPPET_ID`] is read on its own: a damaged page loses only the snippets on it.
+/// 2. The ceiling comes from what could be read (see [`snippet_ceiling`]).
+/// 3. The ids up to the ceiling that no scan named are tried as well, at most [`MAX_TRIED_IDS`].
+/// 4. A named id up to the ceiling that cannot be read is a lost snippet, named by the title index
+///    where it still has it. Any other named id is garbage.
+///
+/// Reads `conn` only, in a read transaction (see [`keep_reading`]) that it ends again; a
+/// transaction the caller began stays open.
+fn read_snippets_one_by_one(conn: &Connection, keep: &mut dyn FnMut(i64, RescuedRow) -> bool) -> Reading {
+    let caller_transaction = !conn.is_autocommit();
+    keep_reading(conn);
+    let mut named: BTreeMap<i64, Option<String>> = BTreeMap::new();
+    collect_ids(conn, "SELECT id, title FROM snippets INDEXED BY idx_snippets_title", &mut named);
+    collect_ids(conn, "SELECT id, NULL FROM snippets INDEXED BY idx_snippets_updated_at", &mut named);
+    collect_ids(conn, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id", &mut named);
+    collect_ids(conn, "SELECT id, NULL FROM snippets NOT INDEXED ORDER BY id DESC", &mut named);
+    let counter: Option<i64> = conn
         .query_row("SELECT seq FROM sqlite_sequence WHERE name = 'snippets'", [], |r| r.get(0))
         .ok();
-    let last_id = match counter {
-        Some(seq) if seq > known_max => seq.min(known_max + 100_000),
-        _ => known_max,
-    };
 
+    // Snippets that exist but were not kept, with their titles where known.
+    let mut missed: BTreeMap<i64, Option<String>> = BTreeMap::new();
+    // Reads one id and hands the snippet over; true when the caller kept it.
+    let mut try_one = |id: i64, index_title: Option<&String>| -> bool {
+        keep_reading(conn);
+        match read_for_rescue(conn, id) {
+            RowRead::Row(row) => {
+                let title = row.title.clone();
+                if keep(id, row) {
+                    return true;
+                }
+                missed.insert(id, Some(title));
+            }
+            // Not even named: a deleted snippet.
+            RowRead::Missing | RowRead::Unreadable if !named.contains_key(&id) => {}
+            RowRead::Missing | RowRead::Unreadable => {
+                missed.insert(id, index_title.cloned());
+            }
+        }
+        false
+    };
+    let mut top = 0;
+    for (&id, title) in named.range(1..=MAX_SNIPPET_ID) {
+        if try_one(id, title.as_ref()) {
+            top = id;
+        }
+    }
+    let titled = named.iter().filter(|(_, title)| title.is_some()).map(|(&id, _)| id);
+    let ceiling = snippet_ceiling(top, counter, titled);
+    for id in (1..=ceiling.min(MAX_TRIED_IDS)).filter(|id| !named.contains_key(id)) {
+        try_one(id, None);
+    }
+
+    if !caller_transaction && !conn.is_autocommit() {
+        conn.execute_batch("ROLLBACK").ok();
+    }
+    Reading {
+        ceiling,
+        lost: missed.range(1..=ceiling).map(|(_, title)| title.clone()).collect(),
+        garbage: named.keys().copied().filter(|id| !(1..=ceiling).contains(id)).collect(),
+    }
+}
+
+/// Copies every snippet of `src` that can still be read into a new database at `dst_path`, with
+/// the same schema (see [`init_db`]), ids, titles, texts and dates; encrypted snippets stay
+/// encrypted, byte for byte. Reads `src` only, one snippet at a time (see
+/// [`read_snippets_one_by_one`]): a damaged page loses only the snippets on it, and garbage ids from
+/// it neither count as lost snippets nor make the work longer. The new database's id counter is the
+/// ceiling (see [`snippet_ceiling`]): new snippets get ids after every id the damaged database
+/// used, and never after a garbage one. The caller removes an old file at `dst_path` first; an
+/// error leaves the new one half written.
+pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescue> {
     let mut dst = Connection::open(dst_path)?;
     init_db(&dst)?;
     let tx = dst.transaction()?;
-    let mut rescue = Rescue::default();
-    {
+    let mut saved = 0;
+    let reading = {
         let mut insert = tx.prepare(
             "INSERT INTO snippets (id, title, content, is_encrypted, created_at, updated_at, last_used_at)
              VALUES (?1, ?2, ?3, ?4,
@@ -444,44 +547,44 @@ pub fn copy_readable_snippets(src: &Connection, dst_path: &Path) -> Result<Rescu
                      COALESCE(?6, ?5, strftime('%Y-%m-%dT%H:%M:%f', 'now')),
                      ?7)",
         )?;
-        for id in 1..=last_id {
-            match read_for_rescue(src, id) {
-                RowRead::Row(row) => {
-                    let inserted = insert.execute(params![
-                        id,
-                        row.title,
-                        row.content,
-                        row.is_encrypted as i64,
-                        row.created_at,
-                        row.updated_at,
-                        row.last_used_at
-                    ]);
-                    match inserted {
-                        Ok(_) => rescue.saved += 1,
-                        // A value the schema refuses (a title of a wrong length after damage).
-                        Err(_) => rescue.add_lost(Some(row.title)),
-                    }
-                }
-                // Not known to exist: a deleted snippet, or one no index names any more.
-                RowRead::Missing | RowRead::Unreadable if !known.contains_key(&id) => {}
-                RowRead::Missing | RowRead::Unreadable => {
-                    rescue.add_lost(known.get(&id).cloned().flatten())
-                }
-            }
-        }
+        read_snippets_one_by_one(src, &mut |id, row| {
+            // A value the schema refuses (a title of a wrong length after damage) loses the snippet.
+            let inserted = insert
+                .execute(params![
+                    id,
+                    row.title,
+                    row.content,
+                    row.is_encrypted as i64,
+                    row.created_at,
+                    row.updated_at,
+                    row.last_used_at
+                ])
+                .is_ok();
+            saved += inserted as usize;
+            inserted
+        })
+    };
+    if !reading.garbage.is_empty() {
+        let shown = &reading.garbage[..reading.garbage.len().min(5)];
+        eprintln!("The rescue left out ids that name no snippet ({} in all): {shown:?}", reading.garbage.len());
     }
-    // New snippets get ids after every id the damaged database used. sqlite_sequence has no key:
-    // its one row for the table is changed, or added when no snippet was copied.
+    // sqlite_sequence has no key: its one row for the table is changed, or added when no snippet
+    // was copied. The inserts above have raised it to the highest id copied; the ceiling is not
+    // lower than that.
     tx.execute(
         "UPDATE sqlite_sequence SET seq = MAX(seq, ?1) WHERE name = 'snippets'",
-        params![last_id],
+        params![reading.ceiling],
     )?;
     tx.execute(
         "INSERT INTO sqlite_sequence (name, seq) SELECT 'snippets', ?1
          WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'snippets')",
-        params![last_id],
+        params![reading.ceiling],
     )?;
     tx.commit()?;
+    let mut rescue = Rescue { saved, ..Rescue::default() };
+    for title in reading.lost {
+        rescue.add_lost(title);
+    }
     Ok(rescue)
 }
 
@@ -892,6 +995,17 @@ pub(crate) mod test_damage {
         std::fs::write(path, bytes).unwrap();
     }
 
+    /// Fills sector `sector` (512 bytes) of page `page` with `byte`, as a damaged disk sector can.
+    /// The page header in sector 0 stays, so SQLite still reads cells from the rest of the page,
+    /// and a cell that now starts in the filled bytes gives a garbage id: nine bytes of 0xA5 read
+    /// as the id 5374248273442940325, 0x7F as the id 127.
+    pub fn damage_sector(path: &Path, page: i64, sector: usize, byte: u8) {
+        let mut bytes = std::fs::read(path).unwrap();
+        let start = (page as usize - 1) * 4096 + sector * 512;
+        bytes[start..start + 512].fill(byte);
+        std::fs::write(path, bytes).unwrap();
+    }
+
     /// Damages the middle page of snippets of a database made by [`build_db`] and returns the ids
     /// that can no longer be read.
     pub fn damage_middle_leaf(path: &Path, count: i64) -> Vec<i64> {
@@ -924,6 +1038,7 @@ mod tests {
     use super::test_damage::*;
     use super::*;
     use rusqlite::Connection;
+    use std::time::{Duration, Instant};
 
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -2202,6 +2317,243 @@ mod tests {
         assert_eq!(list_snippets_sorted(&dst, "modified", "desc").rows.len() as i64, COUNT);
     }
 
+    // --- garbage ids from a damaged sector (TASK-43) ---
+
+    /// The id a scan of the table returns from a cell that starts in a sector of 0xA5.
+    const GARBAGE_A5: i64 = 5374248273442940325;
+
+    /// The ids `sql` returns, as far as SQLite goes.
+    fn scan_ids(conn: &Connection, sql: &str) -> Vec<i64> {
+        let mut stmt = conn.prepare(sql).unwrap();
+        let mut rows = stmt.query([]).unwrap();
+        let mut ids = vec![];
+        while let Ok(Some(row)) = rows.next() {
+            ids.push(row.get(0).unwrap());
+        }
+        ids
+    }
+
+    /// Runs [`copy_readable_snippets`] from the database at `src` into `dst` in a thread of its own
+    /// and waits at most `limit`, so that a rescue that does not end fails its test instead of
+    /// hanging the whole test run (the tests run one at a time). Such a thread stays busy until
+    /// the test run ends.
+    fn copy_within(src: &Path, dst: &Path, limit: Duration) -> std::result::Result<Rescue, String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (src, dst) = (src.to_path_buf(), dst.to_path_buf());
+        let started = Instant::now();
+        std::thread::spawn(move || {
+            let result = open_and_init_db(&src).and_then(|conn| copy_readable_snippets(&conn, &dst));
+            tx.send(result.map_err(|e| e.to_string())).ok();
+        });
+        rx.recv_timeout(limit)
+            .map_err(|_| format!("the rescue had not ended after {:?}", started.elapsed()))?
+    }
+
+    /// The snippets of the damaged file that the app itself can read: id, title, text.
+    fn readable_snippets(path: &Path) -> Vec<(i64, String, Vec<u8>)> {
+        let conn = open_and_init_db(path).unwrap();
+        (1..=COUNT)
+            .filter_map(|id| get_snippet_by_id(&conn, id).ok())
+            .map(|row| (row.id, row.title, row.content))
+            .collect()
+    }
+
+    /// A sector of 0xA5 in a page of snippets gives a scan of the table the id
+    /// 5374248273442940325. Up to TASK-43 the rescue then read every id up to it: the start-up hung
+    /// before any dialog, at every start. Now it ends at once, saves every snippet that can be read,
+    /// and the garbage id is no snippet in the dialog.
+    #[test]
+    fn test_copy_readable_snippets_ends_quickly_after_a_garbage_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        damage_sector(&path, leaves[leaves.len() / 2], 1, 0xA5);
+        {
+            let conn = open_and_init_db(&path).unwrap();
+            let ids = scan_ids(&conn, "SELECT id FROM snippets NOT INDEXED ORDER BY id");
+            assert!(ids.contains(&GARBAGE_A5), "the scan returns the garbage id: {ids:?}");
+        }
+        let readable = readable_snippets(&path);
+        assert!(!readable.is_empty() && (readable.len() as i64) < COUNT, "{}", readable.len());
+        let before = std::fs::read(&path).unwrap();
+        let dst_path = dir.path().join("copy.db");
+
+        let rescue = copy_within(&path, &dst_path, Duration::from_secs(1)).unwrap();
+
+        let dst = open_and_init_db(&dst_path).unwrap();
+        for (id, title, content) in &readable {
+            let row = get_snippet_by_id(&dst, *id).unwrap_or_else(|e| panic!("snippet {id}: {e}"));
+            assert_eq!(&row.title, title);
+            assert_eq!(row.content, String::from_utf8_lossy(content).into_owned().into_bytes());
+        }
+        let copied: Vec<i64> = all_rows(&dst).iter().map(|r| r.0).collect();
+        assert_eq!(rescue.saved, copied.len());
+        let lost: Vec<String> = (1..=COUNT).filter(|id| !copied.contains(id)).map(title_of).collect();
+        assert!(!lost.is_empty());
+        assert_eq!(rescue.lost_titles, lost, "the lost snippets, named by the title index");
+        assert_eq!(rescue.lost_untitled, 0, "the garbage id is no lost snippet");
+        assert_eq!(rescue.total() as i64, COUNT);
+        assert_eq!(std::fs::read(&path).unwrap(), before, "the damaged file must stay as it was");
+    }
+
+    /// New snippets in the rescued database get the ids after the real ones, not after a garbage
+    /// id: ids above 2^53 would not even reach the window intact (JavaScript numbers).
+    #[test]
+    fn test_copy_readable_snippets_counter_continues_after_the_real_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        damage_sector(&path, leaves[leaves.len() / 2], 1, 0xA5);
+        let dst_path = dir.path().join("copy.db");
+
+        copy_within(&path, &dst_path, Duration::from_secs(1)).unwrap();
+
+        let dst = open_and_init_db(&dst_path).unwrap();
+        let counter: Vec<i64> = scan_ids(&dst, "SELECT seq FROM sqlite_sequence WHERE name = 'snippets'");
+        assert_eq!(counter, vec![COUNT]);
+        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+    }
+
+    /// A sector of 0x7F in the modification date index gives its scan the id 127, a little above
+    /// the real ones, while every snippet can be read. Up to TASK-43 the dialog counted it as a
+    /// lost snippet (91 in the database, one unreadable), and the new counter went on from 127.
+    #[test]
+    fn test_copy_readable_snippets_does_not_count_a_garbage_id_as_lost() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_sector(&path, pages_of(&path, "idx_snippets_updated_at", "leaf")[0], 4, 0x7F);
+        {
+            let conn = open_and_init_db(&path).unwrap();
+            let ids = scan_ids(&conn, "SELECT id FROM snippets INDEXED BY idx_snippets_updated_at");
+            assert!(ids.contains(&127), "the index scan returns the garbage id: {ids:?}");
+            assert!(matches!(check_health(&conn), Health::Damaged(_)));
+        }
+        let dst_path = dir.path().join("copy.db");
+
+        let rescue = copy_within(&path, &dst_path, Duration::from_secs(1)).unwrap();
+
+        assert_eq!(rescue, Rescue { saved: COUNT as usize, lost_titles: vec![], lost_untitled: 0 });
+        let dst = open_and_init_db(&dst_path).unwrap();
+        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+    }
+
+    #[test]
+    fn test_snippet_ceiling() {
+        let none = std::iter::empty::<i64>;
+        // The counter agrees with what could be read: it is the ceiling.
+        assert_eq!(snippet_ceiling(90, Some(90), none()), 90);
+        assert_eq!(snippet_ceiling(84, Some(90), none()), 90, "the newest snippets are lost");
+        assert_eq!(snippet_ceiling(0, Some(90), none()), 90, "no snippet could be read");
+        assert_eq!(snippet_ceiling(90, Some(90 + ID_MARGIN), none()), 90 + ID_MARGIN);
+        assert_eq!(snippet_ceiling(90, Some(90), [95].into_iter()), 90, "the counter decides");
+        // A counter below what could be read, or far above it, is damaged too.
+        assert_eq!(snippet_ceiling(90, Some(50), none()), 90);
+        assert_eq!(snippet_ceiling(90, Some(-1), none()), 90);
+        assert_eq!(snippet_ceiling(90, Some(91 + ID_MARGIN), none()), 90);
+        assert_eq!(snippet_ceiling(90, Some(GARBAGE_A5), none()), 90);
+        // Without a counter, the ids the title index names count up to ID_MARGIN above.
+        assert_eq!(snippet_ceiling(84, None, [3, 90, 84].into_iter()), 90);
+        assert_eq!(snippet_ceiling(84, None, [85 + ID_MARGIN, GARBAGE_A5].into_iter()), 84);
+        assert_eq!(snippet_ceiling(0, None, none()), 0, "an empty database");
+        // Never above the ids the window can hold.
+        assert_eq!(snippet_ceiling(MAX_SNIPPET_ID, Some(MAX_SNIPPET_ID), none()), MAX_SNIPPET_ID);
+        assert_eq!(snippet_ceiling(MAX_SNIPPET_ID - 5, None, [MAX_SNIPPET_ID + 1].into_iter()), MAX_SNIPPET_ID - 5);
+    }
+
+    /// With the id counter damaged as well, the title index still names the newest snippets that
+    /// are lost, and new ids come after theirs.
+    #[test]
+    fn test_copy_readable_snippets_with_a_damaged_counter_names_the_lost_newest_snippets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        damage_page(&path, *pages_of(&path, "snippets", "leaf").last().unwrap());
+        damage_page(&path, pages_of(&path, "sqlite_sequence", "leaf")[0]);
+        let src = open_and_init_db(&path).unwrap();
+        let counter = src.query_row("SELECT seq FROM sqlite_sequence", [], |r| r.get::<_, i64>(0));
+        assert!(counter.is_err(), "the counter cannot be read: {counter:?}");
+        let unreadable: Vec<i64> = (1..=COUNT).filter(|&id| get_snippet_by_id(&src, id).is_err()).collect();
+        assert!(unreadable.contains(&COUNT), "the newest snippet is lost");
+
+        let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+
+        assert_eq!(rescue.lost_titles, unreadable.iter().map(|&i| title_of(i)).collect::<Vec<_>>());
+        assert_eq!(rescue.total() as i64, COUNT);
+        let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
+        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
+    }
+
+    /// A counter that agrees with the ids that can be read is kept: the ids of the snippets
+    /// deleted last are not given again. One more than ID_MARGIN above them is damage: it is
+    /// neither followed nor written into the new database.
+    #[test]
+    fn test_copy_readable_snippets_trusts_the_counter_only_near_the_real_ids() {
+        for (seq, next) in [(25, 26), (20 + ID_MARGIN, 21 + ID_MARGIN), (21 + ID_MARGIN, 21), (1_000_000_000_000, 21)] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = build_db(dir.path(), 20);
+            let src = open_and_init_db(&path).unwrap();
+            src.execute("UPDATE sqlite_sequence SET seq = ?1 WHERE name = 'snippets'", [seq]).unwrap();
+
+            let rescue = copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+
+            assert_eq!(rescue, Rescue { saved: 20, lost_titles: vec![], lost_untitled: 0 }, "{seq}");
+            let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
+            assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), next, "{seq}");
+        }
+    }
+
+    /// A snippet with an id the window cannot hold is not one QuickSnippets made: it is neither
+    /// copied nor counted, and new ids stay small. One with a huge id the window can hold is copied,
+    /// but the ids that no one named are then tried only up to MAX_TRIED_IDS (here 1.7 s, with the
+    /// SQLite of the tests built without optimization; about 0.4 s in the release build).
+    #[test]
+    fn test_copy_readable_snippets_with_huge_ids_ends_quickly() {
+        let insert = "INSERT INTO snippets (id, title, content, created_at, updated_at)
+                      VALUES (?1, 'Huge id', X'00', 'a', 'b')";
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 5);
+        open_and_init_db(&path).unwrap().execute(insert, [MAX_SNIPPET_ID + 1]).unwrap();
+
+        let rescue = copy_within(&path, &dir.path().join("copy.db"), Duration::from_secs(1)).unwrap();
+
+        assert_eq!(rescue, Rescue { saved: 5, lost_titles: vec![], lost_untitled: 0 });
+        let dst = open_and_init_db(&dir.path().join("copy.db")).unwrap();
+        assert_eq!(create_snippet(&dst, "New one", b"x".to_vec(), false).unwrap(), 6);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 5);
+        open_and_init_db(&path).unwrap().execute(insert, [1_000_000_000_000_i64]).unwrap();
+
+        let rescue = copy_within(&path, &dir.path().join("copy.db"), Duration::from_secs(15)).unwrap();
+
+        assert_eq!(rescue, Rescue { saved: 6, lost_titles: vec![], lost_untitled: 0 });
+    }
+
+    /// The rescue reads every snippet inside one read transaction (each read outside one takes
+    /// and releases the lock of the file: about 30 times slower) and ends it, since after No the
+    /// app goes on with the same connection. A transaction the caller began stays open.
+    #[test]
+    fn test_copy_readable_snippets_reads_in_a_transaction_and_ends_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), 5);
+        let src = open_and_init_db(&path).unwrap();
+
+        let mut inside = Vec::new();
+        read_snippets_one_by_one(&src, &mut |_, _| {
+            inside.push(!src.is_autocommit());
+            true
+        });
+        assert_eq!(inside, vec![true; 5]);
+        assert!(src.is_autocommit(), "no transaction is left open");
+
+        copy_readable_snippets(&src, &dir.path().join("copy.db")).unwrap();
+        assert!(src.is_autocommit(), "no transaction is left open");
+
+        src.execute_batch("BEGIN").unwrap();
+        copy_readable_snippets(&src, &dir.path().join("copy2.db")).unwrap();
+        assert!(!src.is_autocommit(), "the caller's transaction is still open");
+        src.execute_batch("COMMIT").unwrap();
+    }
+
     /// The rescue's own new file sits next to the damaged database.
     fn rescue_path(dir: &Path) -> PathBuf {
         dir.join(RESCUE_FILE_NAME)
@@ -2284,6 +2636,58 @@ mod tests {
         assert_eq!(snippet_count(&conn), COUNT - unreadable.len() as i64);
         for id in unreadable {
             assert!(get_snippet_by_id(&conn, id).is_err());
+        }
+    }
+
+    /// The whole start-up path with a sector of 0xA5 in a page of snippets (TASK-43): the dialog
+    /// comes at once and counts only real snippets. No keeps working with the damaged file, which
+    /// stays as it was; Yes moves the readable snippets into a new database and keeps the damaged
+    /// file next to it.
+    #[test]
+    fn test_rescue_if_damaged_with_a_garbage_id_asks_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = build_db(dir.path(), COUNT);
+        let leaves = pages_of(&path, "snippets", "leaf");
+        damage_sector(&path, leaves[leaves.len() / 2], 1, 0xA5);
+        let damaged = std::fs::read(&path).unwrap();
+        let readable = readable_snippets(&path).len();
+
+        for answer in [false, true] {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let db_path = path.clone();
+            std::thread::spawn(move || {
+                let conn = open_and_init_db(&db_path).unwrap();
+                let mut asked = Vec::new();
+                let outcome = rescue_if_damaged(&db_path, conn, STAMP, &mut |d| {
+                    asked.push(d.clone());
+                    answer
+                });
+                let kept = match outcome {
+                    RescueOutcome::Keep(conn) => Some(conn.is_autocommit() && get_snippet_by_id(&conn, 1).is_ok()),
+                    RescueOutcome::Reopen => None,
+                };
+                tx.send((asked, kept)).ok();
+            });
+            let (asked, kept) = rx.recv_timeout(Duration::from_secs(1)).expect("the dialog comes within a second");
+
+            let [RescueDialog::Offer { rescue, kept_name }] = asked.as_slice() else { panic!("{asked:?}") };
+            assert!(rescue.saved >= readable, "{} < {readable}", rescue.saved);
+            assert_eq!(rescue.lost_untitled, 0);
+            assert_eq!(rescue.total() as i64, COUNT);
+            assert_eq!(kept_name, "snippets-damaged-2026-11-20-14-35.db");
+            if !answer {
+                assert_eq!(kept, Some(true), "No goes on with the damaged file");
+                assert_eq!(file_names(dir.path()), vec!["snippets.db"]);
+                assert_eq!(std::fs::read(&path).unwrap(), damaged);
+                continue;
+            }
+            assert_eq!(kept, None, "Yes opens the new database");
+            assert_eq!(file_names(dir.path()), vec![kept_name.as_str(), "snippets.db"]);
+            assert_eq!(std::fs::read(dir.path().join(kept_name)).unwrap(), damaged);
+            let conn = open_and_init_db(&path).unwrap();
+            assert_eq!(check_health(&conn), Health::Healthy);
+            assert_eq!(snippet_count(&conn), rescue.saved as i64);
+            assert_eq!(create_snippet(&conn, "New one", b"x".to_vec(), false).unwrap(), COUNT + 1);
         }
     }
 
