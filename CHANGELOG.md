@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.6 - 2026-11-21
+
 ### Added
 - QuickSnippets now checks the snippet database every time it starts; for a usual database this takes a few thousandths of a second, for a very large one (300 MB) about a fifth of a second. When the database turns out to be damaged inside, a message in the language of the app says how many snippets can still be read, names those that cannot, and asks whether to move the readable ones into a new database. Yes does that and keeps the damaged file next to it, unchanged, under a name with the date and time, for example `snippets-damaged-2026-11-21-14-35.db`. When the damage destroyed the dates of a snippet that is moved, it gets the oldest date in the database instead, so it appears at the end of lists sorted newest first rather than at the top; if its date of last use was destroyed, it counts as never used. No keeps working with the damaged database as it is, and the question comes again at the next start. Before, only damage at the very start of the file was noticed; damage further inside went unnoticed until something failed.
 
