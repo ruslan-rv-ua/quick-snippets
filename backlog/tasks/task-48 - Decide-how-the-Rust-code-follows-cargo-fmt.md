@@ -78,6 +78,8 @@ rustfmt wrote the 10 files with LF line endings in the working copy; the commit 
 Release exe built (`npx tauri build --no-bundle`, 3,900,416 bytes) and copied to C:\5-quicksnippets\real_db\quick-snippets-TASK-48-d7fee2f.exe.
 No CHANGELOG entry: formatting and tooling only, users notice nothing. No new user-facing strings. `just smoke` not needed: focus, dialogs and announcements did not change (formatting only).
 AC #3 does not apply: no check was added to npm run lint (the user chose "Лише локально"), so no Release dry run is needed for this task.
+
+Merged into develop: git flow feature finish --no-ff, merge commit 2ecfc88 (not pushed). cargo fmt --check passes on develop.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
