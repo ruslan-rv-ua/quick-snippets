@@ -17,10 +17,10 @@ Write-Host "=== TypeScript check ===" -ForegroundColor Cyan
 npx tsc --noEmit
 if ($LASTEXITCODE -ne 0) { Write-Error "TypeScript errors found"; exit 1 }
 
-# 2. Rust clippy
+# 2. Rust clippy (test code included)
 Write-Host "=== Cargo clippy ===" -ForegroundColor Cyan
 Push-Location src-tauri
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 if ($LASTEXITCODE -ne 0) { Write-Error "Clippy warnings found"; Pop-Location; exit 1 }
 Pop-Location
 
