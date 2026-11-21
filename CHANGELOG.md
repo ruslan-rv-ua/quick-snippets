@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- When copying or auto-typing a snippet without a password, opening a snippet for editing or opening the settings fails, the notice now says what failed, in the language of the app, for example "Could not copy the snippet. Reason: database is locked." The reason is still the text the database or Windows reports. Before, only that bare reason appeared, in English. The notice stays for two seconds, as before, and screen readers read it once.
+- When auto-type fails while it types, for example because the window you type into runs as administrator or closes in the middle, QuickSnippets now plays the Windows error sound. Its window has already hidden at that moment, so before, nothing told you that the text was not typed, or only partly. Nothing is heard if your Windows sound scheme has no sound for errors.
+
 ## v0.3.6 - 2026-11-21
 
 ### Added

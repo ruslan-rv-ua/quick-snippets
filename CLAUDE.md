@@ -90,6 +90,7 @@ The autotype module simulates keyboard input to type snippet content into the fo
 - Control characters (`\n`, `\r`, `\t`) are sent as virtual key presses (VK_RETURN, VK_TAB).
 - Configurable `char_delay_ms` with enforced minimum 50ms in SendInput fallback for screen reader safety.
 - Handles UTF-16 surrogate pairs for emoji/non-BMP characters.
+- `autotype_snippet` hides the window before it types, so a failure of the typing itself (PostMessage refused by a target run as administrator, a target closed while typing, a full message queue) lands in a hidden window that no screen reader reads: it plays the Windows error sound (`error_sound`, MessageBeep MB_ICONERROR) instead, the user's choice in TASK-42. Failures before the hide (the database, the password, damage) are shown in the window. The flow is `autotype_snippet_inner` in commands.rs, tested with stand-ins for hiding, typing and the sound.
 
 ### Frontend Testing
 
