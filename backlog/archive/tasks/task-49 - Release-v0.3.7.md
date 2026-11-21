@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-21T21:56:00Z'
-updated_date: '2026-11-21T23:25:00Z'
+updated_date: '2026-11-21T23:48:00Z'
 labels:
   - release model-sonnet effort-medium
 milestone: m-9
@@ -92,6 +92,12 @@ Release:
 - Excavator run 44961601042 in scoop-bucket: success, commit 74016dd "quick-snippets: Update to version 0.3.7"; bucket/quick-snippets.json shows 0.3.7, the v0.3.7 URL and the same hash.
 - The user's Scoop copy: the data folder was first copied to C:\scoop\persist\quick-snippets\quick-snippets-data-backup-0.3.6-2026-11-22 (SHA-256 of both files identical). scoop update updated Scoop and its buckets, then quick-snippets 0.3.6 -> 0.3.7 with the hash check OK. current points to 0.3.7, its exe is the one from the release ZIP, quick-snippets-data is still the junction to the persist folder, and the SHA-256 of both data files is the same before and after (settings.json 150E6556C0F72994E90FB39ED17A89BF366E638FF041C42C4EA2586090068412, snippets.db C7C88CB957CCB910CC61A943FC0AB7470D7D105D669E383CD382CFB64305C428). The app was not running and was not started. The 0.3.6 folder stays, so scoop reset quick-snippets@0.3.6 can go back.
 - real_db has the local release build from 17abe65; 896d467 has the same code (the merge only).
+
+## After the task (managing session, 2026-11-22)
+
+Checked independently by the managing session: tag v0.3.7 on 896d467 (same tree as 17abe65); the release (not a draft or pre-release) with quick-snippets-0.3.7-windows-x64.zip and its .sha256, its notes equal to the v0.3.7 CHANGELOG section; Release run 44961177552 success on 896d467; the Scoop manifest at 0.3.7 with the hash of the .sha256 asset; the installed exe equal to the one in the ZIP (F3DAB702…E289), quick-snippets-data still the junction to the persist folder, the app not running; the real_db copy equal to the build (D0754334…75A6); npm run test:all (625 Vitest, 389 Rust) and npm run lint pass on develop d766739; the autostart values unchanged; no test copies or smoke folders left.
+
+The user's choice (question dialog, verbatim): «Заархівувати й надіслати (Рекомендовано)». So this task and milestone m-9 (v0.3.7) archived and the commit pushed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
