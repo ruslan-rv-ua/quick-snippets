@@ -283,11 +283,11 @@ describe('EditSnippetModal', () => {
     };
     const saves = () => mockInvoke.mock.calls.filter(([cmd]) => cmd === 'update_snippet').length;
 
-    function backend(language: string) {
+    function backend(language: string, error: unknown = LOCKED) {
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === 'get_settings') return { language };
         if (cmd === 'get_system_language') return 'en';
-        if (cmd === 'update_snippet') throw LOCKED;
+        if (cmd === 'update_snippet') throw error;
         return undefined;
       });
     }
@@ -360,6 +360,20 @@ describe('EditSnippetModal', () => {
       await screen.findByRole('button', { name: language === 'uk' ? 'Скасувати' : 'Abbrechen' });
       fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
       await waitFor(() => expect(message()).toHaveTextContent(failedText[language]));
+    });
+
+    // TASK-33: SQLite's "database disk image is malformed" became the backend's DATABASE_DAMAGED.
+    it.each([
+      ['en', 'Cancel', 'Could not save the snippet. Reason: the snippet database is damaged. Nothing was changed. Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.'],
+      ['uk', 'Скасувати', 'Не вдалося зберегти сніпет. Причина: база сніпетів пошкоджена. Нічого не змінено. Перезапустіть QuickSnippets: під час запуску програма перевірить базу й запропонує зберегти сніпети, які ще вдається прочитати.'],
+      ['de', 'Abbrechen', 'Das Snippet ließ sich nicht speichern. Grund: Die Snippet-Datenbank ist beschädigt. Es wurde nichts geändert. Starten Sie QuickSnippets neu: Beim Start prüft es die Datenbank und bietet an, die noch lesbaren Snippets zu sichern.'],
+    ] as const)('a damaged database is said in the language of the app, with what to do (%s)', async (language, cancel, text) => {
+      backend(language, 'The snippet database is damaged');
+      renderModal(plainSnippet);
+      await screen.findByRole('button', { name: cancel });
+      fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+      await waitFor(() => expect(message()).toHaveTextContent(text));
+      expect(screen.queryByText(/The snippet database is damaged/)).not.toBeInTheDocument();
     });
 
     it('opening the dialog again shows no old message', async () => {

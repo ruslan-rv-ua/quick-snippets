@@ -339,6 +339,24 @@ describe('PasswordModal', () => {
       await waitFor(() => expect(message()).toHaveTextContent(text));
     });
 
+    // TASK-33: damage reaches the dialog as DATABASE_DAMAGED or SNIPPET_DAMAGED.
+    it.each([
+      ['en', 'Cancel', 'copy', 'The snippet database is damaged', 'Could not copy the snippet. Reason: the snippet database is damaged. Restart QuickSnippets: at start-up it checks the database and offers to save the snippets that can still be read.'],
+      ['uk', 'Скасувати', 'copy', 'The snippet database is damaged', 'Не вдалося скопіювати сніпет. Причина: база сніпетів пошкоджена. Перезапустіть QuickSnippets: під час запуску програма перевірить базу й запропонує зберегти сніпети, які ще вдається прочитати.'],
+      ['de', 'Abbrechen', 'autotype', 'The snippet database is damaged', 'Das Snippet ließ sich nicht automatisch tippen. Grund: Die Snippet-Datenbank ist beschädigt. Starten Sie QuickSnippets neu: Beim Start prüft es die Datenbank und bietet an, die noch lesbaren Snippets zu sichern.'],
+      ['en', 'Cancel', 'copy', 'This snippet is damaged', 'Could not copy the snippet. Reason: this snippet is damaged and cannot be read.'],
+      ['uk', 'Скасувати', 'autotype', 'This snippet is damaged', 'Не вдалося надрукувати сніпет. Причина: цей сніпет пошкоджений, його не вдається прочитати.'],
+      ['de', 'Abbrechen', 'copy', 'This snippet is damaged', 'Das Snippet ließ sich nicht kopieren. Grund: Dieses Snippet ist beschädigt und kann nicht gelesen werden.'],
+    ] as const)('says damage in the language of the app (%s, %s, %s)', async (language, cancel, action, error, text) => {
+      backend(language, error);
+      renderModal({ action });
+      await screen.findByRole('button', { name: cancel });
+      submit();
+      await waitFor(() => expect(message()).toHaveTextContent(text));
+      expect(document.getElementById('pwd-error')).toBeEmptyDOMElement();
+      expect(field()).toHaveValue('right one');
+    });
+
     it('opening the dialog again shows no old message', async () => {
       backend('en');
       const view = (open: boolean) => (

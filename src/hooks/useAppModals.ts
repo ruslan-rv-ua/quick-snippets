@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
 import type { SearchResult } from '../types';
 import { getSnippetById } from './useIpc';
+import { useLanguage } from './useLanguage';
 import { useModalState, type ModalState } from './useModalState';
+import { DAMAGE_TOAST_MS, failureMessage, ipcErrorToString, isDamage } from '../utils/errors';
 
 /**
  * Options for useAppModals hook.
@@ -9,7 +11,11 @@ import { useModalState, type ModalState } from './useModalState';
 export interface UseAppModalsOptions {
   snippets: SearchResult[];
   activeIndex: number;
-  addToast: (msg: string, type: 'success' | 'error' | 'warning' | 'info') => void;
+  addToast: (
+    msg: string,
+    type: 'success' | 'error' | 'warning' | 'info',
+    duration?: number,
+  ) => void;
 }
 
 /**
@@ -21,10 +27,12 @@ export function useAppModals(options: UseAppModalsOptions): ModalState & {
   openDelete: () => void;
 } {
   const modals = useModalState();
+  const { tf } = useLanguage();
 
   /**
    * Open the edit modal for the active (focused) snippet.
-   * Fetches full snippet data before opening.
+   * Fetches full snippet data before opening. Damage is said in the language of the app; any
+   * other error is still shown as the backend gives it (TASK-42).
    */
   const openEdit = useCallback(async () => {
     const active = options.snippets[options.activeIndex];
@@ -34,9 +42,14 @@ export function useAppModals(options: UseAppModalsOptions): ModalState & {
       modals.setEditSnippet(sv);
       modals.setShowEdit(true);
     } catch (err) {
-      options.addToast(String(err), 'error');
+      const msg = ipcErrorToString(err);
+      if (isDamage(msg)) {
+        options.addToast(failureMessage(tf.snippetOpenFailed, msg, tf), 'error', DAMAGE_TOAST_MS);
+      } else {
+        options.addToast(msg, 'error');
+      }
     }
-  }, [options.snippets, options.activeIndex, modals, options]);
+  }, [options.snippets, options.activeIndex, modals, options, tf]);
 
   /**
    * Open the delete confirm modal for the active snippet.

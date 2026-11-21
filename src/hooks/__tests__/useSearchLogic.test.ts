@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useSearchLogic } from '../useSearchLogic';
 import * as useIpc from '../useIpc';
+import type { SearchResult, SnippetListResult } from '../../types';
+
+/** A list as the backend returns it. */
+function listOf(items: SearchResult[], damaged = false): SnippetListResult {
+  return { items, damaged };
+}
 
 vi.mock('../useIpc', () => ({
   searchSnippets: vi.fn(),
@@ -12,8 +18,8 @@ describe('useSearchLogic', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default mocks that return empty array
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue([]);
-    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([]);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf([]));
+    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf([]));
   });
 
   it('initializes with empty state', () => {
@@ -64,7 +70,7 @@ describe('useSearchLogic', () => {
     const mockResults = [
       { id: 1, title: 'Test', is_encrypted: false, score: 100, matched_positions: [0] },
     ];
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
 
     vi.useFakeTimers();
     try {
@@ -92,7 +98,7 @@ describe('useSearchLogic', () => {
     const mockResults = [
       { id: 1, title: 'Test', is_encrypted: false, score: 100, matched_positions: [0] },
     ];
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
 
     vi.useFakeTimers();
     try {
@@ -114,7 +120,7 @@ describe('useSearchLogic', () => {
   });
 
   it('sets activeIndex to -1 when no results found', async () => {
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue([]);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf([]));
 
     vi.useFakeTimers();
     try {
@@ -139,7 +145,7 @@ describe('useSearchLogic', () => {
     const mockResults = [
       { id: 1, title: 'Test', is_encrypted: false, score: 100, matched_positions: [0] },
     ];
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
 
     vi.useFakeTimers();
     try {
@@ -185,7 +191,7 @@ describe('useSearchLogic', () => {
     const mockResults = [
       { id: 1, title: 'Test', is_encrypted: false, score: 100, matched_positions: [0] },
     ];
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
 
     vi.useFakeTimers();
     try {
@@ -203,8 +209,8 @@ describe('useSearchLogic', () => {
       expect(useIpc.searchSnippets).toHaveBeenCalledWith('test');
 
       vi.clearAllMocks();
-      vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
-      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([]);
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf([]));
 
       act(() => {
         result.current.setRefreshTick((prev) => prev + 1);
@@ -226,14 +232,14 @@ describe('useSearchLogic', () => {
     const goodbye = { id: 2, title: 'Goodbye', is_encrypted: false, score: 0, matched_positions: [] };
 
     it('loads the list again and resolves once the new list is in state, first snippet selected', async () => {
-      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([greeting, goodbye]);
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf([greeting, goodbye]));
       const { result } = renderHook(() => useSearchLogic());
       await act(async () => {});
       act(() => result.current.setActiveIndex(1));
       expect(result.current.snippets).toEqual([greeting, goodbye]);
 
       // The selected snippet was deleted.
-      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([greeting]);
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf([greeting]));
       let done = false;
       let reloaded: Promise<void> = Promise.resolve();
       act(() => {
@@ -248,7 +254,7 @@ describe('useSearchLogic', () => {
     });
 
     it('loads the results for the query shown', async () => {
-      vi.mocked(useIpc.searchSnippets).mockResolvedValue([goodbye]);
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf([goodbye]));
       vi.useFakeTimers();
       try {
         const { result } = renderHook(() => useSearchLogic());
@@ -272,8 +278,8 @@ describe('useSearchLogic', () => {
 
     // A list loaded again before the search runs is not its results (see SnippetList).
     it('remembers the query each list was loaded for', async () => {
-      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue([greeting, goodbye]);
-      vi.mocked(useIpc.searchSnippets).mockResolvedValue([greeting]);
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf([greeting, goodbye]));
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf([greeting]));
       vi.useFakeTimers();
       try {
         const { result } = renderHook(() => useSearchLogic());
@@ -347,7 +353,7 @@ describe('useSearchLogic', () => {
     const mockResults = [
       { id: 1, title: 'Test', is_encrypted: false, score: 0, matched_positions: [] },
     ];
-    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(mockResults);
+    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf(mockResults));
 
     vi.useFakeTimers();
     try {
@@ -371,7 +377,7 @@ describe('useSearchLogic', () => {
     const mockResults = [
       { id: 1, title: 'Test', is_encrypted: false, score: 100, matched_positions: [0] },
     ];
-    vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+    vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
 
     vi.useFakeTimers();
     try {
@@ -386,7 +392,7 @@ describe('useSearchLogic', () => {
       });
       vi.mocked(useIpc.getSortedSnippets).mockClear();
       vi.mocked(useIpc.searchSnippets).mockClear();
-      vi.mocked(useIpc.searchSnippets).mockResolvedValue(mockResults);
+      vi.mocked(useIpc.searchSnippets).mockResolvedValue(listOf(mockResults));
 
       act(() => {
         result.current.setQuery('test');
@@ -399,6 +405,42 @@ describe('useSearchLogic', () => {
 
       expect(useIpc.searchSnippets).toHaveBeenCalledWith('test');
       expect(useIpc.getSortedSnippets).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // TASK-33: the backend says when damage of the database cut the list short.
+  it('keeps whether the list is damaged, and reset clears it', async () => {
+    const items = [{ id: 1, title: 'Test', is_encrypted: false, score: 0, matched_positions: [] }];
+    vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf(items, true));
+
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useSearchLogic());
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(result.current.snippets).toEqual(items);
+      expect(result.current.listDamaged).toBe(true);
+
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf(items, false));
+      await act(async () => {
+        void result.current.reload();
+        await vi.runAllTimersAsync();
+      });
+      expect(result.current.listDamaged).toBe(false);
+
+      vi.mocked(useIpc.getSortedSnippets).mockResolvedValue(listOf([], true));
+      await act(async () => {
+        void result.current.reload();
+        await vi.runAllTimersAsync();
+      });
+      expect(result.current.listDamaged).toBe(true);
+      act(() => {
+        result.current.reset();
+      });
+      expect(result.current.listDamaged).toBe(false);
     } finally {
       vi.useRealTimers();
     }

@@ -3,7 +3,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { FieldError } from './FieldError';
 import { useLanguage } from '../hooks/useLanguage';
 import { deleteSnippet } from '../hooks/useIpc';
-import { asSentence, ipcErrorToString } from '../utils/errors';
+import { failureMessage, ipcErrorToString } from '../utils/errors';
 
 export interface DeleteConfirmModalProps {
   isOpen: boolean;
@@ -86,7 +86,7 @@ export function DeleteConfirmModal({
 
       <FieldError
         id="delete-error"
-        message={failure === null ? undefined : tf.snippetDeleteFailed(asSentence(failure))}
+        message={failure === null ? undefined : failureMessage(tf.snippetDeleteFailed, failure, tf)}
       />
 
       <div className="modal-actions">
